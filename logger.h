@@ -63,7 +63,6 @@ class Logger {
 };
 
 
-/*
 #define LOG_EMERG(logname, fmt, ...) Logger::Logv(Logger::EMERG, logname, fmt, ##__VA_ARGS__)
 #define LOG_ALERT(logname, fmt, ...) Logger::Logv(Logger::ALERT, logname, fmt, ##__VA_ARGS__)
 #define LOG_CRIT(logname, fmt, ...) Logger::Logv(Logger::CRIT, logname, fmt, ##__VA_ARGS__)
@@ -73,8 +72,6 @@ class Logger {
 #define LOG_INFO(logname, fmt, ...) Logger::Logv(Logger::INFO, logname, fmt, ##__VA_ARGS__)
 #define LOG_DEBUG(logname, fmt, ...) Logger::Logv(Logger::DEBUG, logname, fmt, ##__VA_ARGS__)
 #define LOG_TRACE(logname, fmt, ...) Logger::Logv(Logger::TRACE, logname, fmt, ##__VA_ARGS__)
-*/
-#define LOG_TRACE(logname, fmt, ...)
 
 }
 

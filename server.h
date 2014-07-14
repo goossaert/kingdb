@@ -30,6 +30,7 @@
 
 #include "threadpool.h"
 #include "kingdb.h"
+#include "logger.h"
 #include "kdb.h"
 
 

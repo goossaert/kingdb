@@ -5,7 +5,10 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <stdlib.h>
 #include <libmemcached/memcached.hpp>
+#include "murmurhash3.h"
+
 #include "status.h"
 #include "logger.h"
 #include "threadpool.h"
@@ -22,7 +25,15 @@ class Client {
     memcached_free(memc);
   }
 
-  Status Get(const std::string& key, std::string *value_out) {
+  uint64_t hash_function(const std::string& key) {
+    static char hash[16];
+    static uint64_t output;
+    MurmurHash3_x64_128(key.c_str(), key.size(), 0, hash);
+    memcpy(&output, hash, 8); 
+    return output;
+  }
+
+  Status Get(const std::string& key, char **value_out, int *size_value) {
     char* buffer = new char[SIZE_BUFFER_CLIENT];
     memcached_return_t rc;
     const char* keys[1];
@@ -50,14 +61,14 @@ class Client {
         memcpy(buffer, return_value, return_value_length);
         buffer[return_value_length] = '\0';
         *value_out = buffer;
+        *size_value = return_value_length;
         free(return_value);
     }
 
-    delete[] buffer;
-
-    if (rc != MEMCACHED_END) {
-      std::string msg = key + " " + memcached_strerror(memc, rc);
-      return Status::IOError(msg);
+    if (rc ==  MEMCACHED_NOTFOUND) {
+      return Status::NotFound("key: " + key);
+    } else if (rc != MEMCACHED_END) {
+      return Status::IOError(key + " " + memcached_strerror(memc, rc));
     }
 
     return Status::OK(); 
@@ -110,33 +121,47 @@ class ClientTask: public Task {
     }
     buffer_large[size] = '\0';
 
-
     std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+    Status s;
 
+    srand(0);
     for (auto i = 0; i < num_items_; i++) {
       std::stringstream ss;
-      std::stringstream ss_value;
       ss << tid << "-" << i;
-      ss_value << "val-" << tid;
+      std::string key = ss.str();
+      int size_value = rand() % (32*1024) + 1;
+      char *value = MakeValue(key, size_value);
 
-      if (false && i % 10 == 0) {
-        ss_value << "-" << buffer_large;
-      }
-
-      //std::cout << ss.str() << std::endl;
-      Status s = client.Set(ss.str().c_str(), ss.str().size(), buffer_large, 100);
+      s = client.Set(ss.str().c_str(), ss.str().size(), value, size_value);
       LOG_TRACE("ClientTask", "Set(%s): [%s]", ss.str().c_str(), s.ToString().c_str());
+      keys_added.push_back(ss.str());
+      delete[] value;
+    }
 
-      if (false && i > 10) {
-        std::string value;
-        std::stringstream ss_get;
-        ss_get << tid << "-" << (i/2);
-        s = client.Get(ss_get.str(), &value);
-        LOG_TRACE("ClientTask", "Get(%s): value_size:[%d] => %s", ss_get.str().c_str(), value.size(), s.ToString().c_str());
-        if (value.size() < 128) {
-          LOG_TRACE("ClientTask", "Get(%s): value [%s]", ss_get.str().c_str(), value.c_str());
-        }
+    srand(0);
+    for (auto i = 0; i < num_items_; i++) {
+      std::stringstream ss;
+      ss << tid << "-" << i;
+      std::string key = ss.str();
+      int size_value = rand() % (32*1024) + 1;
+
+      char *value;
+      int size_value_get;
+      s = client.Get(key, &value, &size_value_get);
+      if (!s.IsOK()) {
+        fprintf(stderr, "Error for key [%s]: %s\n", key.c_str(), s.ToString().c_str());
       }
+      if (size_value != size_value_get) {
+        fprintf(stderr, "Found error in sizes for %s: [%d] [%d]\n", key.c_str(), size_value, size_value_get); 
+      }
+
+      int ret = VerifyValue(key, size_value, value);
+      if (ret < 0) {
+        fprintf(stderr, "Found error in content for %s\n", key.c_str());
+      } else {
+        fprintf(stderr, "Verified %s\n", key.c_str());
+      }
+      delete[] value;
     }
 
     std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
@@ -145,8 +170,47 @@ class ClientTask: public Task {
     delete[] buffer_large;
   }
 
+
+  char* MakeValue(const std::string& key, int size_value) {
+    static char hash[16];
+    MurmurHash3_x64_128(key.c_str(), key.size(), 0, hash);
+    char *str = new char[size_value+1];
+    str[size_value] = '\0';
+    int i = 0;
+    for (i = 0; i < size_value / 16; i++) {
+      memcpy(str + i*16, hash, 16);
+    }
+    if (size_value % 16 != 0) {
+      memcpy(str + i*16, hash, size_value % 16);
+    }
+    return str;
+  }
+
+  int VerifyValue(const std::string& key, int size_value, const char* value) {
+    static char hash[16];
+    MurmurHash3_x64_128(key.c_str(), key.size(), 0, hash);
+    int i = 0;
+    for (i = 0; i < size_value / 16; i++) {
+      if (memcmp(value + i*16, hash, 16)) {
+        return -1;
+      }
+    }
+    if (size_value % 16 != 0) {
+      if (memcmp(value + i*16, hash, size_value % 16)) {
+        return -1; 
+      }
+    }
+    return 0;
+  }
+
+
+
+
+
   std::string database_;
   int num_items_;
+  std::vector<std::string> keys_added;
+  std::vector<std::string> keys_removed;
 };
 
 };
