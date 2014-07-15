@@ -158,16 +158,17 @@ class ClientTask: public Task {
       s = client.Get(key, &value, &size_value_get);
       if (!s.IsOK()) {
         fprintf(stderr, "Error for key [%s]: %s\n", key.c_str(), s.ToString().c_str());
-      }
-      if (size_value != size_value_get) {
-        fprintf(stderr, "Found error in sizes for %s: [%d] [%d]\n", key.c_str(), size_value, size_value_get); 
-      }
-
-      int ret = VerifyValue(key, size_value, value);
-      if (ret < 0) {
-        fprintf(stderr, "Found error in content for %s\n", key.c_str());
       } else {
-        fprintf(stderr, "Verified %s\n", key.c_str());
+        if (size_value != size_value_get) {
+          fprintf(stderr, "Found error in sizes for %s: [%d] [%d]\n", key.c_str(), size_value, size_value_get); 
+        } else {
+          int ret = VerifyValue(key, size_value, value);
+          if (ret < 0) {
+            fprintf(stderr, "Found error in content for %s\n", key.c_str());
+          } else {
+            fprintf(stderr, "Verified %s\n", key.c_str());
+          }
+        }
       }
       delete[] value;
     }
