@@ -66,7 +66,7 @@ class LogfileManager {
     has_file_ = false;
   }
 
-  void FlushCurrentFile(int force_new_file=0) {
+  void FlushCurrentFile(int force_new_file=0, uint64_t padding=0) {
     LOG_TRACE("LogfileManager::FlushCurrentFile()", "ENTER - fileid_:%d", fileid_);
     if (has_file_ && buffer_has_items_) {
       LOG_TRACE("LogfileManager::FlushCurrentFile()", "has_files && buffer_has_items_ - fileid_:%d", fileid_);
@@ -79,10 +79,18 @@ class LogfileManager {
       LOG_TRACE("LogfileManager::FlushCurrentFile()", "items written - offset_end_:%d | size_block_:%d | force_new_file:%d", offset_end_, size_block_, force_new_file);
     }
 
+    if (padding) {
+      offset_end_ += padding;
+      offset_start_ = offset_end_;
+      file_sizes[fileid_] = offset_end_;
+      ftruncate(fd_, offset_end_);
+      lseek(fd_, 0, SEEK_END);
+    }
+
     if (offset_end_ >= size_block_ || (force_new_file && offset_end_ > SIZE_LOGFILE_HEADER)) {
+      LOG_TRACE("LogfileManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
       CloseCurrentFile();
       OpenNewFile();
-      LOG_TRACE("LogfileManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
     }
     LOG_TRACE("LogfileManager::FlushCurrentFile()", "done!");
   }
@@ -172,10 +180,13 @@ class LogfileManager {
       offset_end_ += sizeof(struct Entry) + order.size_key + order.size_chunk;
 
       if (order.size_chunk != order.size_value) {
-        offset_end_ += order.size_value - order.size_chunk;
-        FlushCurrentFile();
-        ftruncate(fd_, offset_end_);
-        lseek(fd_, 0, SEEK_END);
+        LOG_TRACE("StorageEngine::ProcessingLoopData()", "BEFORE fileid_ %u", fileid_);
+        FlushCurrentFile(0, order.size_value - order.size_chunk);
+        //offset_end_ += order.size_value - order.size_chunk;
+        //FlushCurrentFile();
+        //ftruncate(fd_, offset_end_);
+        //lseek(fd_, 0, SEEK_END);
+        LOG_TRACE("StorageEngine::ProcessingLoopData()", "AFTER fileid_ %u", fileid_);
       }
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "Put [%s]", order.key);
     } else { // order.type == OrderType::Remove
@@ -200,7 +211,7 @@ class LogfileManager {
 
       if (offset_end_ > size_block_) {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "About to flush - offset_end_: %llu | size_key: %d | size_value: %d | size_block_: %llu", offset_end_, order.size_key, order.size_value, size_block_);
-        FlushCurrentFile(true);
+        FlushCurrentFile(true, 0);
       }
 
       // NOTE: orders can be of various sizes: when using the storage engine as an
@@ -246,7 +257,7 @@ class LogfileManager {
 
     }
     LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "end flush");
-    FlushCurrentFile();
+    FlushCurrentFile(0, 0);
   }
 
  private:
