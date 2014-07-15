@@ -201,18 +201,20 @@ void NetworkTask::Run(std::thread::id tid) {
       }
 
       //LOG_TRACE("NetworkTask", "buffer [%s]", buffer);
-      LOG_TRACE("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key, bytes_received_buffer, bytes_received_total, bytes_expected, size_chunk);
-      Status s = db_->PutChunk(key,
-                               size_key,
-                               chunk,
-                               size_chunk,
-                               offset_chunk,
-                               size_value,
-                               buffer);
-      if (!s.IsOK()) {
-        LOG_TRACE("NetworkTask", "Error - Put(): %s", s.ToString().c_str());
-      } else {
-        buffer = nullptr;
+      if (size_chunk > 0) {
+        LOG_TRACE("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key, bytes_received_buffer, bytes_received_total, bytes_expected, size_chunk);
+        Status s = db_->PutChunk(key,
+                                 size_key,
+                                 chunk,
+                                 size_chunk,
+                                 offset_chunk,
+                                 size_value,
+                                 buffer);
+        if (!s.IsOK()) {
+          LOG_TRACE("NetworkTask", "Error - Put(): %s", s.ToString().c_str());
+        } else {
+          buffer = nullptr;
+        }
       }
 
       if (bytes_received_total == bytes_expected) {
