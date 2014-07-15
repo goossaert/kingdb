@@ -6,6 +6,7 @@
 #include <sstream>
 #include <vector>
 #include <stdlib.h>
+#include <random>
 #include <libmemcached/memcached.hpp>
 #include "murmurhash3.h"
 
@@ -124,12 +125,17 @@ class ClientTask: public Task {
     std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
     Status s;
 
-    srand(0);
+
+
+    std::seed_seq seq{1, 2, 3, 4, 5};
+    std::mt19937 generator(seq);
+    std::uniform_int_distribution<int> random_dist(1, 32*1024);
+
     for (auto i = 0; i < num_items_; i++) {
       std::stringstream ss;
       ss << tid << "-" << i;
       std::string key = ss.str();
-      int size_value = rand() % (32*1024) + 1;
+      int size_value = random_dist(generator);
       char *value = MakeValue(key, size_value);
 
       s = client.Set(ss.str().c_str(), ss.str().size(), value, size_value);
@@ -138,12 +144,14 @@ class ClientTask: public Task {
       delete[] value;
     }
 
-    srand(0);
+    std::mt19937 generator2(seq);
+    std::uniform_int_distribution<int> random_dist2(1, 32*1024);
+
     for (auto i = 0; i < num_items_; i++) {
       std::stringstream ss;
       ss << tid << "-" << i;
       std::string key = ss.str();
-      int size_value = rand() % (32*1024) + 1;
+      int size_value = random_dist2(generator2);
 
       char *value;
       int size_value_get;
@@ -171,7 +179,48 @@ class ClientTask: public Task {
   }
 
 
+
+  // TODO: make sure that everything works fine even with non-ascii data:
+  // use the hashes from MakeValue2() instead of the hashes from MakeValue()
   char* MakeValue(const std::string& key, int size_value) {
+    int size_key = key.size();
+    char *str = new char[size_value+1];
+    str[size_value] = '\0';
+    int i = 0;
+    for (i = 0; i < size_value / size_key; i++) {
+      memcpy(str + i*size_key, key.c_str(), size_key);
+    }
+    if (size_value % size_key != 0) {
+      memcpy(str + i*size_key, key.c_str(), size_value % size_key);
+    }
+    return str;
+  }
+
+  int VerifyValue(const std::string& key, int size_value, const char* value) {
+    int size_key = key.size();
+    int i = 0;
+    for (i = 0; i < size_value / size_key; i++) {
+      if (memcmp(value + i*size_key, key.c_str(), size_key)) {
+        std::string value2(value, size_value);
+        printf("diff key:[%s], value:[%s]\n", key.c_str(), value2.c_str());
+        return -1;
+      }
+    }
+    if (size_value % size_key != 0) {
+      if (memcmp(value + i*size_key, key.c_str(), size_value % size_key)) {
+        return -1; 
+      }
+    }
+    return 0;
+  }
+
+
+
+
+
+
+
+  char* MakeValue2(const std::string& key, int size_value) {
     static char hash[16];
     MurmurHash3_x64_128(key.c_str(), key.size(), 0, hash);
     char *str = new char[size_value+1];
@@ -186,12 +235,15 @@ class ClientTask: public Task {
     return str;
   }
 
-  int VerifyValue(const std::string& key, int size_value, const char* value) {
+  int VerifyValue2(const std::string& key, int size_value, const char* value) {
     static char hash[16];
     MurmurHash3_x64_128(key.c_str(), key.size(), 0, hash);
     int i = 0;
     for (i = 0; i < size_value / 16; i++) {
       if (memcmp(value + i*16, hash, 16)) {
+        std::string hash2(hash, 16);
+        std::string value2(value, size_value);
+        printf("diff key:[%s], hash:[%s] value:[%s]\n", key.c_str(), hash2.c_str(), value2.c_str());
         return -1;
       }
     }
