@@ -164,12 +164,15 @@ Status BufferManager::WriteChunk(const OrderType& op,
   if (sizes_[im_live_] > buffer_size_ || force_swap_) {
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
     if (can_swap_) {
-      can_swap_ = false;
-      force_swap_ = false;
+      LOG_TRACE("BufferManager", "can_swap_ == true");
       std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
       LOG_TRACE("BufferManager", "Swap buffers");
+      can_swap_ = false;
+      force_swap_ = false;
       std::swap(im_live_, im_copy_);
       cv_flush_.notify_one();
+    } else {
+      LOG_TRACE("BufferManager", "can_swap_ == false");
     }
   }
   return Status::OK();
@@ -182,6 +185,7 @@ void BufferManager::ProcessingLoop() {
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
     if (sizes_[im_copy_] == 0) {
       LOG_TRACE("BufferManager", "ProcessingLoop() - wait");
+      can_swap_ = true;
       cv_flush_.wait(lock_flush);
     }
   
