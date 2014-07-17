@@ -7,6 +7,7 @@
 #include <vector>
 #include <stdlib.h>
 #include <random>
+#include <chrono>
 #include <libmemcached/memcached.hpp>
 #include "murmurhash3.h"
 
@@ -127,9 +128,9 @@ class ClientTask: public Task {
 
 
 
-    std::seed_seq seq{1, 2, 3, 4, 5};
+    std::seed_seq seq{1, 2, 3, 4, 5, 6, 7};
     std::mt19937 generator(seq);
-    std::uniform_int_distribution<int> random_dist(1, 32*1024);
+    std::uniform_int_distribution<int> random_dist(256*1024, 512*1024);
 
     for (auto i = 0; i < num_items_; i++) {
       std::stringstream ss;
@@ -139,13 +140,13 @@ class ClientTask: public Task {
       char *value = MakeValue(key, size_value);
 
       s = client.Set(ss.str().c_str(), ss.str().size(), value, size_value);
-      LOG_TRACE("ClientTask", "Set(%s): [%s]", ss.str().c_str(), s.ToString().c_str());
+      LOG_DEBUG("ClientTask", "Set(%s, size:%llu) - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
       keys_added.push_back(ss.str());
       delete[] value;
     }
 
     std::mt19937 generator2(seq);
-    std::uniform_int_distribution<int> random_dist2(1, 32*1024);
+    std::uniform_int_distribution<int> random_dist2(256*1024, 512*1024);
 
     for (auto i = 0; i < num_items_; i++) {
       std::stringstream ss;
@@ -153,22 +154,29 @@ class ClientTask: public Task {
       std::string key = ss.str();
       int size_value = random_dist2(generator2);
 
-      char *value;
+      char *value = nullptr;
       int size_value_get;
-      s = client.Get(key, &value, &size_value_get);
-      if (!s.IsOK()) {
-        fprintf(stderr, "Error for key [%s]: %s\n", key.c_str(), s.ToString().c_str());
-      } else {
-        if (size_value != size_value_get) {
-          fprintf(stderr, "Found error in sizes for %s: [%d] [%d]\n", key.c_str(), size_value, size_value_get); 
+      for (auto retry = 0; retry < 3; retry++) {
+        s = client.Get(key, &value, &size_value_get);
+        if (!s.IsOK()) {
+          fprintf(stderr, "Get() Error for key [%s]: %s\n", key.c_str(), s.ToString().c_str());
         } else {
-          int ret = VerifyValue(key, size_value, value);
-          if (ret < 0) {
-            fprintf(stderr, "Found error in content for %s\n", key.c_str());
+          if (size_value != size_value_get) {
+            fprintf(stderr, "Found error in sizes for %s: [%d] [%d]\n", key.c_str(), size_value, size_value_get); 
           } else {
-            fprintf(stderr, "Verified %s\n", key.c_str());
+            int ret = VerifyValue(key, size_value, value);
+            if (ret < 0) {
+              fprintf(stderr, "Found error in content for %s\n", key.c_str());
+            } else {
+              fprintf(stderr, "Verified %s\n", key.c_str());
+              retry = 3;
+            }
           }
         }
+        if (retry == 3) break;
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+        fprintf(stderr, "retry key: [%s]\n", key.c_str());
       }
       delete[] value;
     }
