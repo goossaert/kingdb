@@ -134,6 +134,7 @@ Status BufferManager::WriteChunk(const OrderType& op,
   }
   sizes_[im_live_] += size_chunk;
 
+  /*
   if (buffers_[im_live_].size()) {
     for(auto &p: buffers_[im_live_]) {   
       LOG_TRACE("BufferManager", "Write() ITEM key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key, p.size_chunk, p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
@@ -141,6 +142,7 @@ Status BufferManager::WriteChunk(const OrderType& op,
   } else {
     LOG_TRACE("BufferManager", "Write() ITEM no buffers_[im_live_]");
   }
+  */
 
   // NOTE: With multi-chunk entries, the last chunks may get stuck in the
   //       buffers without being flushed to secondary storage, and the storage
@@ -213,6 +215,7 @@ void BufferManager::ProcessingLoop() {
     sizes_[im_copy_] = 0;
     buffers_[im_copy_].clear();
 
+    /*
     if (buffers_[im_copy_].size()) {
       for(auto &p: buffers_[im_copy_]) {
         LOG_TRACE("BufferManager", "ProcessingLoop() ITEM im_copy - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key, p.key, p.size_chunk, p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
@@ -228,6 +231,7 @@ void BufferManager::ProcessingLoop() {
     } else {
       LOG_TRACE("BufferManager", "ProcessingLoop() ITEM no buffers_[im_live_]");
     }
+    */
 
     can_swap_ = true;
     mutex_copy_write_level4_.unlock();
