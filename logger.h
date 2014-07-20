@@ -25,19 +25,19 @@ class Logger {
   virtual ~Logger() { }
 
   // Write an entry to the log file with the specified format.
-  static void Logv(int level, const char* logname, const char* format, ...) {
+  static void Logv(bool thread_safe, int level, const char* logname, const char* format, ...) {
     if (level>current_level()) return;
     va_list args;
     va_start(args, format);
     /*
     */
-    mutex_.lock();
+    if (thread_safe) mutex_.lock();
     std::cerr << "[" << std::setw(16) << std::this_thread::get_id() << "] - ";
     std::cerr << logname << " - ";
     vfprintf(stderr, format, args);
     std::cerr << std::endl;
     va_end(args);
-    mutex_.unlock();
+    if (thread_safe) mutex_.unlock();
     //fprintf(stderr, format, ap); 
   }
 
@@ -63,15 +63,17 @@ class Logger {
 };
 
 
-#define LOG_EMERG(logname, fmt, ...) Logger::Logv(Logger::EMERG, logname, fmt, ##__VA_ARGS__)
-#define LOG_ALERT(logname, fmt, ...) Logger::Logv(Logger::ALERT, logname, fmt, ##__VA_ARGS__)
-#define LOG_CRIT(logname, fmt, ...) Logger::Logv(Logger::CRIT, logname, fmt, ##__VA_ARGS__)
-#define LOG_ERROR(logname, fmt, ...) Logger::Logv(Logger::ERROR, logname, fmt, ##__VA_ARGS__)
-#define LOG_WARN(logname, fmt, ...) Logger::Logv(Logger::WARN, logname, fmt, ##__VA_ARGS__)
-#define LOG_NOTICE(logname, fmt, ...) Logger::Logv(Logger::NOTICE, logname, fmt, ##__VA_ARGS__)
-#define LOG_INFO(logname, fmt, ...) Logger::Logv(Logger::INFO, logname, fmt, ##__VA_ARGS__)
-#define LOG_DEBUG(logname, fmt, ...) Logger::Logv(Logger::DEBUG, logname, fmt, ##__VA_ARGS__)
-#define LOG_TRACE(logname, fmt, ...) Logger::Logv(Logger::TRACE, logname, fmt, ##__VA_ARGS__)
+#define LOG_EMERG(logname, fmt, ...) Logger::Logv(false, Logger::EMERG, logname, fmt, ##__VA_ARGS__)
+#define LOG_ALERT(logname, fmt, ...) Logger::Logv(true, Logger::ALERT, logname, fmt, ##__VA_ARGS__)
+#define LOG_CRIT(logname, fmt, ...) Logger::Logv(true, Logger::CRIT, logname, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(logname, fmt, ...) Logger::Logv(true, Logger::ERROR, logname, fmt, ##__VA_ARGS__)
+#define LOG_WARN(logname, fmt, ...) Logger::Logv(true, Logger::WARN, logname, fmt, ##__VA_ARGS__)
+#define LOG_NOTICE(logname, fmt, ...) Logger::Logv(true, Logger::NOTICE, logname, fmt, ##__VA_ARGS__)
+#define LOG_INFO(logname, fmt, ...) Logger::Logv(true, Logger::INFO, logname, fmt, ##__VA_ARGS__)
+//#define LOG_DEBUG(logname, fmt, ...) Logger::Logv(true, Logger::DEBUG, logname, fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(logname, fmt, ...)
+//#define LOG_TRACE(logname, fmt, ...) Logger::Logv(true, Logger::TRACE, logname, fmt, ##__VA_ARGS__)
+#define LOG_TRACE(logname, fmt, ...)
 
 }
 
