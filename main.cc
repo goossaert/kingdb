@@ -2,12 +2,25 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
+#include <sys/resource.h>
 #include "server.h"
 #include "threadpool.h"
 
 void show_usage(char *program_name) {
   printf("Example: %s --db-name mydb --port 3490 --backlog 150 --num-threads 150\n", program_name);
 }
+
+void increase_limit_open_files() {
+  struct rlimit rl;
+  if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
+    rl.rlim_cur = OPEN_MAX;
+    if (setrlimit(RLIMIT_NOFILE, &rl) != 0) {
+      fprintf(stderr, "Could not increase the limit on open files for this process");
+    }
+  }
+}
+
+
 
 int main(int argc, char** argv) {
   if (argc == 1) {
@@ -20,6 +33,8 @@ int main(int argc, char** argv) {
     std::cerr << "Error: invalid number of arguments" << std::endl; 
     exit(-1);
   }
+
+  increase_limit_open_files();
 
   int port = 0;
   int backlog = 0;
