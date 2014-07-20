@@ -16,6 +16,7 @@
 #include <iostream>
 #include <iomanip>
 #include <cstdarg>
+#include <utility>
 
 namespace kdb {
 
@@ -24,13 +25,10 @@ class Logger {
   Logger(std::string name) { }
   virtual ~Logger() { }
 
-  // Write an entry to the log file with the specified format.
   static void Logv(bool thread_safe, int level, const char* logname, const char* format, ...) {
     if (level>current_level()) return;
     va_list args;
     va_start(args, format);
-    /*
-    */
     if (thread_safe) mutex_.lock();
     std::cerr << "[" << std::setw(16) << std::this_thread::get_id() << "] - ";
     std::cerr << logname << " - ";
@@ -38,13 +36,36 @@ class Logger {
     std::cerr << std::endl;
     va_end(args);
     if (thread_safe) mutex_.unlock();
-    //fprintf(stderr, format, ap); 
   }
 
-  //static int current_level() { return Logger::DEBUG; }
-  static int current_level() { return level; }
-  static void set_current_level( int l ) { level = l; }
-  static int level;
+  static int current_level() { return level_; }
+  static void set_current_level(int l) { level_ = l; }
+  static int set_current_level(const char* l_in) {
+    std::string l(l_in);
+    std::transform(l.begin(), l.end(), l.begin(), ::tolower);
+    if (l == "emerg") {
+      set_current_level(EMERG);
+    } else if (l == "alert") {
+      set_current_level(ALERT);
+    } else if (l == "crit") {
+      set_current_level(CRIT);
+    } else if (l == "error") {
+      set_current_level(ERROR);
+    } else if (l == "warn") {
+      set_current_level(WARN);
+    } else if (l == "notice") {
+      set_current_level(NOTICE);
+    } else if (l == "info") {
+      set_current_level(INFO);
+    } else if (l == "debug") {
+      set_current_level(DEBUG);
+    } else if (l == "trace") {
+      set_current_level(TRACE);
+    } else {
+      return -1;
+    }
+    return 0;
+  }
 
   enum Loglevel {
     EMERG=0,
@@ -59,6 +80,7 @@ class Logger {
   };
 
  private:
+  static int level_;
   static std::mutex mutex_;
 };
 
@@ -71,9 +93,7 @@ class Logger {
 #define LOG_NOTICE(logname, fmt, ...) Logger::Logv(true, Logger::NOTICE, logname, fmt, ##__VA_ARGS__)
 #define LOG_INFO(logname, fmt, ...) Logger::Logv(true, Logger::INFO, logname, fmt, ##__VA_ARGS__)
 #define LOG_DEBUG(logname, fmt, ...) Logger::Logv(true, Logger::DEBUG, logname, fmt, ##__VA_ARGS__)
-//#define LOG_DEBUG(logname, fmt, ...)
 #define LOG_TRACE(logname, fmt, ...) Logger::Logv(true, Logger::TRACE, logname, fmt, ##__VA_ARGS__)
-//#define LOG_TRACE(logname, fmt, ...)
 
 }
 

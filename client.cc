@@ -356,6 +356,11 @@ int main(int argc, char **argv) {
         num_items = atoi(argv[i+1]);
       } else if (strcmp(argv[i], "--num-threads" ) == 0) {
         num_threads = atoi(argv[i+1]);
+      } else if (strcmp(argv[i], "--log-level" ) == 0) {
+        if (kdb::Logger::set_current_level(argv[i+1]) < 0 ) {
+          fprintf(stderr, "Unknown log level: [%s]\n", argv[i+1]);
+          exit(-1); 
+        }
       } else {
         fprintf(stderr, "Unknown parameter [%s]\n", argv[i]);
         exit(-1); 
