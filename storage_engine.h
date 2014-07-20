@@ -45,8 +45,7 @@ class LogfileManager {
   void OpenNewFile() {
     filepath_ = dbname_ + "/" + std::to_string(sequence_fileid_); // TODO: optimize here
     if ((fd_ = open(filepath_.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-      std::string msg = std::string("Count not open file [") + filepath_ + std::string("]");
-      LOG_TRACE("StorageEngine::ProcessingLoopData()", "%s: %s", msg.c_str(), strerror(errno));
+      LOG_EMERG("StorageEngine::ProcessingLoopData()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
       exit(-1); // TODO: gracefully open() errors
     }
     has_file_ = true;
@@ -103,8 +102,7 @@ class LogfileManager {
     LOG_TRACE("LogfileManager::PrepareFileLargeOrder()", "enter %s", filepath.c_str());
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-      std::string msg = std::string("Count not open file [") + filepath + std::string("]");
-      LOG_TRACE("StorageEngine::PrepareFileLargeOrder()", "%s: %s", msg.c_str(), strerror(errno));
+      LOG_EMERG("StorageEngine::PrepareFileLargeOrder()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
       exit(-1); // TODO: gracefully open() errors
     }
 
@@ -145,8 +143,7 @@ class LogfileManager {
     LOG_TRACE("LogfileManager::WriteChunk()", "key [%s] filepath:[%s] offset_chunk:%llu", order.key, filepath.c_str(), order.offset_chunk);
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
-      std::string msg = std::string("Count not open file [") + filepath + std::string("]");
-      LOG_TRACE("StorageEngine::WriteChunk()", "%s: %s", msg.c_str(), strerror(errno));
+      LOG_EMERG("StorageEngine::WriteChunk()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
       exit(-1); // TODO: gracefully open() errors
     }
 
@@ -220,7 +217,7 @@ class LogfileManager {
 
       // 1. The order is the first chunk of a very large entry, so we
       //    create a very large file and write the first chunk in there
-      uint64_t location;
+      uint64_t location = 0;
       if (   order.size_key + order.size_value > size_block_
           && order.offset_chunk == 0) {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "1. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key, order.size_chunk, order.offset_chunk);
@@ -230,8 +227,13 @@ class LogfileManager {
       } else if (   order.size_chunk != order.size_value
                  && order.offset_chunk != 0) {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "2. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key, order.size_chunk, order.offset_chunk);
-        WriteChunk(order, key_to_location[order.key]);
         location = key_to_location[order.key];
+        if (location != 0) {
+          WriteChunk(order, key_to_location[order.key]);
+        } else {
+          LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
+        }
+
       // 3. The order is the first chunk of a small or self-contained entry
       } else {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "3. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key, order.size_chunk, order.offset_chunk);
@@ -243,16 +245,26 @@ class LogfileManager {
       // to the output map_index_out[]
       if (order.offset_chunk + order.size_chunk == order.size_value) {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%llu offset_chunk: %llu location:%llu", order.key, order.size_chunk, order.offset_chunk, location);
-        map_index_out[order.key] = location;
+        if (location != 0) {
+          map_index_out[order.key] = location;
+        } else {
+          LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
+        }
         key_to_location.erase(order.key);
         if (order.buffer_to_delete != nullptr) {
+          // TODO: replace this buffer deletion hack with just
+          //       a straight RAII struct/class
           delete[] order.key;
           delete[] order.buffer_to_delete;
         }
       // Else, if the order is not self-contained and is the fisrt chunk,
       // the location is saved in key_to_location[]
       } else if (order.offset_chunk == 0) {
-        key_to_location[order.key] = location;
+        if (location != 0) {
+          key_to_location[order.key] = location;
+        } else {
+          LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
+        }
       }
 
     }
@@ -277,6 +289,10 @@ class LogfileManager {
   // TODO: make accessors for file_sizes that are protected by a mutex
   std::map<uint32_t, uint64_t> file_sizes; // fileid to file size
   std::map<std::string, uint64_t> key_to_location;
+  // TODO: make sure that the case where two writers simultaneously write entries with the same key is taken 
+  //       into account -- add thread id in the key of key_to_location?
+  // TODO: make sure that the writes that fail gets all their temporary data
+  // cleaned up (including whatever is in key_to_location)
 };
 
 
@@ -301,11 +317,11 @@ class StorageEngine {
    
       // Wait for orders to process
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "start");
-      std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
+      //std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
       std::vector<Order> orders = EventManager::flush_buffer.Wait();     
-      std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
-      uint64_t duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-      std::cout << "buffer read from storage engine in " << duration << " ms" << std::endl;
+      //std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
+      //uint64_t duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+      //std::cout << "buffer read from storage engine in " << duration << " ms" << std::endl;
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "got %d orders", orders.size());
 
       // Wait for readers to exit
@@ -372,7 +388,6 @@ class StorageEngine {
   }
 
 
-
   // NOTE: key_out and value_out must be deleted by the caller
   Status GetEntry(uint64_t offset, std::string **key_out, Value **value_out) {
     LOG_TRACE("StorageEngine::GetEntry()", "start");
@@ -395,7 +410,7 @@ class StorageEngine {
     *value_out = new ValueMmap(filepath,
                                filesize,
                                offset_file);
-    LOG_TRACE("StorageEngine::GetEntry()", "std::string: success");
+    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out");
 
     mutex_read_.lock();
     num_readers_ -= 1;
