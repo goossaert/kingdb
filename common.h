@@ -63,17 +63,19 @@ class Value {
 };
 
 
+
+
 class ValueMmap: public Value {
  public:
   ValueMmap(std::string filepath, int filesize, uint64_t offset) {
+    filename_debug_ = filepath;
     filesize_ = filesize;
     if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
-      std::string msg = std::string("Count not open file [") + filepath + std::string("]");
-      LOG_TRACE("ValueMmap()::ctor()", "%s", msg.c_str());
+      LOG_EMERG("ValueMmap::ctor()", "Could not open file [%s]", filepath.c_str());
       //return Status::IOError(msg, strerror(errno));
     }
 
-    LOG_TRACE("StorageEngine::GetEntry()", "open file: ok");
+    LOG_TRACE("ValueMmap::ctor()", "Open file OK: [%s]", filepath.c_str());
 
     datafile_ = static_cast<char*>(mmap(0,
                                        filesize, 
@@ -83,24 +85,28 @@ class ValueMmap: public Value {
                                        0));
     if (datafile_ == MAP_FAILED) {
       //return Status::IOError("Could not mmap() file", strerror(errno));
-      LOG_TRACE("Could not mmap() file: %s", strerror(errno));
+      LOG_EMERG("ValueMmap::ctor()", "Could not mmap() file: [%s] - %s", filepath.c_str(), strerror(errno));
       exit(-1);
     }
 
     struct Entry* entry = reinterpret_cast<struct Entry*>(datafile_ + offset);
-    LOG_TRACE("ValueMMap::ctor()", "size_key:%llu size_value:%llu", entry->size_key, entry->size_value);
-    data = datafile_ + offset + sizeof(struct Entry) + entry->size_key;
+    //LOG_EMERG("ValueMmap::ctor()", "file:[%s] size_key:%llu size_value:%llu, offset:%llu filesize:%llu datafile_:[%p]", filepath.c_str(), entry->size_key, entry->size_value, offset, filesize, datafile_);
     size = entry->size_value;
+    if (offset + sizeof(struct Entry) + entry->size_key + entry->size_key > filesize) {
+      LOG_EMERG("ValueMmap::ctor()", "ERROR: read out of the allowed memory space\n"); 
+    }
+    data = datafile_ + offset + sizeof(struct Entry) + entry->size_key;
   }
 
   virtual ~ValueMmap() {
-    munmap(data, filesize_);
+    munmap(datafile_, filesize_);
     close(fd_);
   }
  private:
   int fd_;
   int filesize_;
   char *datafile_;
+  std::string filename_debug_;
 };
 
 
