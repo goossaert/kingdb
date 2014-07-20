@@ -18,11 +18,15 @@ Status BufferManager::Get(const std::string& key, Value** value_out) {
 
   // read the "live" buffer
   mutex_live_write_level1_.lock();
+  LOG_DEBUG("LOCK", "1 lock");
   mutex_indices_level3_.lock();
+  LOG_DEBUG("LOCK", "3 lock");
   auto& buffer_live = buffers_[im_live_];
   int num_items = buffer_live.size();
   mutex_indices_level3_.unlock();
+  LOG_DEBUG("LOCK", "3 unlock");
   mutex_live_write_level1_.unlock();
+  LOG_DEBUG("LOCK", "1 unlock");
   bool found = false;
   Order order_found;
   for (int i = 0; i < num_items; i++) {
@@ -45,17 +49,23 @@ Status BufferManager::Get(const std::string& key, Value** value_out) {
   }
 
   // prepare to read the "copy" buffer
+  LOG_DEBUG("LOCK", "4 lock");
   mutex_copy_write_level4_.lock();
+  LOG_DEBUG("LOCK", "5 lock");
   mutex_copy_read_level5_.lock();
   num_readers_ += 1;
   mutex_copy_read_level5_.unlock();
+  LOG_DEBUG("LOCK", "5 unlock");
   mutex_copy_write_level4_.unlock();
+  LOG_DEBUG("LOCK", "5 unlock");
 
   // read from "copy" buffer
   found = false;
+  LOG_DEBUG("LOCK", "3 lock");
   mutex_indices_level3_.lock();
   auto& buffer_copy = buffers_[im_copy_];
   mutex_indices_level3_.unlock();
+  LOG_DEBUG("LOCK", "3 unlock");
   for (auto& order: buffer_copy) {
     if (order.key == key) {
       found = true;
@@ -64,9 +74,11 @@ Status BufferManager::Get(const std::string& key, Value** value_out) {
   }
 
   // exit the "copy" buffer
+  LOG_DEBUG("LOCK", "5 lock");
   mutex_copy_read_level5_.lock();
   num_readers_ -= 1;
   mutex_copy_read_level5_.unlock();
+  LOG_DEBUG("LOCK", "3 unlock");
   cv_read_.notify_one();
   if (   found
       && order_found.type == OrderType::Put
@@ -121,6 +133,7 @@ Status BufferManager::WriteChunk(const OrderType& op,
                                  uint64_t offset_chunk,
                                  uint64_t size_value,
                                  char * buffer_to_delete) {
+  LOG_DEBUG("LOCK", "1 lock");
   std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
   //if (key.size() + value.size() > buffer_size_) {
   //  return Status::InvalidArgument("Entry is too large.");
@@ -134,7 +147,6 @@ Status BufferManager::WriteChunk(const OrderType& op,
   }
   sizes_[im_live_] += size_chunk;
 
-  /*
   if (buffers_[im_live_].size()) {
     for(auto &p: buffers_[im_live_]) {   
       LOG_TRACE("BufferManager", "Write() ITEM key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key, p.size_chunk, p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
@@ -142,6 +154,7 @@ Status BufferManager::WriteChunk(const OrderType& op,
   } else {
     LOG_TRACE("BufferManager", "Write() ITEM no buffers_[im_live_]");
   }
+  /*
   */
 
   // NOTE: With multi-chunk entries, the last chunks may get stuck in the
@@ -164,19 +177,28 @@ Status BufferManager::WriteChunk(const OrderType& op,
   }
 
   if (sizes_[im_live_] > buffer_size_ || force_swap_) {
+    LOG_TRACE("BufferManager", "trying to swap");
+    LOG_DEBUG("LOCK", "2 lock");
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
     if (can_swap_) {
       LOG_TRACE("BufferManager", "can_swap_ == true");
+      LOG_DEBUG("LOCK", "3 lock");
       std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
       LOG_TRACE("BufferManager", "Swap buffers");
       can_swap_ = false;
       force_swap_ = false;
       std::swap(im_live_, im_copy_);
       cv_flush_.notify_one();
+      LOG_DEBUG("LOCK", "3 unlock");
     } else {
       LOG_TRACE("BufferManager", "can_swap_ == false");
     }
+    LOG_DEBUG("LOCK", "2 unlock");
+  } else {
+    LOG_TRACE("BufferManager", "will not swap");
   }
+
+  LOG_DEBUG("LOCK", "1 unlock");
   return Status::OK();
 }
 
@@ -184,6 +206,7 @@ Status BufferManager::WriteChunk(const OrderType& op,
 void BufferManager::ProcessingLoop() {
   while(true) {
     LOG_TRACE("BufferManager", "ProcessingLoop() - start");
+    LOG_DEBUG("LOCK", "2 lock");
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
     if (sizes_[im_copy_] == 0) {
       LOG_TRACE("BufferManager", "ProcessingLoop() - wait");
@@ -201,21 +224,21 @@ void BufferManager::ProcessingLoop() {
     EventManager::clear_buffer.Done();
     
     // Wait for readers
-    LOG_TRACE("BufferManager", "ProcessingLoop() - wait for lock 4");
+    LOG_DEBUG("LOCK", "4 lock");
     mutex_copy_write_level4_.lock();
-    LOG_TRACE("BufferManager", "ProcessingLoop() - got lock 4");
     while(true) {
+      LOG_DEBUG("LOCK", "5 lock");
       std::unique_lock<std::mutex> lock_read(mutex_copy_read_level5_);
       if (num_readers_ == 0) break;
-      LOG_TRACE("BufferManager", "ProcessingLoop() - wait for lock_read");
+      LOG_DEBUG("BufferManager", "ProcessingLoop() - wait for lock_read");
       cv_read_.wait(lock_read);
     }
+    LOG_DEBUG("LOCK", "5 unlock");
 
     // Clear flush buffer
     sizes_[im_copy_] = 0;
     buffers_[im_copy_].clear();
 
-    /*
     if (buffers_[im_copy_].size()) {
       for(auto &p: buffers_[im_copy_]) {
         LOG_TRACE("BufferManager", "ProcessingLoop() ITEM im_copy - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key, p.key, p.size_chunk, p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
@@ -231,10 +254,13 @@ void BufferManager::ProcessingLoop() {
     } else {
       LOG_TRACE("BufferManager", "ProcessingLoop() ITEM no buffers_[im_live_]");
     }
+    /*
     */
 
     can_swap_ = true;
     mutex_copy_write_level4_.unlock();
+    LOG_DEBUG("LOCK", "4 unlock");
+    LOG_DEBUG("LOCK", "2 unlock");
   }
 }
 
