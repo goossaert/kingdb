@@ -48,9 +48,9 @@ Status KingDB::PutChunk(const char* key,
 }
 
 
-Status KingDB::Remove(const std::string& key) {
-  LOG_TRACE("KingDB Remove()", "[%s]", key.c_str());
-  return bm_.Remove(key);
+Status KingDB::Remove(const char *key, uint64_t size_key, char * buffer_to_delete) {
+  LOG_TRACE("KingDB Remove()", "[%s]", key);
+  return bm_.Remove(key, size_key, nullptr);
 }
 
 };

@@ -11,6 +11,7 @@ void NetworkTask::Run(std::thread::id tid) {
   int bytes_received_last;
   std::regex regex_get {"get ([^\\s]*)"};
   std::regex regex_put {"set ([^\\s]*) \\d* \\d* (\\d*)\r\n"};
+  std::regex regex_remove {"delete ([^\\s]*)"};
 
   uint32_t bytes_received_buffer = 0;
   uint32_t bytes_received_total  = 0;
@@ -21,6 +22,7 @@ void NetworkTask::Run(std::thread::id tid) {
   bool is_new_buffer = true;
   bool is_command_get = false;
   bool is_command_put = false;
+  bool is_command_remove = false;
   char *buffer = nullptr;
   char *buffer_get = new char[SIZE_BUFFER_SEND];
   char *key = nullptr;
@@ -30,6 +32,7 @@ void NetworkTask::Run(std::thread::id tid) {
   //       pool of pre-allocated buffers
 
   while(true) {
+        
     // Receive the data
     LOG_TRACE("NetworkTask", "looping...");
     if (is_new) {
@@ -40,6 +43,7 @@ void NetworkTask::Run(std::thread::id tid) {
       offset_value = 0;
       is_command_get = false;
       is_command_put = false;
+      is_command_remove = false;
       key = new char[1024]; // will be deleted by the storage engine
       size_key = 0;
     }
@@ -68,6 +72,10 @@ void NetworkTask::Run(std::thread::id tid) {
 
     LOG_TRACE("NetworkTask", "recv()'d %d bytes of data in buf - bytes_expected:%d bytes_received_buffer:%d bytes_received_total:%d", bytes_received_last, bytes_expected, bytes_received_buffer, bytes_received_total);
 
+
+    // TODO: simplify the nested if-else blocks below to remove
+    //       indentation levels
+
     if (is_new) {
       
       // Determine command type
@@ -75,6 +83,9 @@ void NetworkTask::Run(std::thread::id tid) {
         is_command_get = true;
       } else if (strncmp(buffer, "set", 3) == 0) {
         is_command_put = true;
+      } else if (strncmp(buffer, "delete", 3) == 0) {
+        is_command_remove = true;
+        LOG_TRACE("NetworkTask", "got delete command");
       } else if (strncmp(buffer, "quit", 4) == 0) {
         break;
       }
@@ -148,7 +159,7 @@ void NetworkTask::Run(std::thread::id tid) {
         */
         // ------ TEMP
 
-        Value *value = nullptr; // TODO: beware, possible memory leak here
+        Value *value = nullptr; // TODO: beware, possible memory leak here -- value is not deleted in case of break
                                 // TODO: replace the pointer with a reference
                                 //       count
         Status s = db_->Get(matches[1], &value);
@@ -159,7 +170,6 @@ void NetworkTask::Run(std::thread::id tid) {
           strncpy(key, std::string(matches[1].str()).c_str(), size_key);
           key[size_key] = '\0';
           //sprintf(buffer_get, "VALUE %s 0 %llu\r\n%s\r\nEND\r\n", key, value->size, value->data);
-          std::string value_start(value->data, 2);
           sprintf(buffer_get, "VALUE %s 0 %llu\r\n", key, value->size);
           LOG_TRACE("NetworkTask", "GET: buffer_get [%s]", buffer_get);
           if (send(sockfd_, buffer_get, strlen(buffer_get), 0) == -1) {
@@ -186,6 +196,41 @@ void NetworkTask::Run(std::thread::id tid) {
         is_new_buffer = true;
         delete value;
         delete[] buffer;
+      } else {
+        LOG_EMERG("NetworkTask", "Could not match Get command");
+        break;
+      }
+          } else if (is_command_remove) {
+      std::smatch matches;
+      std::string str_buffer = buffer;
+      if (std::regex_search(str_buffer, matches, regex_remove)) {
+        size_key = matches[1].length();
+        // TODO: check size of key before strncpy()
+        char *key_remove = new char[size_key+1];
+        strncpy(key_remove, std::string(matches[1].str()).c_str(), size_key);
+        key_remove[size_key] = '\0';
+        //if (size_key >= 1 && key[size_key-1] == '\r') {
+        //  size_key -= 1;
+        //  key_remove[size_key] = '\0';
+        //}
+        Status s = db_->Remove(key_remove, size_key, key_remove);
+        if (s.IsOK()) {
+          // TODO: check for [noreply]
+          LOG_TRACE("NetworkTask", "REMOVE: ok");
+          if (send(sockfd_, "DELETED\r\n", 9, 0) == -1) {
+            LOG_EMERG("NetworkTask", "Error - send() %s", strerror(errno));
+            break;
+          }
+        } else {
+          LOG_EMERG("NetworkTask", "Remove() error: [%s]", s.ToString().c_str());
+          break;
+        }
+        is_new = true;
+        is_new_buffer = true;
+        delete[] buffer;
+      } else {
+        LOG_EMERG("NetworkTask", "Could not match Remove command");
+        break;
       }
     } else if (is_command_put) {
       char *chunk;

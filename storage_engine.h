@@ -245,7 +245,7 @@ class LogfileManager {
       // to the output map_index_out[]
       if (order.offset_chunk + order.size_chunk == order.size_value) {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%llu offset_chunk: %llu location:%llu", order.key, order.size_chunk, order.offset_chunk, location);
-        if (location != 0) {
+        if (location != 0 || order.type == OrderType::Remove) {
           map_index_out[order.key] = location;
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
@@ -349,22 +349,21 @@ class StorageEngine {
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "start");
       std::map<std::string, uint64_t> index_updates = EventManager::update_index.Wait();     
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "got index_updates");
-      //LOG_TRACE("INDEX", "WAIT: loop:mutex_index_");
       mutex_index_.lock();
+
       for (auto& p: index_updates) {
         if (p.second == 0) {
-          LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "erase [%s]", p.first.c_str());
+          LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "remove [%s] num_items_index [%d]", p.first.c_str(), index_.size());
           index_.erase(p.first);
         } else {
-          LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "add [%s]", p.first.c_str());
-          index_[p.first] = p.second; 
+          LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "put [%s]", p.first.c_str());
+          index_[p.first] = p.second;
         }
       }
       mutex_index_.unlock();
       EventManager::update_index.Done();
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "done");
       int temp = 1;
-      //LOG_TRACE("INDEX", "WAIT: loop:clear_buffer");
       EventManager::clear_buffer.StartAndBlockUntilDone(temp);
     }
   }

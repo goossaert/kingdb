@@ -5,6 +5,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <set>
 #include <stdlib.h>
 #include <random>
 #include <chrono>
@@ -77,7 +78,7 @@ class Client {
   }
 
 
-  Status Set(const std::string& key, const std::string& value) {
+  Status Put(const std::string& key, const std::string& value) {
     memcached_return_t rc = memcached_set(memc, key.c_str(), key.length(), value.c_str(), value.length(), (time_t)0, (uint32_t)0);
     if (rc != MEMCACHED_SUCCESS) {
       std::string msg = key + " " + memcached_strerror(memc, rc);
@@ -86,7 +87,7 @@ class Client {
     return Status::OK();
   }
 
-  Status Set(const char* key, uint64_t size_key, const char *value, uint64_t size_value) {
+  Status Put(const char* key, uint64_t size_key, const char *value, uint64_t size_value) {
     memcached_return_t rc = memcached_set(memc, key, size_key, value, size_value, (time_t)0, (uint32_t)0);
     if (rc != MEMCACHED_SUCCESS) {
       std::string msg = std::string(key) + " " + memcached_strerror(memc, rc);
@@ -94,6 +95,16 @@ class Client {
     }
     return Status::OK();
   }
+
+  Status Remove(const char* key, uint64_t size_key) {
+    memcached_return_t rc = memcached_delete(memc, key, size_key, (time_t)0);
+    if (rc != MEMCACHED_SUCCESS) {
+      std::string msg = std::string(key) + " " + memcached_strerror(memc, rc);
+      return Status::IOError(msg);
+    }
+    return Status::OK();
+  }
+
 
  private:
   memcached_st *memc;
@@ -139,19 +150,36 @@ class ClientTask: public Task {
       int size_value = random_dist(generator);
       char *value = MakeValue(key, size_value);
       for (auto retry = 0; retry < 3; retry++) {
-        s = client.Set(ss.str().c_str(), ss.str().size(), value, size_value);
+        s = client.Put(ss.str().c_str(), ss.str().size(), value, size_value);
         if (s.IsOK()) {
           retry = 3;
         } else {
-          LOG_INFO("ClientTask", "Set() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+          LOG_INFO("ClientTask", "Put() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
         }
         
         if (retry == 3) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10000));
         LOG_INFO("ClientTask", "retry key: [%s]", key.c_str());
       }
-      LOG_INFO("ClientTask", "Set(%s, size:%llu) - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
+      LOG_INFO("ClientTask", "Put(%s, size:%llu) - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
       delete[] value;
+    }
+
+
+
+    std::mt19937 generator_remove(seq);
+    std::uniform_int_distribution<int> random_dist_remove(256*1024, 512*1024);
+
+    for (auto i = 0; i < num_items_ / 2; i++) {
+      std::stringstream ss;
+      ss << tid << "-" << i;
+      std::string key = ss.str();
+      s = client.Remove(key.c_str(), key.size());
+      if (!s.IsOK()) {
+        LOG_INFO("ClientTask", "Remove() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+      } else {
+        keys_removed.insert(key);
+      }
     }
 
     std::mt19937 generator2(seq);
@@ -163,11 +191,22 @@ class ClientTask: public Task {
       std::string key = ss.str();
       int size_value = random_dist2(generator2);
 
+      auto it_find = keys_removed.find(key);
+      bool has_item = false;
+      if (it_find == keys_removed.end()) has_item = true; 
+
       char *value = nullptr;
       int size_value_get;
       for (auto retry = 0; retry < 3; retry++) {
         s = client.Get(key, &value, &size_value_get);
-        if (!s.IsOK()) {
+        if (!has_item) { 
+          if (s.IsNotFound()) {
+            LOG_INFO("ClientTask", "Get() OK for removed key [%s]: %s", key.c_str(), s.ToString().c_str());
+            retry = 3;
+          } else {
+            LOG_INFO("ClientTask", "Get() Error for removed key [%s]: %s", key.c_str(), s.ToString().c_str());
+          }
+        } else if (!s.IsOK()) {
           LOG_INFO("ClientTask", "Get() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
         } else {
           if (size_value != size_value_get) {
@@ -282,8 +321,7 @@ class ClientTask: public Task {
 
   std::string database_;
   int num_items_;
-  std::vector<std::string> keys_added;
-  std::vector<std::string> keys_removed;
+  std::set<std::string> keys_removed;
 };
 
 };

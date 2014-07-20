@@ -34,8 +34,10 @@ class KingDB: public Interface {
                           uint64_t size_chunk,
                           uint64_t offset_chunk,
                           uint64_t size_value,
-                          char * buffer_to_delete);
-  virtual Status Remove(const std::string& key) override;
+                          char * buffer_to_delete) override;
+  virtual Status Remove(const char *key,
+                        uint64_t size_key,
+                        char * buffer_to_delete) override;
 
  private:
   std::string dbname_;

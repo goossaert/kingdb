@@ -37,7 +37,9 @@ class BufferManager {
                   uint64_t offset_chunk,
                   uint64_t size_value,
                   char * buffer_to_delete);
-  Status Remove(const std::string& key);
+  Status Remove(const char *key,
+                uint64_t size_key,
+                char *buffer_to_delete);
 
  private:
   Status WriteChunk(const OrderType& op,

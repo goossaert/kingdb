@@ -70,10 +70,10 @@ class Logger {
 #define LOG_WARN(logname, fmt, ...) Logger::Logv(true, Logger::WARN, logname, fmt, ##__VA_ARGS__)
 #define LOG_NOTICE(logname, fmt, ...) Logger::Logv(true, Logger::NOTICE, logname, fmt, ##__VA_ARGS__)
 #define LOG_INFO(logname, fmt, ...) Logger::Logv(true, Logger::INFO, logname, fmt, ##__VA_ARGS__)
-//#define LOG_DEBUG(logname, fmt, ...) Logger::Logv(true, Logger::DEBUG, logname, fmt, ##__VA_ARGS__)
-#define LOG_DEBUG(logname, fmt, ...)
-//#define LOG_TRACE(logname, fmt, ...) Logger::Logv(true, Logger::TRACE, logname, fmt, ##__VA_ARGS__)
-#define LOG_TRACE(logname, fmt, ...)
+#define LOG_DEBUG(logname, fmt, ...) Logger::Logv(true, Logger::DEBUG, logname, fmt, ##__VA_ARGS__)
+//#define LOG_DEBUG(logname, fmt, ...)
+#define LOG_TRACE(logname, fmt, ...) Logger::Logv(true, Logger::TRACE, logname, fmt, ##__VA_ARGS__)
+//#define LOG_TRACE(logname, fmt, ...)
 
 }
 

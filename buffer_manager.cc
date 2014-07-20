@@ -37,6 +37,7 @@ Status BufferManager::Get(const std::string& key, Value** value_out) {
     }
   }
   if (found) {
+    LOG_DEBUG("BufferManager::Get()", "found in buffer_live");
     if (   order_found.type == OrderType::Put
         && order_found.size_chunk == order_found.size_value) {
       *value_out = new ValueAllocated(order_found.chunk, order_found.size_chunk);
@@ -80,6 +81,7 @@ Status BufferManager::Get(const std::string& key, Value** value_out) {
   mutex_copy_read_level5_.unlock();
   LOG_DEBUG("LOCK", "3 unlock");
   cv_read_.notify_one();
+  if (found) LOG_DEBUG("BufferManager::Get()", "found in buffer_copy");
   if (   found
       && order_found.type == OrderType::Put
       && order_found.size_chunk == order_found.size_value) {
@@ -120,8 +122,8 @@ Status BufferManager::PutChunk(const char* key,
 
 
 
-Status BufferManager::Remove(const std::string& key) {
-  return WriteChunk(OrderType::Remove, key.c_str(), key.size(), nullptr, 0, 0, 0, nullptr);
+Status BufferManager::Remove(const char *key, uint64_t size_key, char *buffer_to_delete) {
+  return WriteChunk(OrderType::Remove, key, size_key, nullptr, 0, 0, 0, buffer_to_delete);
 }
 
 
@@ -173,7 +175,12 @@ Status BufferManager::WriteChunk(const OrderType& op,
   //                needs to sleep for 100ms-ish and retry?
   if (   size_chunk + offset_chunk == size_value
       && offset_chunk > 0) {
-    force_swap_ = true; 
+    force_swap_ = true;
+  }
+
+  // test on size for debugging remove()
+  if (sizes_[im_live_] > 64) {
+    force_swap_ = true;
   }
 
   if (sizes_[im_live_] > buffer_size_ || force_swap_) {
