@@ -31,6 +31,7 @@ void NetworkTask::Run(std::thread::id tid) {
 
   while(true) {
     // Receive the data
+    LOG_TRACE("NetworkTask", "looping...");
     if (is_new) {
       LOG_TRACE("NetworkTask", "is_new");
       bytes_received_total = 0;
@@ -50,11 +51,16 @@ void NetworkTask::Run(std::thread::id tid) {
       LOG_TRACE("NetworkTask", "allocated");
     }
 
+
+    LOG_TRACE("NetworkTask", "Calling recv()");
     bytes_received_last = recv(sockfd_,
                                buffer + bytes_received_buffer,
                                SIZE_BUFFER_RECV - bytes_received_buffer,
                                0);
-    if (bytes_received_last <= 0) break;
+    if (bytes_received_last <= 0) {
+      LOG_TRACE("NetworkTask", "recv()'d 0 bytes: breaking");
+      break;
+    }
 
     bytes_received_buffer += bytes_received_last;
     bytes_received_total  += bytes_received_last;
@@ -90,7 +96,7 @@ void NetworkTask::Run(std::thread::id tid) {
           // +2: because of the final \r\n
         } else {
           // should never happen, keeping it here until fully tested
-          LOG_TRACE("NetworkTask", "Could not match put command [%s]", str_buffer.c_str());
+          LOG_EMERG("NetworkTask", "Could not match put command [%s]", str_buffer.c_str());
           exit(-1);
         }
       } else if (   bytes_received_last >= 2
@@ -99,7 +105,7 @@ void NetworkTask::Run(std::thread::id tid) {
         bytes_expected = bytes_received_last;
       } else {
         // should never happen, keeping it here until fully tested
-        LOG_TRACE("NetworkTask", "Don't know what to do with this new packet [%s]", buffer);
+        LOG_EMERG("NetworkTask", "Don't know what to do with this new packet [%s]", buffer);
         exit(-1);
       }
     }
@@ -112,9 +118,12 @@ void NetworkTask::Run(std::thread::id tid) {
         && bytes_received_buffer < SIZE_BUFFER_RECV) {
       // TODO: what if the \r\n is on the two last messages, i.e. \n is the
       // first character of the last message?
+      LOG_TRACE("NetworkTask", "force looping to get the rest of the data");
       is_new_buffer = false;
       continue;
     }
+
+    LOG_TRACE("NetworkTask", "not looping, storing current buffer");
 
     if (is_command_get) {
       std::smatch matches;
@@ -139,7 +148,9 @@ void NetworkTask::Run(std::thread::id tid) {
         */
         // ------ TEMP
 
-        Value *value; // beware, possible memory leak here
+        Value *value = nullptr; // TODO: beware, possible memory leak here
+                                // TODO: replace the pointer with a reference
+                                //       count
         Status s = db_->Get(matches[1], &value);
         if (s.IsOK()) {
           LOG_TRACE("NetworkTask", "GET: found");
@@ -160,20 +171,20 @@ void NetworkTask::Run(std::thread::id tid) {
             break;
           }
           if (send(sockfd_, "\r\nEND\r\n", 7, 0) == -1) {
-            LOG_TRACE("NetworkTask", "Error: send()", strerror(errno));
+            LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
             break;
           }
         } else {
           LOG_TRACE("NetworkTask", "GET: [%s]", s.ToString().c_str());
           std::string msg = "NOT_FOUND\r\n";
           if (send(sockfd_, msg.c_str(), msg.length(), 0) == -1) {
-            LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+            LOG_EMERG("NetworkTask", "Error: send() - %s", strerror(errno));
             break;
           }
         }
-        delete value;
         is_new = true;
         is_new_buffer = true;
+        delete value;
         delete[] buffer;
       }
     } else if (is_command_put) {
@@ -221,7 +232,7 @@ void NetworkTask::Run(std::thread::id tid) {
         is_new = true;
         LOG_TRACE("NetworkTask", "STORED key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu", key, bytes_received_buffer, bytes_received_total, bytes_expected);
         if (send(sockfd_, "STORED\r\n", 8, 0) == -1) {
-          LOG_TRACE("NetworkTask", "Error - send() %s", strerror(errno));
+          LOG_EMERG("NetworkTask", "Error - send() %s", strerror(errno));
           break;
         }
 
@@ -230,7 +241,7 @@ void NetworkTask::Run(std::thread::id tid) {
 
     } else {
       // for debugging
-      LOG_TRACE("NetworkTask", "Unknown case for buffer");
+      LOG_EMERG("NetworkTask", "Unknown case for buffer");
       exit(-1);
     }
 
@@ -238,8 +249,8 @@ void NetworkTask::Run(std::thread::id tid) {
   }
   LOG_TRACE("NetworkTask", "exit and close socket");
 
-  if (buffer != nullptr) delete[] buffer;
-  if (buffer_get != nullptr) delete[] buffer_get;
+  delete[] buffer;
+  delete[] buffer_get;
   close(sockfd_);
 }
 
