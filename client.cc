@@ -138,10 +138,19 @@ class ClientTask: public Task {
       std::string key = ss.str();
       int size_value = random_dist(generator);
       char *value = MakeValue(key, size_value);
-
-      s = client.Set(ss.str().c_str(), ss.str().size(), value, size_value);
-      LOG_DEBUG("ClientTask", "Set(%s, size:%llu) - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
-      keys_added.push_back(ss.str());
+      for (auto retry = 0; retry < 3; retry++) {
+        s = client.Set(ss.str().c_str(), ss.str().size(), value, size_value);
+        if (s.IsOK()) {
+          retry = 3;
+        } else {
+          LOG_INFO("ClientTask", "Set() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+        }
+        
+        if (retry == 3) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10000));
+        LOG_INFO("ClientTask", "retry key: [%s]", key.c_str());
+      }
+      LOG_INFO("ClientTask", "Set(%s, size:%llu) - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
       delete[] value;
     }
 
@@ -159,31 +168,34 @@ class ClientTask: public Task {
       for (auto retry = 0; retry < 3; retry++) {
         s = client.Get(key, &value, &size_value_get);
         if (!s.IsOK()) {
-          fprintf(stderr, "Get() Error for key [%s]: %s\n", key.c_str(), s.ToString().c_str());
+          LOG_INFO("ClientTask", "Get() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
         } else {
           if (size_value != size_value_get) {
-            fprintf(stderr, "Found error in sizes for %s: [%d] [%d]\n", key.c_str(), size_value, size_value_get); 
+            LOG_INFO("ClientTask", "Found error in sizes for %s: [%d] [%d]", key.c_str(), size_value, size_value_get); 
           } else {
             int ret = VerifyValue(key, size_value, value);
             if (ret < 0) {
-              fprintf(stderr, "Found error in content for %s\n", key.c_str());
+              LOG_INFO("ClientTask", "Found error in content for key [%s]", key.c_str());
             } else {
-              fprintf(stderr, "Verified %s\n", key.c_str());
+              LOG_INFO("ClientTask", "Verified content of key [%s]", key.c_str());
               retry = 3;
             }
           }
         }
         if (retry == 3) break;
 
-        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-        fprintf(stderr, "retry key: [%s]\n", key.c_str());
+        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+        LOG_INFO("ClientTask", "retry key: [%s]", key.c_str());
       }
       delete[] value;
     }
 
+    std::stringstream ss;
     std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
     uint64_t duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-    std::cout << "Thread " << tid << ": done in " << duration << " ms" << std::endl;
+    ss << "Done in " << duration << " ms";
+    LOG_INFO("ClientTask", "%s", ss.str().c_str());
+    
     delete[] buffer_large;
   }
 
