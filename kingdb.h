@@ -14,6 +14,8 @@
 #include "storage_engine.h"
 #include "status.h"
 #include "common.h"
+#include "byte_array.h"
+
 
 namespace kdb {
 
@@ -26,7 +28,7 @@ class KingDB: public Interface {
   }
   virtual ~KingDB() {}
 
-  virtual Status Get(const std::string& key, Value** value_out) override;
+  virtual Status Get(const std::string& key, ByteArray** value_out) override;
   virtual Status Put(const std::string& key, const std::string& value) override;
   virtual Status PutChunk(const char* key,
                           uint64_t size_key,

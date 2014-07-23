@@ -9,7 +9,7 @@
 
 namespace kdb {
 
-Status BufferManager::Get(const std::string& key, Value** value_out) {
+Status BufferManager::Get(const std::string& key, ByteArray** value_out) {
   // TODO: need to fix the way the value is returned here: to create a new
   //       memory space and then return.
   // TODO: make sure the live buffer doesn't need to be protected by a mutex in
@@ -40,7 +40,7 @@ Status BufferManager::Get(const std::string& key, Value** value_out) {
     LOG_DEBUG("BufferManager::Get()", "found in buffer_live");
     if (   order_found.type == OrderType::Put
         && order_found.size_chunk == order_found.size_value) {
-      *value_out = new ValueAllocated(order_found.chunk, order_found.size_chunk);
+      *value_out = new AllocatedByteArray(order_found.chunk, order_found.size_chunk);
       return Status::OK();
     } else if (order_found.type == OrderType::Remove) {
       return Status::RemoveOrder("Unable to find entry");
@@ -85,7 +85,7 @@ Status BufferManager::Get(const std::string& key, Value** value_out) {
   if (   found
       && order_found.type == OrderType::Put
       && order_found.size_chunk == order_found.size_value) {
-    *value_out = new ValueAllocated(order_found.chunk, order_found.size_chunk);
+    *value_out = new AllocatedByteArray(order_found.chunk, order_found.size_chunk);
     return Status::OK();
   } else if (   found
              && order_found.type == OrderType::Remove) {

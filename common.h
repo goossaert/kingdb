@@ -14,7 +14,6 @@
 #include <string.h>
 
 #include "logger.h"
-#include <spawn.h>
 
 namespace kdb {
 
@@ -52,81 +51,6 @@ struct Metadata {
   uint64_t pointer_compaction;
 };
 
-
-
-class Value {
- public:
-  virtual ~Value() {}
-  char *data;
-  uint64_t size;
-
-};
-
-
-
-
-class ValueMmap: public Value {
- public:
-  ValueMmap(std::string filepath, int filesize, uint64_t offset) {
-    filename_debug_ = filepath;
-    filesize_ = filesize;
-    if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
-      LOG_EMERG("ValueMmap::ctor()", "Could not open file [%s]", filepath.c_str());
-      //return Status::IOError(msg, strerror(errno));
-    }
-
-    LOG_TRACE("ValueMmap::ctor()", "Open file OK: [%s]", filepath.c_str());
-
-    datafile_ = static_cast<char*>(mmap(0,
-                                       filesize, 
-                                       PROT_READ,
-                                       MAP_SHARED,
-                                       fd_,
-                                       0));
-    if (datafile_ == MAP_FAILED) {
-      //return Status::IOError("Could not mmap() file", strerror(errno));
-      LOG_EMERG("ValueMmap::ctor()", "Could not mmap() file: [%s] - %s", filepath.c_str(), strerror(errno));
-      exit(-1);
-    }
-
-    struct Entry* entry = reinterpret_cast<struct Entry*>(datafile_ + offset);
-    //LOG_EMERG("ValueMmap::ctor()", "file:[%s] size_key:%llu size_value:%llu, offset:%llu filesize:%llu datafile_:[%p]", filepath.c_str(), entry->size_key, entry->size_value, offset, filesize, datafile_);
-    size = entry->size_value;
-    if (offset + sizeof(struct Entry) + entry->size_key + entry->size_key > filesize) {
-      LOG_EMERG("ValueMmap::ctor()", "ERROR: read out of the allowed memory space\n"); 
-    }
-    data = datafile_ + offset + sizeof(struct Entry) + entry->size_key;
-  }
-
-  virtual ~ValueMmap() {
-    munmap(datafile_, filesize_);
-    close(fd_);
-  }
- private:
-  int fd_;
-  int filesize_;
-  char *datafile_;
-  std::string filename_debug_;
-};
-
-
-class ValueAllocated: public Value {
- public:
-  ValueAllocated(const char* data_in, uint64_t size_in) {
-    size = size_in;
-    data = new char[size+1];
-    strncpy(data, data_in, size);
-    data[size] = '\0';
-  }
-  virtual ~ValueAllocated() {
-    delete[] data;
-  }
-};
-
-
-
-
 }
-
 
 #endif // KINGDB_COMMON_H_

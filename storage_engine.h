@@ -20,6 +20,8 @@
 
 #include "kdb.h"
 #include "common.h"
+#include "byte_array.h"
+
 
 namespace kdb {
 
@@ -369,15 +371,15 @@ class StorageEngine {
   }
 
   // NOTE: value_out must be deleled by the caller
-  Status Get(const std::string& key, Value **value_out) {
+  Status Get(const std::string& key, ByteArray **value_out) {
     //LOG_TRACE("INDEX", "WAIT: Get()-mutex_index_");
     std::unique_lock<std::mutex> lock(mutex_index_);
     LOG_TRACE("StorageEngine::Get()", "%s", key.c_str());
     auto p = index_.find(key);
     if (p != index_.end()) {
-      std::string *key_temp;
+      ByteArray *key_temp;
       Status s = GetEntry(index_[key], &key_temp, value_out); 
-      LOG_TRACE("StorageEngine::Get()", "key:[%s] key_temp:[%s]", key.c_str(), key_temp->c_str());
+      LOG_TRACE("StorageEngine::Get()", "key:[%s] key_temp:[%s]", key.c_str(), key_temp->ToString().c_str());
       delete key_temp;
       return s;
       //return Status::OK();
@@ -388,7 +390,7 @@ class StorageEngine {
 
 
   // NOTE: key_out and value_out must be deleted by the caller
-  Status GetEntry(uint64_t offset, std::string **key_out, Value **value_out) {
+  Status GetEntry(uint64_t offset, ByteArray **key_out, ByteArray **value_out) {
     LOG_TRACE("StorageEngine::GetEntry()", "start");
     Status s = Status::OK();
 
@@ -405,10 +407,17 @@ class StorageEngine {
     LOG_TRACE("StorageEngine::GetEntry()", "fileid:%u offset_file:%u filesize:%llu", fileid, offset_file, filesize);
     std::string filepath = dbname_ + "/" + std::to_string(fileid); // TODO: optimize here
 
-    *key_out   = new std::string("key-disabled");
-    *value_out = new ValueMmap(filepath,
-                               filesize,
-                               offset_file);
+    //*key_out   = new std::string("key-disabled");
+    auto value_temp = new SharedMmappedByteArray(filepath,
+                                                 filesize);
+
+    auto key_temp = new SharedMmappedByteArray();
+    *key_temp = *value_temp;
+
+    struct Entry* entry = reinterpret_cast<struct Entry*>(value_temp->datafile() + offset_file);
+    key_temp->SetOffset(offset_file + sizeof(struct Entry), entry->size_key);
+    value_temp->SetOffset(offset_file + sizeof(struct Entry) + entry->size_key, entry->size_value);
+
     LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out");
 
     mutex_read_.lock();
@@ -416,6 +425,8 @@ class StorageEngine {
     LOG_TRACE("GetEntry()", "num_readers_: %d", num_readers_);
     mutex_read_.unlock();
     cv_read_.notify_one();
+    *key_out = key_temp;
+    *value_out = value_temp;
     return s;
   }
 

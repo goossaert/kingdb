@@ -159,7 +159,7 @@ void NetworkTask::Run(std::thread::id tid) {
         */
         // ------ TEMP
 
-        Value *value = nullptr; // TODO: beware, possible memory leak here -- value is not deleted in case of break
+        ByteArray *value = nullptr; // TODO: beware, possible memory leak here -- value is not deleted in case of break
                                 // TODO: replace the pointer with a reference
                                 //       count
         Status s = db_->Get(matches[1], &value);
@@ -170,13 +170,13 @@ void NetworkTask::Run(std::thread::id tid) {
           strncpy(key, std::string(matches[1].str()).c_str(), size_key);
           key[size_key] = '\0';
           //sprintf(buffer_get, "VALUE %s 0 %llu\r\n%s\r\nEND\r\n", key, value->size, value->data);
-          sprintf(buffer_get, "VALUE %s 0 %llu\r\n", key, value->size);
+          sprintf(buffer_get, "VALUE %s 0 %llu\r\n", key, value->size());
           LOG_TRACE("NetworkTask", "GET: buffer_get [%s]", buffer_get);
           if (send(sockfd_, buffer_get, strlen(buffer_get), 0) == -1) {
             LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
             break;
           }
-          if (send(sockfd_, value->data, value->size, 0) == -1) {
+          if (send(sockfd_, value->data(), value->size(), 0) == -1) {
             LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
             break;
           }

@@ -6,7 +6,7 @@
 
 namespace kdb {
 
-Status KingDB::Get(const std::string& key, Value** value_out) {
+Status KingDB::Get(const std::string& key, ByteArray** value_out) {
   LOG_TRACE("KingDB Get()", "[%s]", key.c_str());
   Status s = bm_.Get(key, value_out);
   if (s.IsRemoveOrder()) {
@@ -29,6 +29,7 @@ Status KingDB::Get(const std::string& key, Value** value_out) {
   LOG_TRACE("KingDB Get()", "found in buffer");
   return s;
 }
+
 
 Status KingDB::Put(const std::string& key, const std::string& value) {
   LOG_TRACE("KingDB Put()", "[%s]", key.c_str());

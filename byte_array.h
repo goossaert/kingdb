@@ -155,6 +155,4 @@ class SharedAllocatedByteArray: public ByteArray {
 
 }
 
-
 #endif // KINGDB_BYTE_ARRAY_H_
-

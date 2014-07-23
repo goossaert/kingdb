@@ -12,6 +12,7 @@
 #include <vector>
 #include "kdb.h"
 #include "common.h"
+#include "byte_array.h"
 
 namespace kdb {
 
@@ -28,7 +29,7 @@ class BufferManager {
   }
   ~BufferManager() {}
 
-  Status Get(const std::string& key, Value** value_out);
+  Status Get(const std::string& key, ByteArray** value_out);
   Status Put(const std::string& key, const std::string& value);
   Status PutChunk(const char* key,
                   uint64_t size_key,

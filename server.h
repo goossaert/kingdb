@@ -32,6 +32,7 @@
 #include "kingdb.h"
 #include "logger.h"
 #include "kdb.h"
+#include "byte_array.h"
 
 
 namespace kdb {
