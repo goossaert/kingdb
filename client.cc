@@ -61,11 +61,11 @@ class Client {
                                            &return_value_length,
                                            &flags,
                                            &rc))) {
-        memcpy(buffer, return_value, return_value_length);
-        buffer[return_value_length] = '\0';
-        *value_out = buffer;
-        *size_value = return_value_length;
-        free(return_value);
+      memcpy(buffer, return_value, return_value_length);
+      buffer[return_value_length] = '\0';
+      *value_out = buffer;
+      *size_value = return_value_length;
+      free(return_value);
     }
 
     if (rc ==  MEMCACHED_NOTFOUND) {
@@ -212,6 +212,7 @@ class ClientTask: public Task {
           if (size_value != size_value_get) {
             LOG_INFO("ClientTask", "Found error in sizes for %s: [%d] [%d]", key.c_str(), size_value, size_value_get); 
           } else {
+            LOG_INFO("ClientTask", "Size OK for %s: [%d] [%d]", key.c_str(), size_value, size_value_get); 
             int ret = VerifyValue(key, size_value, value);
             if (ret < 0) {
               LOG_INFO("ClientTask", "Found error in content for key [%s]", key.c_str());
@@ -259,18 +260,22 @@ class ClientTask: public Task {
   int VerifyValue(const std::string& key, int size_value, const char* value) {
     int size_key = key.size();
     int i = 0;
+    bool error = false;
     for (i = 0; i < size_value / size_key; i++) {
       if (memcmp(value + i*size_key, key.c_str(), size_key)) {
-        std::string value2(value, size_value);
-        printf("diff key:[%s], value:[%s]\n", key.c_str(), value2.c_str());
-        return -1;
+        std::string value2(value + i*size_key, size_key);
+        printf("diff i:%d size:%d key:[%s], value:[%s]\n", i, size_key, key.c_str(), value2.c_str());
+        error = true;
       }
     }
     if (size_value % size_key != 0) {
       if (memcmp(value + i*size_key, key.c_str(), size_value % size_key)) {
-        return -1; 
+        std::string value2(value, size_value % size_key);
+        printf("diff remainder size:%d key:[%s], value:[%s]\n", size_value % size_key, key.c_str(), value2.c_str());
+        error = true;
       }
     }
+    if (error) return -1;
     return 0;
   }
 
