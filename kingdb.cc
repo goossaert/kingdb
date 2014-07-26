@@ -6,8 +6,8 @@
 
 namespace kdb {
 
-Status KingDB::Get(const std::string& key, ByteArray** value_out) {
-  LOG_TRACE("KingDB Get()", "[%s]", key.c_str());
+Status KingDB::Get(ByteArray* key, ByteArray** value_out) {
+  LOG_TRACE("KingDB Get()", "[%s]", key->ToString().c_str());
   Status s = bm_.Get(key, value_out);
   if (s.IsRemoveOrder()) {
     return Status::NotFound("Unable to find entry");
@@ -31,27 +31,22 @@ Status KingDB::Get(const std::string& key, ByteArray** value_out) {
 }
 
 
-Status KingDB::Put(const std::string& key, const std::string& value) {
-  LOG_TRACE("KingDB Put()", "[%s]", key.c_str());
-  return bm_.Put(key, value);
+Status KingDB::Put(ByteArray *key, ByteArray *chunk) {
+  return PutChunk(key, chunk, 0, chunk->size());
+}
+
+Status KingDB::PutChunk(ByteArray *key,
+                        ByteArray *chunk,
+                        uint64_t offset_chunk,
+                        uint64_t size_value) {
+  LOG_TRACE("KingDB PutChunk()", "[%s] offset_chunk:%llu", key->ToString().c_str(), offset_chunk);
+  return bm_.PutChunk(key, chunk, offset_chunk, size_value);
 }
 
 
-Status KingDB::PutChunk(const char* key,
-                          uint64_t size_key,
-                          const char* chunk,
-                          uint64_t size_chunk,
-                          uint64_t offset_chunk,
-                          uint64_t size_value,
-                          char * buffer_to_delete) {
-  LOG_TRACE("KingDB PutChunk()", "[%s] offset_chunk:%llu", key, offset_chunk);
-  return bm_.PutChunk(key, size_key, chunk, size_chunk, offset_chunk, size_value, buffer_to_delete);
-}
-
-
-Status KingDB::Remove(const char *key, uint64_t size_key, char * buffer_to_delete) {
-  LOG_TRACE("KingDB Remove()", "[%s]", key);
-  return bm_.Remove(key, size_key, nullptr);
+Status KingDB::Remove(ByteArray *key) {
+  LOG_TRACE("KingDB Remove()", "[%s]", key->ToString().c_str());
+  return bm_.Remove(key);
 }
 
 };

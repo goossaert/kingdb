@@ -20,6 +20,7 @@
 #include "kdb.h"
 #include "status.h"
 #include "common.h"
+#include "byte_array.h"
 
 
 
@@ -46,15 +47,15 @@ int main() {
     items.push_back(ss.str());
   }
 
+
   std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
   for (auto i = 0; i < num_items; i++) {
-    kdb::Status s = db.PutChunk(items[i].c_str(),
-                               size_key,
-                               buffer_large,
-                               100,
-                               0,
-                               100,
-                               nullptr);
+    kdb::ByteArray *key = new kdb::SimpleByteArray(items[i].c_str(), items[i].size());
+    kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_large, 100);
+    kdb::Status s = db.PutChunk(key,
+                                value,
+                                0,
+                                100);
   }
 
   std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();

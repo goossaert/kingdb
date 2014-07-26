@@ -13,18 +13,13 @@ namespace kdb {
 
 class Interface {
  public:
-  virtual Status Get(const std::string& key, ByteArray** value_out) = 0;
-  virtual Status Put(const std::string& key, const std::string& value) = 0;
-  virtual Status PutChunk(const char* key,
-                          uint64_t size_key,
-                          const char* chunk,
-                          uint64_t size_chunk,
+  virtual Status Get(ByteArray* key, ByteArray** value_out) = 0;
+  virtual Status Put(ByteArray *key, ByteArray *chunk) = 0;
+  virtual Status PutChunk(ByteArray *key,
+                          ByteArray *chunk,
                           uint64_t offset_chunk,
-                          uint64_t size_value,
-                          char * buffer_to_delete) = 0;
-  virtual Status Remove(const char *key,
-                        uint64_t size_key,
-                        char * buffer_to_delete) = 0;
+                          uint64_t size_value) = 0;
+  virtual Status Remove(ByteArray *key) = 0;
 
 };
 

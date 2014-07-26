@@ -23,9 +23,9 @@ void NetworkTask::Run(std::thread::id tid) {
   bool is_command_get = false;
   bool is_command_put = false;
   bool is_command_remove = false;
-  char *buffer = nullptr;
-  char *buffer_get = new char[SIZE_BUFFER_SEND];
-  char *key = nullptr;
+  char *buffer_send = new char[SIZE_BUFFER_SEND];
+  SharedAllocatedByteArray *buffer = nullptr;
+  SharedAllocatedByteArray *key = nullptr;
   int size_key = 0;
   LOG_TRACE("NetworkTask", "ENTER");
   // TODO: replace the memory allocation performed for 'key' and 'buffer' by a
@@ -44,21 +44,19 @@ void NetworkTask::Run(std::thread::id tid) {
       is_command_get = false;
       is_command_put = false;
       is_command_remove = false;
-      key = new char[1024]; // will be deleted by the storage engine
       size_key = 0;
     }
 
     if (is_new_buffer) {
       LOG_TRACE("NetworkTask", "is_new_buffer");
       bytes_received_buffer = 0;
-      buffer = new char[SIZE_BUFFER_RECV+1]; // will be deleted by the storage engine
+      buffer = new SharedAllocatedByteArray(SIZE_BUFFER_RECV);
       LOG_TRACE("NetworkTask", "allocated");
     }
 
-
     LOG_TRACE("NetworkTask", "Calling recv()");
     bytes_received_last = recv(sockfd_,
-                               buffer + bytes_received_buffer,
+                               buffer->data() + bytes_received_buffer,
                                SIZE_BUFFER_RECV - bytes_received_buffer,
                                0);
     if (bytes_received_last <= 0) {
@@ -68,10 +66,9 @@ void NetworkTask::Run(std::thread::id tid) {
 
     bytes_received_buffer += bytes_received_last;
     bytes_received_total  += bytes_received_last;
-    buffer[bytes_received_buffer] = 0;
+    buffer->SetOffset(0, bytes_received_buffer);
 
     LOG_TRACE("NetworkTask", "recv()'d %d bytes of data in buf - bytes_expected:%d bytes_received_buffer:%d bytes_received_total:%d", bytes_received_last, bytes_expected, bytes_received_buffer, bytes_received_total);
-
 
     // TODO: simplify the nested if-else blocks below to remove
     //       indentation levels
@@ -79,29 +76,38 @@ void NetworkTask::Run(std::thread::id tid) {
     if (is_new) {
       
       // Determine command type
-      if (strncmp(buffer, "get", 3) == 0) {
+      if (buffer->StartsWith("get", 3)) {
         is_command_get = true;
-      } else if (strncmp(buffer, "set", 3) == 0) {
+      } else if (buffer->StartsWith("set", 3)) {
         is_command_put = true;
-      } else if (strncmp(buffer, "delete", 3) == 0) {
+      } else if (buffer->StartsWith("delete", 6)) {
         is_command_remove = true;
         LOG_TRACE("NetworkTask", "got delete command");
-      } else if (strncmp(buffer, "quit", 4) == 0) {
+      } else if (buffer->StartsWith("quit", 4)) {
         break;
       }
 
       // Determine bytes_expected
       if (is_command_put) {
-        offset_value = 0;
-        while (buffer[offset_value] != '\n') offset_value++;
+        uint64_t offset_end_key = 4; // skipping 'set '
+        while (buffer->data()[offset_end_key] != ' ') offset_end_key++;
+
+        delete key; // TODO: Should be placed at the beginning of the "if (is_new)"
+                    //       so that the keys could be cleaned up for any new
+                    //       command and not just for put.
+        key = new SharedAllocatedByteArray();
+        *key = *buffer;
+        key->SetOffset(4, offset_end_key-4);
+
+        offset_value = offset_end_key;
+        while (buffer->data()[offset_value] != '\n') offset_value++;
         offset_value++; // for the \n
+
+        LOG_TRACE("NetworkTask", "offset_value %llu", offset_value);
+
         std::smatch matches;
-        std::string str_buffer(buffer, offset_value);
+        std::string str_buffer(buffer->data(), offset_value);
         if (std::regex_search(str_buffer, matches, regex_put)) {
-          size_key = matches[1].length();
-          // TODO: check size of key before strncpy()
-          strncpy(key, std::string(matches[1].str()).c_str(), size_key);
-          key[size_key] = '\0';
           size_value = atoi(std::string(matches[2]).c_str());
           bytes_expected = offset_value + size_value + 2;
           // +2: because of the final \r\n
@@ -111,12 +117,12 @@ void NetworkTask::Run(std::thread::id tid) {
           exit(-1);
         }
       } else if (   bytes_received_last >= 2
-                 && buffer[bytes_received_last-2] == '\r'
-                 && buffer[bytes_received_last-1] == '\n') {
+                 && buffer->data()[bytes_received_last-2] == '\r'
+                 && buffer->data()[bytes_received_last-1] == '\n') {
         bytes_expected = bytes_received_last;
       } else {
         // should never happen, keeping it here until fully tested
-        LOG_EMERG("NetworkTask", "Don't know what to do with this new packet [%s]", buffer);
+        LOG_EMERG("NetworkTask", "Don't know what to do with this new packet [%s]", buffer->ToString().c_str());
         exit(-1);
       }
     }
@@ -138,41 +144,18 @@ void NetworkTask::Run(std::thread::id tid) {
 
     if (is_command_get) {
       std::smatch matches;
-      std::string str_buffer = buffer;
+      std::string str_buffer = buffer->ToString();
       if (std::regex_search(str_buffer, matches, regex_get)) {
-        // ------ TEMP
-        /*
-        size_key = matches[1].length();
-        strncpy(key, std::string(matches[1].str()).c_str(), size_key);
-        key[size_key] = '\0';
-
-        sprintf(buffer_get, "VALUE %s 0 %d\r\n%s\r\nEND\r\n", key, 5, "hello");
-        if (send(sockfd_, buffer_get, strlen(buffer_get), 0) == -1) {
-          LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
-          break;
-        }
-        LOG_TRACE("NetworkTask", "GET: buffer_get [%s]", buffer_get);
-        is_new = true;
-        is_new_buffer = true;
-        delete[] buffer;
-        continue;
-        */
-        // ------ TEMP
-
         ByteArray *value = nullptr; // TODO: beware, possible memory leak here -- value is not deleted in case of break
-                                // TODO: replace the pointer with a reference
-                                //       count
-        Status s = db_->Get(matches[1], &value);
+                                    // TODO: replace the pointer with a reference
+                                    //       count
+        buffer->SetOffset(4, buffer->size() - 4 - 2);
+        Status s = db_->Get(buffer, &value);
         if (s.IsOK()) {
           LOG_TRACE("NetworkTask", "GET: found");
-          size_key = matches[1].length();
-          // TODO: check size of key before strncpy()
-          strncpy(key, std::string(matches[1].str()).c_str(), size_key);
-          key[size_key] = '\0';
-          //sprintf(buffer_get, "VALUE %s 0 %llu\r\n%s\r\nEND\r\n", key, value->size, value->data);
-          sprintf(buffer_get, "VALUE %s 0 %llu\r\n", key, value->size());
-          LOG_TRACE("NetworkTask", "GET: buffer_get [%s]", buffer_get);
-          if (send(sockfd_, buffer_get, strlen(buffer_get), 0) == -1) {
+          sprintf(buffer_send, "VALUE %s 0 %llu\r\n", buffer->ToString().c_str(), value->size());
+          LOG_TRACE("NetworkTask", "GET: buffer_send [%s]", buffer_send);
+          if (send(sockfd_, buffer_send, strlen(buffer_send), 0) == -1) {
             LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
             break;
           }
@@ -195,27 +178,20 @@ void NetworkTask::Run(std::thread::id tid) {
         is_new = true;
         is_new_buffer = true;
         delete value;
-        delete[] buffer;
+        delete buffer;
       } else {
         LOG_EMERG("NetworkTask", "Could not match Get command");
         break;
       }
-          } else if (is_command_remove) {
+    } else if (is_command_remove) {
       std::smatch matches;
-      std::string str_buffer = buffer;
+      std::string str_buffer = buffer->ToString();
       if (std::regex_search(str_buffer, matches, regex_remove)) {
-        size_key = matches[1].length();
-        // TODO: check size of key before strncpy()
-        char *key_remove = new char[size_key+1];
-        strncpy(key_remove, std::string(matches[1].str()).c_str(), size_key);
-        key_remove[size_key] = '\0';
-        //if (size_key >= 1 && key[size_key-1] == '\r') {
-        //  size_key -= 1;
-        //  key_remove[size_key] = '\0';
-        //}
-        Status s = db_->Remove(key_remove, size_key, key_remove);
+        buffer->SetOffset(7, buffer->size() - 7 - 2);
+        Status s = db_->Remove(buffer);
         if (s.IsOK()) {
-          // TODO: check for [noreply]
+          // TODO: check for [noreply], which may be present (see Memcached
+          // protocol specs)
           LOG_TRACE("NetworkTask", "REMOVE: ok");
           if (send(sockfd_, "DELETED\r\n", 9, 0) == -1) {
             LOG_EMERG("NetworkTask", "Error - send() %s", strerror(errno));
@@ -227,25 +203,21 @@ void NetworkTask::Run(std::thread::id tid) {
         }
         is_new = true;
         is_new_buffer = true;
-        delete[] buffer;
       } else {
         LOG_EMERG("NetworkTask", "Could not match Remove command");
         break;
       }
     } else if (is_command_put) {
-      char *chunk;
-      uint64_t size_chunk;
       uint64_t offset_chunk;
+      SharedAllocatedByteArray *chunk = buffer;
 
       if(bytes_received_total == bytes_received_buffer) {
         // chunk is a first chunk, need to skip all the characters before the
         // value data
-        chunk = buffer + offset_value;
-        size_chunk = bytes_received_buffer - offset_value;
+        chunk->SetOffset(offset_value, bytes_received_buffer - offset_value);
         offset_chunk = 0;
       } else {
-        chunk = buffer;
-        size_chunk = bytes_received_buffer;
+        chunk->SetOffset(0, bytes_received_buffer);
         offset_chunk = bytes_received_total - bytes_received_buffer - offset_value;
       }
 
@@ -253,19 +225,17 @@ void NetworkTask::Run(std::thread::id tid) {
         // chunk is a last chunk
         // in case this is the last buffer, the size of the buffer needs to be
         // adjusted to ignore the final \r\n
-        size_chunk -= 2;
+        chunk->AddSize(-2);
       }
 
-      //LOG_TRACE("NetworkTask", "buffer [%s]", buffer);
-      if (size_chunk > 0) {
-        LOG_TRACE("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key, bytes_received_buffer, bytes_received_total, bytes_expected, size_chunk);
-        Status s = db_->PutChunk(key,
-                                 size_key,
+      if (chunk->size() > 0) {
+        ByteArray *key_current = new SharedAllocatedByteArray();
+        *key_current = *key;
+        LOG_TRACE("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk->size());
+        Status s = db_->PutChunk(key_current,
                                  chunk,
-                                 size_chunk,
                                  offset_chunk,
-                                 size_value,
-                                 buffer);
+                                 size_value);
         if (!s.IsOK()) {
           LOG_TRACE("NetworkTask", "Error - Put(): %s", s.ToString().c_str());
         } else {
@@ -275,7 +245,7 @@ void NetworkTask::Run(std::thread::id tid) {
 
       if (bytes_received_total == bytes_expected) {
         is_new = true;
-        LOG_TRACE("NetworkTask", "STORED key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu", key, bytes_received_buffer, bytes_received_total, bytes_expected);
+        LOG_TRACE("NetworkTask", "STORED key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected);
         if (send(sockfd_, "STORED\r\n", 8, 0) == -1) {
           LOG_EMERG("NetworkTask", "Error - send() %s", strerror(errno));
           break;
@@ -283,19 +253,17 @@ void NetworkTask::Run(std::thread::id tid) {
 
       }
       is_new_buffer = true;
-
     } else {
       // for debugging
       LOG_EMERG("NetworkTask", "Unknown case for buffer");
       exit(-1);
     }
-
-    //if (bytes_received_total == bytes_expected) break;
   }
   LOG_TRACE("NetworkTask", "exit and close socket");
 
-  delete[] buffer;
-  delete[] buffer_get;
+  delete key;
+  delete buffer;
+  delete[] buffer_send;
   close(sockfd_);
 }
 

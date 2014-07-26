@@ -9,7 +9,7 @@
 
 namespace kdb {
 
-Status BufferManager::Get(const std::string& key, ByteArray** value_out) {
+Status BufferManager::Get(ByteArray* key, ByteArray** value_out) {
   // TODO: need to fix the way the value is returned here: to create a new
   //       memory space and then return.
   // TODO: make sure the live buffer doesn't need to be protected by a mutex in
@@ -39,8 +39,8 @@ Status BufferManager::Get(const std::string& key, ByteArray** value_out) {
   if (found) {
     LOG_DEBUG("BufferManager::Get()", "found in buffer_live");
     if (   order_found.type == OrderType::Put
-        && order_found.size_chunk == order_found.size_value) {
-      *value_out = new AllocatedByteArray(order_found.chunk, order_found.size_chunk);
+        && order_found.chunk->size() == order_found.size_value) {
+      *value_out = order_found.chunk;
       return Status::OK();
     } else if (order_found.type == OrderType::Remove) {
       return Status::RemoveOrder("Unable to find entry");
@@ -84,8 +84,8 @@ Status BufferManager::Get(const std::string& key, ByteArray** value_out) {
   if (found) LOG_DEBUG("BufferManager::Get()", "found in buffer_copy");
   if (   found
       && order_found.type == OrderType::Put
-      && order_found.size_chunk == order_found.size_value) {
-    *value_out = new AllocatedByteArray(order_found.chunk, order_found.size_chunk);
+      && order_found.chunk->size() == order_found.size_value) {
+    *value_out = order_found.chunk;
     return Status::OK();
   } else if (   found
              && order_found.type == OrderType::Remove) {
@@ -96,62 +96,57 @@ Status BufferManager::Get(const std::string& key, ByteArray** value_out) {
 }
 
 
-Status BufferManager::Put(const std::string& key, const std::string& value) {
+Status BufferManager::Put(ByteArray* key, ByteArray* chunk) {
   //return Write(OrderType::Put, key, value);
   return Status::InvalidArgument("BufferManager::Put() is not implemented");
 }
 
 
-Status BufferManager::PutChunk(const char* key,
-                               uint64_t size_key,
-                               const char* chunk,
-                               uint64_t size_chunk,
+Status BufferManager::PutChunk(ByteArray* key,
+                               ByteArray* chunk,
                                uint64_t offset_chunk,
-                               uint64_t size_value,
-                               char * buffer_to_delete) {
+                               uint64_t size_value) {
   return WriteChunk(OrderType::Put,
                     key,
-                    size_key,
                     chunk,
-                    size_chunk,
                     offset_chunk,
-                    size_value,
-                    buffer_to_delete);
+                    size_value);
 }
 
 
 
 
-Status BufferManager::Remove(const char *key, uint64_t size_key, char *buffer_to_delete) {
-  return WriteChunk(OrderType::Remove, key, size_key, nullptr, 0, 0, 0, buffer_to_delete);
+Status BufferManager::Remove(ByteArray* key) {
+  // TODO: The storage engine is calling data() and size() on the chunk ByteArray.
+  //       The use of SimpleByteArray here is a hack to guarantee that data()
+  //       and size() won't be called on a nullptr -- this needs to be cleaned up.
+  auto empty_chunk = new SimpleByteArray(nullptr, 0);
+  return WriteChunk(OrderType::Remove, key, empty_chunk, 0, 0);
 }
 
 
 Status BufferManager::WriteChunk(const OrderType& op,
-                                 const char *key,
-                                 uint64_t size_key,
-                                 const char *chunk,
-                                 uint64_t size_chunk,
+                                 ByteArray* key,
+                                 ByteArray* chunk,
                                  uint64_t offset_chunk,
-                                 uint64_t size_value,
-                                 char * buffer_to_delete) {
+                                 uint64_t size_value) {
   LOG_DEBUG("LOCK", "1 lock");
   std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
   //if (key.size() + value.size() > buffer_size_) {
   //  return Status::InvalidArgument("Entry is too large.");
   //}
-  LOG_TRACE("BufferManager", "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d", key, size_chunk, size_value, offset_chunk, buffers_[im_live_].size());
+  LOG_TRACE("BufferManager", "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d", key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
 
   // not sure if I should add the item then test, or test then add the item
-  buffers_[im_live_].push_back(Order{op, key, size_key, chunk, size_chunk, offset_chunk, size_value, buffer_to_delete});
+  buffers_[im_live_].push_back(Order{op, key, chunk, offset_chunk, size_value});
   if (offset_chunk == 0) {
-    sizes_[im_live_] += size_key;
+    sizes_[im_live_] += key->size();
   }
-  sizes_[im_live_] += size_chunk;
+  sizes_[im_live_] += chunk->size();
 
   if (buffers_[im_live_].size()) {
     for(auto &p: buffers_[im_live_]) {   
-      LOG_TRACE("BufferManager", "Write() ITEM key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key, p.size_chunk, p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
+      LOG_TRACE("BufferManager", "Write() ITEM key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
     }
   } else {
     LOG_TRACE("BufferManager", "Write() ITEM no buffers_[im_live_]");
@@ -173,7 +168,7 @@ Status BufferManager::WriteChunk(const OrderType& op,
   //       complexity.
   //       => idea: return a "RETRY" command, indicating to the client that he
   //                needs to sleep for 100ms-ish and retry?
-  if (   size_chunk + offset_chunk == size_value
+  if (   chunk->size() + offset_chunk == size_value
       && offset_chunk > 0) {
     force_swap_ = true;
   }
@@ -220,7 +215,7 @@ void BufferManager::ProcessingLoop() {
       can_swap_ = true;
       cv_flush_.wait(lock_flush);
     }
-  
+ 
     // Notify the storage engine that the buffer can be flushed
     LOG_TRACE("BM", "WAIT: Get()-flush_buffer");
     EventManager::flush_buffer.StartAndBlockUntilDone(buffers_[im_copy_]);
@@ -248,7 +243,7 @@ void BufferManager::ProcessingLoop() {
 
     if (buffers_[im_copy_].size()) {
       for(auto &p: buffers_[im_copy_]) {
-        LOG_TRACE("BufferManager", "ProcessingLoop() ITEM im_copy - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key, p.key, p.size_chunk, p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
+        LOG_TRACE("BufferManager", "ProcessingLoop() ITEM im_copy - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
       }
     } else {
       LOG_TRACE("BufferManager", "ProcessingLoop() ITEM no buffers_[im_copy_]");
@@ -256,13 +251,11 @@ void BufferManager::ProcessingLoop() {
 
     if (buffers_[im_live_].size()) {
       for(auto &p: buffers_[im_live_]) {
-        LOG_TRACE("BufferManager", "ProcessingLoop() ITEM im_live - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key, p.size_chunk, p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
+        LOG_TRACE("BufferManager", "ProcessingLoop() ITEM im_live - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
       }
     } else {
       LOG_TRACE("BufferManager", "ProcessingLoop() ITEM no buffers_[im_live_]");
     }
-    /*
-    */
 
     can_swap_ = true;
     mutex_copy_write_level4_.unlock();

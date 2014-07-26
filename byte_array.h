@@ -13,11 +13,16 @@
 
 namespace kdb {
 
+// TODO: most of the uses of ByteArray classes are pointers
+//       => change that to use references whenever possible
+
 class ByteArray {
  public:
   virtual ~ByteArray() {}
   char* data() { return data_; }
+  char* data_const() const { return data_; }
   uint64_t size() { return size_; }
+  uint64_t size_const() const { return size_; }
 
   bool StartsWith(const char *substr, int n) {
     return (n <= size_ && strncmp(data_, substr, n) == 0);
@@ -32,6 +37,10 @@ class ByteArray {
     return data_[index];
   };
   */
+  bool operator ==(const ByteArray &right) const {
+    return (   size_ == right.size_const()
+            && memcmp(data_, right.data_const(), size_) == 0);
+  }
 
   std::string ToString() {
     return std::string(data_, size_);
@@ -39,6 +48,18 @@ class ByteArray {
 
   char *data_;
   uint64_t size_;
+};
+
+
+class SimpleByteArray: public ByteArray {
+ public:
+  SimpleByteArray(const char* data_in, uint64_t size_in) {
+    data_ = const_cast<char*>(data_in);
+    size_ = size_in;
+  }
+
+  virtual ~SimpleByteArray() {
+  }
 };
 
 
@@ -97,6 +118,10 @@ class SharedMmappedByteArray: public ByteArray {
     size_ = size;
   }
 
+  void AddSize(int add) {
+    size_ += add; 
+  }
+
   char* datafile() { return mmap_->datafile_; };
 
  private:
@@ -109,9 +134,8 @@ class AllocatedByteArray: public ByteArray {
  public:
   AllocatedByteArray(const char* data_in, uint64_t size_in) {
     size_ = size_in;
-    data_ = new char[size_+1];
+    data_ = new char[size_];
     strncpy(data_, data_in, size_);
-    data_[size_] = '\0';
   }
 
   AllocatedByteArray(uint64_t size_in) {
@@ -122,8 +146,6 @@ class AllocatedByteArray: public ByteArray {
   virtual ~AllocatedByteArray() {
     delete[] data_;
   }
-
-  std::shared_ptr<char> data_allocated_;
 };
 
 
@@ -142,6 +164,10 @@ class SharedAllocatedByteArray: public ByteArray {
     offset_ = offset;
     data_ = data_allocated_.get() + offset;
     size_ = size;
+  }
+
+  void AddSize(int add) {
+    size_ += add; 
   }
 
   virtual ~SharedAllocatedByteArray() {

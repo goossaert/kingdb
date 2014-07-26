@@ -111,7 +111,7 @@ class LogfileManager {
     char buffer[1024];
     struct Entry* entry = reinterpret_cast<struct Entry*>(buffer);
     entry->action_type = 7;
-    entry->size_key = order.size_key;
+    entry->size_key = order.key->size();
     entry->size_value = order.size_value;
     entry->hash = 0;
     if(write(fd, buffer_raw_, SIZE_LOGFILE_HEADER) < 0) { // write header
@@ -120,14 +120,14 @@ class LogfileManager {
     if(write(fd, buffer, sizeof(struct Entry)) < 0) {
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
-    if(write(fd, order.key, order.size_key) < 0) {
+    if(write(fd, order.key->data(), order.key->size()) < 0) {
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
-    if(write(fd, order.chunk, order.size_chunk) < 0) {
+    if(write(fd, order.chunk->data(), order.chunk->size()) < 0) {
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
 
-    uint64_t filesize = SIZE_LOGFILE_HEADER + sizeof(struct Entry) + order.size_key + order.size_value;
+    uint64_t filesize = SIZE_LOGFILE_HEADER + sizeof(struct Entry) + order.key->size() + order.size_value;
     ftruncate(fd, filesize);
     file_sizes[fileid_largefile] = filesize;
     close(fd);
@@ -142,7 +142,7 @@ class LogfileManager {
     uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
     uint32_t offset_file = location & 0x00000000FFFFFFFF;
     std::string filepath = dbname_ + "/" + std::to_string(fileid);
-    LOG_TRACE("LogfileManager::WriteChunk()", "key [%s] filepath:[%s] offset_chunk:%llu", order.key, filepath.c_str(), order.offset_chunk);
+    LOG_TRACE("LogfileManager::WriteChunk()", "key [%s] filepath:[%s] offset_chunk:%llu", order.key->ToString().c_str(), filepath.c_str(), order.offset_chunk);
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
       LOG_EMERG("StorageEngine::WriteChunk()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
@@ -150,9 +150,9 @@ class LogfileManager {
     }
 
     if (pwrite(fd,
-               order.chunk,
-               order.size_chunk,
-               offset_file + sizeof(struct Entry) + order.size_key + order.offset_chunk) < 0) {
+               order.chunk->data(),
+               order.chunk->size(),
+               offset_file + sizeof(struct Entry) + order.key->size() + order.offset_chunk) < 0) {
       LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
     }
 
@@ -167,34 +167,34 @@ class LogfileManager {
     struct Entry* entry = reinterpret_cast<struct Entry*>(buffer_raw_ + offset_end_);
     if (order.type == OrderType::Put) {
       entry->action_type = 7;
-      entry->size_key = order.size_key;
+      entry->size_key = order.key->size();
       entry->size_value = order.size_value;
       entry->hash = 0;
-      memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry), order.key, order.size_key);
-      memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry) + order.size_key, order.chunk, order.size_chunk);
+      memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry), order.key->data(), order.key->size());
+      memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry) + order.key->size(), order.chunk->data(), order.chunk->size());
       //map_index[order.key] = fileid_ | offset_end_;
       uint64_t fileid_shifted = fileid_;
       fileid_shifted <<= 32;
       offset_out = fileid_shifted | offset_end_;
-      offset_end_ += sizeof(struct Entry) + order.size_key + order.size_chunk;
+      offset_end_ += sizeof(struct Entry) + order.key->size() + order.chunk->size();
 
-      if (order.size_chunk != order.size_value) {
+      if (order.chunk->size() != order.size_value) {
         LOG_TRACE("StorageEngine::ProcessingLoopData()", "BEFORE fileid_ %u", fileid_);
-        FlushCurrentFile(0, order.size_value - order.size_chunk);
+        FlushCurrentFile(0, order.size_value - order.chunk->size());
         //offset_end_ += order.size_value - order.size_chunk;
         //FlushCurrentFile();
         //ftruncate(fd_, offset_end_);
         //lseek(fd_, 0, SEEK_END);
         LOG_TRACE("StorageEngine::ProcessingLoopData()", "AFTER fileid_ %u", fileid_);
       }
-      LOG_TRACE("StorageEngine::ProcessingLoopData()", "Put [%s]", order.key);
+      LOG_TRACE("StorageEngine::ProcessingLoopData()", "Put [%s]", order.key->ToString().c_str());
     } else { // order.type == OrderType::Remove
-      LOG_TRACE("StorageEngine::ProcessingLoopData()", "Remove [%s]", order.key);
+      LOG_TRACE("StorageEngine::ProcessingLoopData()", "Remove [%s]", order.key->ToString().c_str());
       entry->action_type = 2;
-      entry->size_key = order.size_key;
+      entry->size_key = order.key->size();
       entry->size_value = 0;
-      memcpy(buffer_raw_ + sizeof(struct Entry), order.key, order.size_key);
-      offset_end_ += sizeof(struct Entry) + order.size_key;
+      memcpy(buffer_raw_ + sizeof(struct Entry), order.key->data(), order.key->size());
+      offset_end_ += sizeof(struct Entry) + order.key->size();
       offset_out = 0;
       //map_index[order.key] = 0;
     }
@@ -209,7 +209,7 @@ class LogfileManager {
       if (!has_file_) OpenNewFile();
 
       if (offset_end_ > size_block_) {
-        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "About to flush - offset_end_: %llu | size_key: %d | size_value: %d | size_block_: %llu", offset_end_, order.size_key, order.size_value, size_block_);
+        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "About to flush - offset_end_: %llu | size_key: %d | size_value: %d | size_block_: %llu", offset_end_, order.key->size(), order.size_value, size_block_);
         FlushCurrentFile(true, 0);
       }
 
@@ -220,55 +220,50 @@ class LogfileManager {
       // 1. The order is the first chunk of a very large entry, so we
       //    create a very large file and write the first chunk in there
       uint64_t location = 0;
-      if (   order.size_key + order.size_value > size_block_
+      if (   order.key->size() + order.size_value > size_block_
           && order.offset_chunk == 0) {
-        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "1. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key, order.size_chunk, order.offset_chunk);
+        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "1. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         location = PrepareFileLargeOrder(order);
       // 2. The order is a non-first chunk, so we
       //    open the file, pwrite() the chunk, and close the file.
-      } else if (   order.size_chunk != order.size_value
+      } else if (   order.chunk->size() != order.size_value
                  && order.offset_chunk != 0) {
-        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "2. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key, order.size_chunk, order.offset_chunk);
-        location = key_to_location[order.key];
+        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "2. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
+        location = key_to_location[order.key->ToString()];
         if (location != 0) {
-          WriteChunk(order, key_to_location[order.key]);
+          WriteChunk(order, key_to_location[order.key->ToString()]);
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
         }
 
       // 3. The order is the first chunk of a small or self-contained entry
       } else {
-        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "3. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key, order.size_chunk, order.offset_chunk);
+        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "3. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         buffer_has_items_ = true;
         location = WriteSmallOrder(order);
       }
 
       // If the order was the self-contained or the last chunk, add his location
       // to the output map_index_out[]
-      if (order.offset_chunk + order.size_chunk == order.size_value) {
-        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%llu offset_chunk: %llu location:%llu", order.key, order.size_chunk, order.offset_chunk, location);
+      if (order.offset_chunk + order.chunk->size() == order.size_value) {
+        LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%llu offset_chunk: %llu location:%llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk, location);
         if (location != 0 || order.type == OrderType::Remove) {
-          map_index_out[order.key] = location;
+          map_index_out[order.key->ToString()] = location;
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
         }
-        key_to_location.erase(order.key);
-        if (order.buffer_to_delete != nullptr) {
-          // TODO: replace this buffer deletion hack with just
-          //       a straight RAII struct/class
-          delete[] order.key;
-          delete[] order.buffer_to_delete;
-        }
+        key_to_location.erase(order.key->ToString());
       // Else, if the order is not self-contained and is the fisrt chunk,
       // the location is saved in key_to_location[]
       } else if (order.offset_chunk == 0) {
         if (location != 0) {
-          key_to_location[order.key] = location;
+          key_to_location[order.key->ToString()] = location;
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
         }
       }
-
+      delete order.key;
+      delete order.chunk;
     }
     LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "end flush");
     FlushCurrentFile(0, 0);
@@ -362,6 +357,11 @@ class StorageEngine {
           index_[p.first] = p.second;
         }
       }
+
+      //for (auto& p: index_) {
+      //  LOG_TRACE("index_", "%s: %llu", p.first.c_str(), p.second);
+      //}
+
       mutex_index_.unlock();
       EventManager::update_index.Done();
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "done");
@@ -371,20 +371,20 @@ class StorageEngine {
   }
 
   // NOTE: value_out must be deleled by the caller
-  Status Get(const std::string& key, ByteArray **value_out) {
+  Status Get(ByteArray* key, ByteArray** value_out) {
     //LOG_TRACE("INDEX", "WAIT: Get()-mutex_index_");
     std::unique_lock<std::mutex> lock(mutex_index_);
-    LOG_TRACE("StorageEngine::Get()", "%s", key.c_str());
-    auto p = index_.find(key);
+    LOG_TRACE("StorageEngine::Get()", "%s", key->ToString().c_str());
+    auto p = index_.find(key->ToString());
     if (p != index_.end()) {
       ByteArray *key_temp;
-      Status s = GetEntry(index_[key], &key_temp, value_out); 
-      LOG_TRACE("StorageEngine::Get()", "key:[%s] key_temp:[%s]", key.c_str(), key_temp->ToString().c_str());
+      Status s = GetEntry(index_[key->ToString()], &key_temp, value_out); 
+      LOG_TRACE("StorageEngine::Get()", "key:[%s] key_temp:[%s]", key->ToString().c_str(), key_temp->ToString().c_str());
       delete key_temp;
       return s;
       //return Status::OK();
     }
-    LOG_TRACE("StorageEngine::Get()", "%s - not found!", key.c_str());
+    LOG_TRACE("StorageEngine::Get()", "%s - not found!", key->ToString().c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
   }
 
