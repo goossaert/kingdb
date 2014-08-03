@@ -39,3 +39,4 @@ Below is the list of the projects from which KingDB derives code, and the
 location of their respective LICENSE files.
 
 - LevelDB, under BSD 3-Clause License: /3rdparty/leveldb/
+- LZ4, under BSD 2-Clause License: /3rdparty/lz4/
