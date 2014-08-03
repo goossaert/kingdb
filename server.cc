@@ -110,6 +110,8 @@ void NetworkTask::Run(std::thread::id tid) {
         if (std::regex_search(str_buffer, matches, regex_put)) {
           size_value = atoi(std::string(matches[2]).c_str());
           bytes_expected = offset_value + size_value + 2;
+          std::string str_debug = std::string(matches[2]);
+          LOG_TRACE("NetworkTask", "[%s] expected [%s] [%llu]", key->ToString().c_str(), str_debug.c_str(), bytes_expected);
           // +2: because of the final \r\n
         } else {
           // should never happen, keeping it here until fully tested
@@ -159,6 +161,32 @@ void NetworkTask::Run(std::thread::id tid) {
             LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
             break;
           }
+
+          char *chunk;
+          uint64_t size_chunk;
+          while (true) {
+            s = value->data_chunk(&chunk, &size_chunk);
+            if (!s.IsOK()) {
+              LOG_TRACE("NetworkTask", "Error - data_chunk(): %s", s.ToString().c_str());
+            }
+            if (send(sockfd_, chunk, size_chunk, 0) == -1) {
+              LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+              break;
+            }
+            if (s.IsDone()) break;
+          }
+
+          if (!s.IsOK() && !s.IsDone()) {
+            LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
+            break;
+          }
+
+          if (send(sockfd_, "\r\nEND\r\n", 7, 0) == -1) {
+            LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
+            break;
+          }
+
+          /*
           if (send(sockfd_, value->data(), value->size(), 0) == -1) {
             LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
             break;
@@ -167,6 +195,7 @@ void NetworkTask::Run(std::thread::id tid) {
             LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
             break;
           }
+          */
         } else {
           LOG_TRACE("NetworkTask", "GET: [%s]", s.ToString().c_str());
           std::string msg = "NOT_FOUND\r\n";

@@ -14,11 +14,13 @@
 #include <string.h>
 
 #include "logger.h"
-#include "byte_array.h"
+#include "status.h"
 
 namespace kdb {
 
 enum class OrderType { Put, Remove };
+
+class ByteArray;
 
 struct Order {
   OrderType type;
@@ -26,6 +28,7 @@ struct Order {
   ByteArray* chunk;
   uint64_t offset_chunk;
   uint64_t size_value;
+  uint64_t size_value_compressed;
 };
 
 
@@ -33,6 +36,7 @@ struct Entry {
   uint32_t action_type;
   uint64_t size_key;
   uint64_t size_value;
+  uint64_t size_value_compressed;
   uint64_t hash;
 };
 
@@ -48,6 +52,8 @@ struct Metadata {
   uint64_t offset_compaction;
   uint64_t pointer_compaction;
 };
+
+
 
 }
 

@@ -24,14 +24,12 @@
 #include <queue>
 #include <vector>
 #include <string>
-#include <cstdio>
-#include <string.h>
 #include <chrono>
 
-#include "threadpool.h"
-#include "kingdb.h"
 #include "logger.h"
 #include "kdb.h"
+#include "threadpool.h"
+#include "kingdb.h"
 #include "byte_array.h"
 
 

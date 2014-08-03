@@ -40,7 +40,60 @@ Status KingDB::PutChunk(ByteArray *key,
                         uint64_t offset_chunk,
                         uint64_t size_value) {
   LOG_TRACE("KingDB PutChunk()", "[%s] offset_chunk:%llu", key->ToString().c_str(), offset_chunk);
-  return bm_.PutChunk(key, chunk, offset_chunk, size_value);
+  bool do_compression = true;
+  uint64_t size_value_compressed = 0;
+  uint64_t offset_chunk_compressed = offset_chunk;
+  ByteArray *chunk_final = nullptr;
+  SharedAllocatedByteArray *chunk_compressed = nullptr;
+
+  if (chunk->size() == 0) do_compression = false;
+
+  if (do_compression) {
+    if (offset_chunk == 0) {
+      compressor_.Reset();
+    }
+
+    LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu", key->ToString().c_str(), compressor_.size_compressed());
+
+    offset_chunk_compressed = compressor_.size_compressed();
+
+    uint64_t size_compressed;
+    char *compressed;
+    // BUG: the compressor_ is shared among multiple threads, which is why the
+    // multi-threading uncompressing fails
+    // The simplest solution is to do the summing of the size_compressed
+    // outside of the compressor, to make sure that multiple threads won't
+    // modify the compressor concurrently.
+    Status s = compressor_.Compress(chunk->data(),
+                                    chunk->size(),
+                                    &compressed,
+                                    &size_compressed);
+    if (!s.IsOK()) return s;
+    chunk_compressed = new SharedAllocatedByteArray(compressed, size_compressed);
+
+    LOG_TRACE("KingDB PutChunk()", "[%s] (%llu) compressed size %llu - offset_chunk_compressed %llu", key->ToString().c_str(), chunk->size(), chunk_compressed->size(), offset_chunk_compressed);
+
+    // When the last chunk is reached, set size_value_compressed to that
+    // it can be passed to the storage engine
+    if (chunk->size() + offset_chunk == size_value) {
+      size_value_compressed = compressor_.size_compressed();
+    }
+
+    chunk_final = chunk_compressed;
+    delete chunk;
+  }
+
+  if (!do_compression) {
+    chunk_final = chunk;
+  }
+
+  LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu END", key->ToString().c_str(), compressor_.size_compressed());
+
+  return bm_.PutChunk(key,
+                      chunk_final,
+                      offset_chunk_compressed,
+                      size_value,
+                      size_value_compressed);
 }
 
 

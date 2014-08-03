@@ -105,15 +105,16 @@ Status BufferManager::Put(ByteArray* key, ByteArray* chunk) {
 Status BufferManager::PutChunk(ByteArray* key,
                                ByteArray* chunk,
                                uint64_t offset_chunk,
-                               uint64_t size_value) {
+                               uint64_t size_value,
+                               uint64_t size_value_compressed) {
   return WriteChunk(OrderType::Put,
                     key,
                     chunk,
                     offset_chunk,
-                    size_value);
+                    size_value,
+                    size_value_compressed
+                   );
 }
-
-
 
 
 Status BufferManager::Remove(ByteArray* key) {
@@ -121,7 +122,7 @@ Status BufferManager::Remove(ByteArray* key) {
   //       The use of SimpleByteArray here is a hack to guarantee that data()
   //       and size() won't be called on a nullptr -- this needs to be cleaned up.
   auto empty_chunk = new SimpleByteArray(nullptr, 0);
-  return WriteChunk(OrderType::Remove, key, empty_chunk, 0, 0);
+  return WriteChunk(OrderType::Remove, key, empty_chunk, 0, 0, 0);
 }
 
 
@@ -129,7 +130,8 @@ Status BufferManager::WriteChunk(const OrderType& op,
                                  ByteArray* key,
                                  ByteArray* chunk,
                                  uint64_t offset_chunk,
-                                 uint64_t size_value) {
+                                 uint64_t size_value,
+                                 uint64_t size_value_compressed) {
   LOG_DEBUG("LOCK", "1 lock");
   std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
   //if (key.size() + value.size() > buffer_size_) {
@@ -138,7 +140,12 @@ Status BufferManager::WriteChunk(const OrderType& op,
   LOG_TRACE("BufferManager", "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d", key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
 
   // not sure if I should add the item then test, or test then add the item
-  buffers_[im_live_].push_back(Order{op, key, chunk, offset_chunk, size_value});
+  buffers_[im_live_].push_back(Order{op,
+                                     key,
+                                     chunk,
+                                     offset_chunk,
+                                     size_value,
+                                     size_value_compressed});
   if (offset_chunk == 0) {
     sizes_[im_live_] += key->size();
   }

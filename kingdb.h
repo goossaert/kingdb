@@ -16,6 +16,7 @@
 #include "common.h"
 #include "byte_array.h"
 
+#include "compressor.h"
 
 namespace kdb {
 
@@ -37,10 +38,13 @@ class KingDB: public Interface {
   virtual Status Remove(ByteArray *key) override;
 
  private:
+  // TODO: Make sure that if multilpe threads are creating KingDB objects,
+  //       they would all refer to the same buffer manager and storage engine.
   std::string dbname_;
   std::mutex mutex_;
   kdb::BufferManager bm_;
   kdb::StorageEngine se_;
+  kdb::CompressorLZ4 compressor_;
 };
 
 };

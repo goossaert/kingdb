@@ -20,6 +20,9 @@ class Status {
  public:
   Status() { code_ = kOK; message1_ = ""; }
   ~Status() {}
+  Status(int code) {
+    code_ = code;
+  }
   Status(int code, std::string message1, std::string message2)
   {
     code_ = code;
@@ -28,6 +31,8 @@ class Status {
   }
 
   static Status OK() { return Status(); }
+
+  static Status Done() { return Status(kDone); }
 
   static Status NotFound(const std::string& message1, const std::string& message2="") {
     return Status(kNotFound, message1, message2);
@@ -50,6 +55,7 @@ class Status {
   bool IsRemoveOrder() const { return code() == kRemoveOrder; }
   bool IsInvalidArgument() const { return code() == kInvalidArgument; }
   bool IsIOError() const { return code() == kIOError; }
+  bool IsDone() const { return code() == kDone; }
 
   std::string ToString() const;
 
@@ -66,7 +72,8 @@ class Status {
     kNotFound = 1,
     kRemoveOrder = 2,
     kInvalidArgument = 3,
-    kIOError = 4
+    kIOError = 4,
+    kDone = 5
   };
 };
 

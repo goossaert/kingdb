@@ -5,24 +5,39 @@
 #ifndef KINGDB_BYTE_ARRAY_H_
 #define KINGDB_BYTE_ARRAY_H_
 
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <errno.h>
+
 #include <memory>
 #include <string>
 #include <string.h>
 
 #include "logger.h"
+#include "compressor.h"
 
 namespace kdb {
 
 // TODO: most of the uses of ByteArray classes are pointers
 //       => change that to use references whenever possible
 
+
 class ByteArray {
  public:
+  ByteArray() {
+    data_ = nullptr;
+    size_ = 0;
+    is_compressed_ = false;
+  }
   virtual ~ByteArray() {}
   char* data() { return data_; }
   char* data_const() const { return data_; }
   uint64_t size() { return size_; }
   uint64_t size_const() const { return size_; }
+  bool is_compressed() { return is_compressed_; }
 
   bool StartsWith(const char *substr, int n) {
     return (n <= size_ && strncmp(data_, substr, n) == 0);
@@ -46,9 +61,21 @@ class ByteArray {
     return std::string(data_, size_);
   }
 
+  void SetCompression(bool c) { is_compressed_ = c; }
+  void SetSizeCompressed(uint64_t s) { size_compressed_ = s; }
+
+  virtual Status data_chunk(char **data, uint64_t *size) {
+    *size = size_;
+    *data = data_;
+    return Status::Done();
+  }
+
   char *data_;
   uint64_t size_;
+  uint64_t size_compressed_;
+  bool is_compressed_;
 };
+
 
 
 class SimpleByteArray: public ByteArray {
@@ -61,6 +88,9 @@ class SimpleByteArray: public ByteArray {
   virtual ~SimpleByteArray() {
   }
 };
+
+
+
 
 
 class Mmap {
@@ -110,6 +140,7 @@ class SharedMmappedByteArray: public ByteArray {
     mmap_ = std::shared_ptr<Mmap>(new Mmap(filepath, filesize));
     data_ = mmap_->datafile_;
     size_ = 0;
+    compressor_.Reset();
   }
 
   void SetOffset(uint64_t offset, uint64_t size) {
@@ -122,9 +153,31 @@ class SharedMmappedByteArray: public ByteArray {
     size_ += add; 
   }
 
+  virtual Status data_chunk(char **data_out, uint64_t *size_out) {
+    if (size_compressed_ == 0) { // if no compression
+      *data_out = data_;
+      *size_out = size_;
+      return Status::Done();
+    }
+
+    *data_out = nullptr;
+    *size_out = 0;
+
+    LOG_TRACE("data_chunk()", "start");
+    Status s = compressor_.Uncompress(data_,
+                                      size_compressed_,
+                                      data_out,
+                                      size_out);
+    if (!s.IsOK()) return s;
+    LOG_TRACE("data_chunk()", "size_compressed_:%llu size_out:%llu", size_compressed_, *size_out);
+
+    return Status::OK();
+  }
+
   char* datafile() { return mmap_->datafile_; };
 
  private:
+  CompressorLZ4 compressor_;
   std::shared_ptr<Mmap> mmap_;
   uint64_t offset_;
 };
@@ -149,15 +202,23 @@ class AllocatedByteArray: public ByteArray {
 };
 
 
-
 class SharedAllocatedByteArray: public ByteArray {
  public:
   SharedAllocatedByteArray() {}
+
+  SharedAllocatedByteArray(char *data, uint64_t size_in) {
+    data_allocated_ = std::shared_ptr<char>(data, [](char *p) { delete[] p; });
+    data_ = data_allocated_.get();
+    size_ = size_in;
+  }
 
   SharedAllocatedByteArray(uint64_t size_in) {
     data_allocated_ = std::shared_ptr<char>(new char[size_in], [](char *p) { delete[] p; });
     data_ = data_allocated_.get();
     size_ = size_in;
+  }
+
+  virtual ~SharedAllocatedByteArray() {
   }
 
   void SetOffset(uint64_t offset, uint64_t size) {
@@ -170,14 +231,13 @@ class SharedAllocatedByteArray: public ByteArray {
     size_ += add; 
   }
 
-  virtual ~SharedAllocatedByteArray() {
-  }
-
  private:
   std::shared_ptr<char> data_allocated_;
   uint64_t offset_;
 
 };
+
+
 
 }
 

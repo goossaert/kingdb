@@ -113,6 +113,7 @@ class LogfileManager {
     entry->action_type = 7;
     entry->size_key = order.key->size();
     entry->size_value = order.size_value;
+    entry->size_value_compressed = order.size_value_compressed;
     entry->hash = 0;
     if(write(fd, buffer_raw_, SIZE_LOGFILE_HEADER) < 0) { // write header
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
@@ -149,11 +150,27 @@ class LogfileManager {
       exit(-1); // TODO: gracefully open() errors
     }
 
+    // Write the chunk
     if (pwrite(fd,
                order.chunk->data(),
                order.chunk->size(),
                offset_file + sizeof(struct Entry) + order.key->size() + order.offset_chunk) < 0) {
       LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
+    }
+
+    // Write the header again to save the right size of compressed value
+    if (   order.size_value_compressed > 0
+        && order.chunk->size() + order.offset_chunk == order.size_value_compressed) {
+      LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu", order.key->ToString().c_str(), order.size_value, order.size_value_compressed);
+      struct Entry entry;
+      entry.action_type = 7;
+      entry.size_key = order.key->size();
+      entry.size_value = order.size_value;
+      entry.size_value_compressed = order.size_value_compressed;
+      entry.hash = 0;
+      if (pwrite(fd, &entry, sizeof(struct Entry), offset_file) < 0) {
+        LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
+      }
     }
 
     close(fd);
@@ -169,6 +186,7 @@ class LogfileManager {
       entry->action_type = 7;
       entry->size_key = order.key->size();
       entry->size_value = order.size_value;
+      entry->size_value_compressed = order.size_value_compressed;
       entry->hash = 0;
       memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry), order.key->data(), order.key->size());
       memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry) + order.key->size(), order.chunk->data(), order.chunk->size());
@@ -193,6 +211,7 @@ class LogfileManager {
       entry->action_type = 2;
       entry->size_key = order.key->size();
       entry->size_value = 0;
+      entry->size_value_compressed = 0;
       memcpy(buffer_raw_ + sizeof(struct Entry), order.key->data(), order.key->size());
       offset_end_ += sizeof(struct Entry) + order.key->size();
       offset_out = 0;
@@ -200,7 +219,6 @@ class LogfileManager {
     }
     return offset_out;
   }
-
 
 
   void WriteOrdersAndFlushFile(std::vector<Order>& orders, std::map<std::string, uint64_t>& map_index_out) {
@@ -226,8 +244,13 @@ class LogfileManager {
         location = PrepareFileLargeOrder(order);
       // 2. The order is a non-first chunk, so we
       //    open the file, pwrite() the chunk, and close the file.
-      } else if (   order.chunk->size() != order.size_value
-                 && order.offset_chunk != 0) {
+      } else if (   order.offset_chunk != 0
+                 && (   (order.size_value_compressed == 0 && order.chunk->size() != order.size_value) // TODO: are those two tests on the size necessary?
+                     || (order.size_value_compressed != 0 && order.chunk->size() != order.size_value_compressed)
+                    )
+                ) {
+        //  TODO: replace the tests on compression "order.size_value_compressed ..." by a real test on a flag or a boolean
+        //  TODO: replace the use of size_value or size_value_compressed by a unique size() which would already return the right value
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "2. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         location = key_to_location[order.key->ToString()];
         if (location != 0) {
@@ -245,7 +268,8 @@ class LogfileManager {
 
       // If the order was the self-contained or the last chunk, add his location
       // to the output map_index_out[]
-      if (order.offset_chunk + order.chunk->size() == order.size_value) {
+      if (   (order.size_value_compressed == 0 && order.offset_chunk + order.chunk->size() == order.size_value)
+          || (order.size_value_compressed != 0 && order.offset_chunk + order.chunk->size() == order.size_value_compressed)) {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%llu offset_chunk: %llu location:%llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk, location);
         if (location != 0 || order.type == OrderType::Remove) {
           map_index_out[order.key->ToString()] = location;
@@ -344,7 +368,7 @@ class StorageEngine {
   void ProcessingLoopIndex() {
     while(true) {
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "start");
-      std::map<std::string, uint64_t> index_updates = EventManager::update_index.Wait();     
+      std::map<std::string, uint64_t> index_updates = EventManager::update_index.Wait();
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "got index_updates");
       mutex_index_.lock();
 
@@ -358,9 +382,11 @@ class StorageEngine {
         }
       }
 
-      //for (auto& p: index_) {
-      //  LOG_TRACE("index_", "%s: %llu", p.first.c_str(), p.second);
-      //}
+      /*
+      for (auto& p: index_) {
+        LOG_TRACE("index_", "%s: %llu", p.first.c_str(), p.second);
+      }
+      */
 
       mutex_index_.unlock();
       EventManager::update_index.Done();
@@ -407,16 +433,16 @@ class StorageEngine {
     LOG_TRACE("StorageEngine::GetEntry()", "fileid:%u offset_file:%u filesize:%llu", fileid, offset_file, filesize);
     std::string filepath = dbname_ + "/" + std::to_string(fileid); // TODO: optimize here
 
-    //*key_out   = new std::string("key-disabled");
-    auto value_temp = new SharedMmappedByteArray(filepath,
-                                                 filesize);
+    auto key_temp = new SharedMmappedByteArray(filepath,
+                                               filesize);
 
-    auto key_temp = new SharedMmappedByteArray();
-    *key_temp = *value_temp;
+    auto value_temp = new SharedMmappedByteArray();
+    *value_temp = *key_temp;
 
     struct Entry* entry = reinterpret_cast<struct Entry*>(value_temp->datafile() + offset_file);
     key_temp->SetOffset(offset_file + sizeof(struct Entry), entry->size_key);
     value_temp->SetOffset(offset_file + sizeof(struct Entry) + entry->size_key, entry->size_value);
+    value_temp->SetSizeCompressed(entry->size_value_compressed);
 
     LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out");
 
