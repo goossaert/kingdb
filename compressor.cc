@@ -7,47 +7,8 @@
 namespace kdb {
 
 void CompressorLZ4::Reset() {
-  put_thread_local_var_compress(0);
-  put_thread_local_var_uncompress(0);
-}
-
-
-uint64_t CompressorLZ4::thread_local_handler(std::map<std::thread::id, uint64_t>& status,
-                                             std::mutex& mutex,
-                                             uint64_t value,
-                                             bool apply) {
-  // TODO: Change this for a "thread_local static" -- when LLVM will support it
-  // TODO: Be careful, because if threads are renewed, the set of thread ids
-  //       will grow, and as will the "status" map.
-  std::thread::id id = std::this_thread::get_id();
-  mutex.lock();
-  uint64_t var = status[id];
-  mutex.unlock();
-
-  if (apply) {
-    var = value;
-    mutex.lock();
-    status[id] = var;
-    mutex.unlock();
-  }
-  return var;
-}
-
-
-void CompressorLZ4::put_thread_local_var_compress(uint64_t value) {
-  thread_local_handler(status_compress_, mutex_compress_, value, true);
-}
-
-uint64_t CompressorLZ4::get_thread_local_var_compress() {
-  return thread_local_handler(status_compress_, mutex_compress_, 0, false);
-}
-
-void CompressorLZ4::put_thread_local_var_uncompress(uint64_t value) {
-  thread_local_handler(status_uncompress_, mutex_uncompress_, value, true);
-}
-
-uint64_t CompressorLZ4::get_thread_local_var_uncompress() {
-  return thread_local_handler(status_uncompress_, mutex_uncompress_, 0, false);
+  ts_compress_.reset();
+  ts_uncompress_.reset();
 }
 
 
@@ -70,12 +31,12 @@ Status CompressorLZ4::Compress(char *source,
     return Status::IOError("LZ4_compress_limitedOutput() failed");
   }
   uint32_t size_compressed = ret + 8;
-  uint32_t size_source_32 = size_source;
+  uint32_t size_source_32 = size_source; // TODO: careful here, storing 64 bits into 32.
   memcpy((*dest),     &size_compressed, sizeof(size_compressed));
   memcpy((*dest) + 4, &size_source_32,  sizeof(size_source_32));
   LOG_TRACE("CompressorLZ4::Compress()", "size_compressed:%u size_source:%u", size_compressed, size_source_32);
-  uint64_t size_compressed_total = get_thread_local_var_compress() + size_compressed;
-  put_thread_local_var_compress(size_compressed_total);
+  uint64_t size_compressed_total = ts_compress_.get() + size_compressed;
+  ts_compress_.put(size_compressed_total);
   *size_dest = size_compressed;
   return Status::OK();
 }
@@ -84,7 +45,7 @@ Status CompressorLZ4::Uncompress(char *source,
                                  uint64_t size_source_total,
                                  char **dest,
                                  uint64_t *size_dest) {
-  uint64_t offset_uncompress = get_thread_local_var_uncompress();
+  uint64_t offset_uncompress = ts_uncompress_.get();
   LOG_TRACE("CompressorLZ4::Uncompress()", "in %llu %llu", offset_uncompress, size_source_total);
   if (offset_uncompress == size_source_total) return Status::Done();
 
@@ -108,7 +69,7 @@ Status CompressorLZ4::Uncompress(char *source,
   }
 
   offset_uncompress += size_compressed + 8;
-  put_thread_local_var_uncompress(offset_uncompress);
+  ts_uncompress_.put(offset_uncompress);
 
   LOG_TRACE("CompressorLZ4::Uncompress()", "out %llu %llu", offset_uncompress, size_source_total);
   *size_dest = ret;

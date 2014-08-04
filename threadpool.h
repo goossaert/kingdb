@@ -12,7 +12,6 @@
 #include <vector>
 
 
-
 namespace kdb {
 
 class Task {

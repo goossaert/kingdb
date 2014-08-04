@@ -185,6 +185,10 @@ Status BufferManager::WriteChunk(const OrderType& op,
     force_swap_ = true;
   }
 
+  // TODO: remove when the calls to wait() will have been replaced
+  //       by calls to wait_for() -- i.e. proper timing out
+  force_swap_ = true;
+
   if (sizes_[im_live_] > buffer_size_ || force_swap_) {
     LOG_TRACE("BufferManager", "trying to swap");
     LOG_DEBUG("LOCK", "2 lock");

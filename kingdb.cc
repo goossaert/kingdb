@@ -59,11 +59,6 @@ Status KingDB::PutChunk(ByteArray *key,
 
     uint64_t size_compressed;
     char *compressed;
-    // BUG: the compressor_ is shared among multiple threads, which is why the
-    // multi-threading uncompressing fails
-    // The simplest solution is to do the summing of the size_compressed
-    // outside of the compressor, to make sure that multiple threads won't
-    // modify the compressor concurrently.
     Status s = compressor_.Compress(chunk->data(),
                                     chunk->size(),
                                     &compressed,

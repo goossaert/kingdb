@@ -6,8 +6,6 @@
 #define KINGDB_COMPRESSOR_H_
 
 #include <algorithm>
-#include <mutex>
-#include <thread>
 #include <map>
 
 #include "lz4.h"
@@ -15,6 +13,7 @@
 #include "common.h"
 #include "logger.h"
 #include "status.h"
+#include "threadstorage.h"
 
 namespace kdb {
 
@@ -54,19 +53,11 @@ class CompressorLZ4 {
                                 uint64_t value,
                                 bool apply);
 
-  uint64_t get_thread_local_var_compress();
-  void put_thread_local_var_compress(uint64_t value);
-  uint64_t get_thread_local_var_uncompress();
-  void put_thread_local_var_uncompress(uint64_t value);
-  uint64_t size_compressed() { return get_thread_local_var_compress(); }
+  uint64_t size_compressed() { return ts_compress_.get(); }
 
  private:
-  //uint64_t offset_uncompress_;
-  //uint64_t size_compressed_;
-  std::mutex mutex_compress_;
-  std::mutex mutex_uncompress_;
-  std::map<std::thread::id, uint64_t> status_compress_;
-  std::map<std::thread::id, uint64_t> status_uncompress_;
+  ThreadStorage ts_compress_;
+  ThreadStorage ts_uncompress_;
 };
 
 };

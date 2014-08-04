@@ -3,7 +3,7 @@ CFLAGS=-O3 -g -Wall -std=c++11 -stdlib=libc++ -Wc++11-extensions -Wl,-no-as-need
 INCLUDES=-I/opt/local/include/
 LDFLAGS=-g -lprofiler
 LDFLAGS_CLIENT=-g -L/opt/local/lib/ -lmemcached -lprofiler -fPIC 
-SOURCES=kingdb.cc logger.cc status.cc server.cc buffer_manager.cc event_manager.cc compressor.cc murmurhash3.cc lz4.c
+SOURCES=kingdb.cc logger.cc status.cc server.cc buffer_manager.cc event_manager.cc compressor.cc murmurhash3.cc lz4.cc
 SOURCES_MAIN=main.cc
 SOURCES_CLIENT=client.cc
 SOURCES_CLIENT_EMB=client_embedded.cc
