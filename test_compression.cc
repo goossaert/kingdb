@@ -93,13 +93,17 @@ int main() {
   char *uncompressed;
   uint64_t size_out;
   uint64_t size_out_total = 0;
+  char *frame;
+  uint64_t size_frame;
   int step = 0;
   char *uncompressed_full = new char[1024*1024];
   while(true) {
     kdb::Status s1 = lz4.Uncompress(compressed,
                                     size_compressed,
                                     &uncompressed,
-                                    &size_out);
+                                    &size_out,
+                                    &frame,
+                                    &size_frame);
     fprintf(stderr, "stream uncompressed step: %d size:%llu\n", step, size_out);
     if (!s1.IsOK()) {
       fprintf(stderr, "%s\n", s1.ToString().c_str());

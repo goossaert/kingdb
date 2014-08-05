@@ -46,6 +46,8 @@ Status KingDB::PutChunk(ByteArray *key,
   ByteArray *chunk_final = nullptr;
   SharedAllocatedByteArray *chunk_compressed = nullptr;
 
+  bool is_last_chunk = (chunk->size() + offset_chunk == size_value);
+
   if (chunk->size() == 0) do_compression = false;
 
   if (do_compression) {
@@ -68,27 +70,30 @@ Status KingDB::PutChunk(ByteArray *key,
 
     LOG_TRACE("KingDB PutChunk()", "[%s] (%llu) compressed size %llu - offset_chunk_compressed %llu", key->ToString().c_str(), chunk->size(), chunk_compressed->size(), offset_chunk_compressed);
 
-    // When the last chunk is reached, set size_value_compressed to that
-    // it can be passed to the storage engine
-    if (chunk->size() + offset_chunk == size_value) {
+    if (is_last_chunk) {
       size_value_compressed = compressor_.size_compressed();
     }
 
     chunk_final = chunk_compressed;
     delete chunk;
-  }
-
-  if (!do_compression) {
+  } else {
     chunk_final = chunk;
   }
 
-  LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu END", key->ToString().c_str(), compressor_.size_compressed());
+  // Compute CRC32 checksum
+  uint32_t crc32 = 0;
+  if (offset_chunk == 0) crc32_.reset();
+  crc32_.stream(chunk_final->data(), chunk_final->size());
+  if (is_last_chunk) crc32 = crc32_.get();
+
+  LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu crc32:%u END", key->ToString().c_str(), size_value_compressed, crc32);
 
   return bm_.PutChunk(key,
                       chunk_final,
                       offset_chunk_compressed,
                       size_value,
-                      size_value_compressed);
+                      size_value_compressed,
+                      crc32);
 }
 
 

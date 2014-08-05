@@ -166,14 +166,18 @@ void NetworkTask::Run(std::thread::id tid) {
           uint64_t size_chunk;
           while (true) {
             s = value->data_chunk(&chunk, &size_chunk);
+            if (s.IsDone()) break;
             if (!s.IsOK()) {
+              delete[] chunk;
               LOG_TRACE("NetworkTask", "Error - data_chunk(): %s", s.ToString().c_str());
+              break;
             }
             if (send(sockfd_, chunk, size_chunk, 0) == -1) {
+              delete[] chunk;
               LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
               break;
             }
-            if (s.IsDone()) break;
+            delete[] chunk;
           }
 
           if (!s.IsOK() && !s.IsDone()) {

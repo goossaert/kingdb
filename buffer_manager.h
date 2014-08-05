@@ -36,7 +36,8 @@ class BufferManager {
                   ByteArray* chunk,
                   uint64_t offset_chunk,
                   uint64_t size_value,
-                  uint64_t size_value_compressed);
+                  uint64_t size_value_compressed,
+                  uint32_t crc32);
   Status Remove(ByteArray* key);
 
 
@@ -46,7 +47,8 @@ class BufferManager {
                     ByteArray* chunk,
                     uint64_t offset_chunk,
                     uint64_t size_value,
-                    uint64_t size_value_compressed);
+                    uint64_t size_value_compressed,
+                    uint32_t crc32);
   void ProcessingLoop();
 
   int im_live_;

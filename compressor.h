@@ -14,6 +14,7 @@
 #include "logger.h"
 #include "status.h"
 #include "threadstorage.h"
+#include "crc32c.h"
 
 namespace kdb {
 
@@ -45,7 +46,9 @@ class CompressorLZ4 {
   Status Uncompress(char *source,
                     uint64_t size_source,
                     char **dest,
-                    uint64_t *size_dest
+                    uint64_t *size_dest,
+                    char **frame_out,
+                    uint64_t *size_frame_out
                    );
 
   uint64_t thread_local_handler(std::map<std::thread::id, uint64_t>& status,
@@ -58,6 +61,7 @@ class CompressorLZ4 {
  private:
   ThreadStorage ts_compress_;
   ThreadStorage ts_uncompress_;
+  CRC32 crc32_;
 };
 
 };

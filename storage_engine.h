@@ -115,6 +115,7 @@ class LogfileManager {
     entry->size_value = order.size_value;
     entry->size_value_compressed = order.size_value_compressed;
     entry->hash = 0;
+    entry->crc32 = 0;
     if(write(fd, buffer_raw_, SIZE_LOGFILE_HEADER) < 0) { // write header
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
@@ -158,16 +159,18 @@ class LogfileManager {
       LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
     }
 
-    // Write the header again to save the right size of compressed value
+    // If this is a last chunk, the header are written again to save the right size of compressed value,
+    // and the crc32 is saved too
     if (   order.size_value_compressed > 0
         && order.chunk->size() + order.offset_chunk == order.size_value_compressed) {
-      LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu", order.key->ToString().c_str(), order.size_value, order.size_value_compressed);
+      LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:%u", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct Entry entry;
       entry.action_type = 7;
       entry.size_key = order.key->size();
       entry.size_value = order.size_value;
       entry.size_value_compressed = order.size_value_compressed;
       entry.hash = 0;
+      entry.crc32 = order.crc32;
       if (pwrite(fd, &entry, sizeof(struct Entry), offset_file) < 0) {
         LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
       }
@@ -188,8 +191,10 @@ class LogfileManager {
       entry->size_value = order.size_value;
       entry->size_value_compressed = order.size_value_compressed;
       entry->hash = 0;
+      entry->crc32 = order.crc32;
       memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry), order.key->data(), order.key->size());
       memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry) + order.key->size(), order.chunk->data(), order.chunk->size());
+
       //map_index[order.key] = fileid_ | offset_end_;
       uint64_t fileid_shifted = fileid_;
       fileid_shifted <<= 32;
@@ -199,6 +204,7 @@ class LogfileManager {
       if (order.chunk->size() != order.size_value) {
         LOG_TRACE("StorageEngine::ProcessingLoopData()", "BEFORE fileid_ %u", fileid_);
         FlushCurrentFile(0, order.size_value - order.chunk->size());
+        // TODO: might be better to fseek() instead of doing a large write
         //offset_end_ += order.size_value - order.size_chunk;
         //FlushCurrentFile();
         //ftruncate(fd_, offset_end_);
@@ -212,6 +218,7 @@ class LogfileManager {
       entry->size_key = order.key->size();
       entry->size_value = 0;
       entry->size_value_compressed = 0;
+      entry->crc32 = 0;
       memcpy(buffer_raw_ + sizeof(struct Entry), order.key->data(), order.key->size());
       offset_end_ += sizeof(struct Entry) + order.key->size();
       offset_out = 0;
@@ -313,7 +320,7 @@ class LogfileManager {
   // TODO: make sure that the case where two writers simultaneously write entries with the same key is taken 
   //       into account -- add thread id in the key of key_to_location?
   // TODO: make sure that the writes that fail gets all their temporary data
-  // cleaned up (including whatever is in key_to_location)
+  //       cleaned up (including whatever is in key_to_location)
 };
 
 
@@ -443,6 +450,7 @@ class StorageEngine {
     key_temp->SetOffset(offset_file + sizeof(struct Entry), entry->size_key);
     value_temp->SetOffset(offset_file + sizeof(struct Entry) + entry->size_key, entry->size_value);
     value_temp->SetSizeCompressed(entry->size_value_compressed);
+    value_temp->SetCRC32(entry->crc32);
 
     LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out");
 

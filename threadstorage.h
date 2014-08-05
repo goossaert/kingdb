@@ -7,6 +7,7 @@
 
 #include <mutex>
 #include <thread>
+#include <map>
 
 namespace kdb {
 

@@ -18,6 +18,7 @@
 
 #include "logger.h"
 #include "compressor.h"
+#include "crc32c.h"
 
 namespace kdb {
 
@@ -63,6 +64,7 @@ class ByteArray {
 
   void SetCompression(bool c) { is_compressed_ = c; }
   void SetSizeCompressed(uint64_t s) { size_compressed_ = s; }
+  void SetCRC32(uint64_t c) { crc32_value_ = c; }
 
   virtual Status data_chunk(char **data, uint64_t *size) {
     *size = size_;
@@ -73,6 +75,7 @@ class ByteArray {
   char *data_;
   uint64_t size_;
   uint64_t size_compressed_;
+  uint32_t crc32_value_;
   bool is_compressed_;
 };
 
@@ -141,6 +144,7 @@ class SharedMmappedByteArray: public ByteArray {
     data_ = mmap_->datafile_;
     size_ = 0;
     compressor_.Reset();
+    crc32_.reset();
   }
 
   void SetOffset(uint64_t offset, uint64_t size) {
@@ -163,14 +167,25 @@ class SharedMmappedByteArray: public ByteArray {
     *data_out = nullptr;
     *size_out = 0;
 
+    char *frame;
+    uint64_t size_frame;
+
     LOG_TRACE("data_chunk()", "start");
     Status s = compressor_.Uncompress(data_,
                                       size_compressed_,
                                       data_out,
-                                      size_out);
-    if (!s.IsOK()) return s;
-    LOG_TRACE("data_chunk()", "size_compressed_:%llu size_out:%llu", size_compressed_, *size_out);
+                                      size_out,
+                                      &frame,
+                                      &size_frame);
 
+    if (s.IsDone() && crc32_.get() != crc32_value_) {
+      fprintf(stderr, "Bad CRC32 - stored:%u computed:%u\n", crc32_value_, crc32_.get());
+      return Status::IOError("Bad CRC32");
+    } else if (!s.IsOK()) {
+      return s;
+    }
+
+    crc32_.stream(frame, size_frame);
     return Status::OK();
   }
 
@@ -178,6 +193,7 @@ class SharedMmappedByteArray: public ByteArray {
 
  private:
   CompressorLZ4 compressor_;
+  CRC32 crc32_;
   std::shared_ptr<Mmap> mmap_;
   uint64_t offset_;
 };

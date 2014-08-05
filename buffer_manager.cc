@@ -106,13 +106,15 @@ Status BufferManager::PutChunk(ByteArray* key,
                                ByteArray* chunk,
                                uint64_t offset_chunk,
                                uint64_t size_value,
-                               uint64_t size_value_compressed) {
+                               uint64_t size_value_compressed,
+                               uint32_t crc32) {
   return WriteChunk(OrderType::Put,
                     key,
                     chunk,
                     offset_chunk,
                     size_value,
-                    size_value_compressed
+                    size_value_compressed,
+                    crc32
                    );
 }
 
@@ -122,7 +124,7 @@ Status BufferManager::Remove(ByteArray* key) {
   //       The use of SimpleByteArray here is a hack to guarantee that data()
   //       and size() won't be called on a nullptr -- this needs to be cleaned up.
   auto empty_chunk = new SimpleByteArray(nullptr, 0);
-  return WriteChunk(OrderType::Remove, key, empty_chunk, 0, 0, 0);
+  return WriteChunk(OrderType::Remove, key, empty_chunk, 0, 0, 0, 0);
 }
 
 
@@ -131,7 +133,8 @@ Status BufferManager::WriteChunk(const OrderType& op,
                                  ByteArray* chunk,
                                  uint64_t offset_chunk,
                                  uint64_t size_value,
-                                 uint64_t size_value_compressed) {
+                                 uint64_t size_value_compressed,
+                                 uint32_t crc32) {
   LOG_DEBUG("LOCK", "1 lock");
   std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
   //if (key.size() + value.size() > buffer_size_) {
@@ -145,7 +148,8 @@ Status BufferManager::WriteChunk(const OrderType& op,
                                      chunk,
                                      offset_chunk,
                                      size_value,
-                                     size_value_compressed});
+                                     size_value_compressed,
+                                     crc32});
   if (offset_chunk == 0) {
     sizes_[im_live_] += key->size();
   }

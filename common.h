@@ -29,6 +29,7 @@ struct Order {
   uint64_t offset_chunk;
   uint64_t size_value;
   uint64_t size_value_compressed;
+  uint32_t crc32;
 };
 
 
@@ -38,6 +39,7 @@ struct Entry {
   uint64_t size_value;
   uint64_t size_value_compressed;
   uint64_t hash;
+  uint32_t crc32;
 };
 
 struct EntryFooter {

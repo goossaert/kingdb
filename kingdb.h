@@ -17,6 +17,7 @@
 #include "byte_array.h"
 
 #include "compressor.h"
+#include "crc32c.h"
 
 namespace kdb {
 
@@ -45,6 +46,7 @@ class KingDB: public Interface {
   kdb::BufferManager bm_;
   kdb::StorageEngine se_;
   kdb::CompressorLZ4 compressor_;
+  kdb::CRC32 crc32_;
 };
 
 };
