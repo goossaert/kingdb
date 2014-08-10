@@ -262,6 +262,10 @@ void NetworkTask::Run(std::thread::id tid) {
       }
 
       if (chunk->size() > 0) {
+        // TODO: make sure that 'key_current' is not created as a new allocated
+        // ByteArray but just a shared copy of 'key' -- there is currently a bug
+        // in the ByteArray code so new allocated is an acceptable temporary
+        // solution. Once the bug is fixed, memory must be shared.
         ByteArray *key_current = new SharedAllocatedByteArray(key->size());
         memcpy(key_current->data(), key->data(), key->size());
         LOG_TRACE("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk->size());
