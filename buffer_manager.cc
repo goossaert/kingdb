@@ -79,7 +79,7 @@ Status BufferManager::Get(ByteArray* key, ByteArray** value_out) {
   mutex_copy_read_level5_.lock();
   num_readers_ -= 1;
   mutex_copy_read_level5_.unlock();
-  LOG_DEBUG("LOCK", "3 unlock");
+  LOG_DEBUG("LOCK", "5 unlock");
   cv_read_.notify_one();
   if (found) LOG_DEBUG("BufferManager::Get()", "found in buffer_copy");
   if (   found
@@ -179,22 +179,32 @@ Status BufferManager::WriteChunk(const OrderType& op,
   //       complexity.
   //       => idea: return a "RETRY" command, indicating to the client that he
   //                needs to sleep for 100ms-ish and retry?
+  /*
   if (   chunk->size() + offset_chunk == size_value
       && offset_chunk > 0) {
     force_swap_ = true;
   }
+  */
 
   // test on size for debugging remove()
-  if (sizes_[im_live_] > 64) {
+  if (buffers_[im_live_].size() > 256) {
+    // TODO: make this value optional -- a good default value would be the
+    // number of client threads
     force_swap_ = true;
   }
+  /*
+  */
 
   // TODO: remove when the calls to wait() will have been replaced
   //       by calls to wait_for() -- i.e. proper timing out
+  /*
   force_swap_ = true;
+  */
 
   if (sizes_[im_live_] > buffer_size_ || force_swap_) {
     LOG_TRACE("BufferManager", "trying to swap");
+    // TODO: play with the mutex_flush_, try to keep it before the
+    // if(can_swap_) or inside the if(can_swap_)
     LOG_DEBUG("LOCK", "2 lock");
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
     if (can_swap_) {
@@ -225,11 +235,30 @@ void BufferManager::ProcessingLoop() {
     LOG_TRACE("BufferManager", "ProcessingLoop() - start");
     LOG_DEBUG("LOCK", "2 lock");
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
-    if (sizes_[im_copy_] == 0) {
-      LOG_TRACE("BufferManager", "ProcessingLoop() - wait");
+    while (sizes_[im_copy_] == 0) {
+      LOG_TRACE("BufferManager", "ProcessingLoop() - wait - %llu %llu", buffers_[im_copy_].size(), buffers_[im_live_].size());
       can_swap_ = true;
-      cv_flush_.wait(lock_flush);
+      std::cv_status status = cv_flush_.wait_for(lock_flush, std::chrono::milliseconds(500));
+      if (status == std::cv_status::no_timeout) {
+        //LOG_INFO("BufferManager", "ProcessingLoop() - swapped no timeout");
+        break;
+      } else if (   status == std::cv_status::timeout
+                 && buffers_[im_live_].size() > 0) {
+        // Note: I could have made it so the swap only happened here and not in
+        //       WriteChunk(), however it is simpler to have swapping code twice
+        //       than to have to deal with adding and removing items from the
+        //       live buffer, because it would requires lots of locking --
+        //       working with the copy buffer is simpler.
+        //LOG_INFO("BufferManager", "ProcessingLoop() - swapped timeout");
+        std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
+        can_swap_ = false;
+        force_swap_ = false;
+        std::swap(im_live_, im_copy_);
+        break;
+      }
     }
+
+    LOG_TRACE("BufferManager", "ProcessingLoop() - start swap - %llu %llu", buffers_[im_copy_].size(), buffers_[im_live_].size());
  
     // Notify the storage engine that the buffer can be flushed
     LOG_TRACE("BM", "WAIT: Get()-flush_buffer");
@@ -256,6 +285,8 @@ void BufferManager::ProcessingLoop() {
     sizes_[im_copy_] = 0;
     buffers_[im_copy_].clear();
 
+    LOG_TRACE("BufferManager", "ProcessingLoop() - end swap - %llu %llu", buffers_[im_copy_].size(), buffers_[im_live_].size());
+ 
     if (buffers_[im_copy_].size()) {
       for(auto &p: buffers_[im_copy_]) {
         LOG_TRACE("BufferManager", "ProcessingLoop() ITEM im_copy - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);

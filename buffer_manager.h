@@ -10,6 +10,7 @@
 #include <array>
 #include <string>
 #include <vector>
+#include <chrono>
 #include "kdb.h"
 #include "common.h"
 #include "byte_array.h"

@@ -346,7 +346,7 @@ class StorageEngine {
       // Wait for orders to process
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "start");
       //std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
-      std::vector<Order> orders = EventManager::flush_buffer.Wait();     
+      std::vector<Order> orders = EventManager::flush_buffer.Wait();
       //std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
       //uint64_t duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
       //std::cout << "buffer read from storage engine in " << duration << " ms" << std::endl;
