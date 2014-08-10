@@ -262,8 +262,8 @@ void NetworkTask::Run(std::thread::id tid) {
       }
 
       if (chunk->size() > 0) {
-        ByteArray *key_current = new SharedAllocatedByteArray();
-        *key_current = *key;
+        ByteArray *key_current = new SharedAllocatedByteArray(key->size());
+        memcpy(key_current->data(), key->data(), key->size());
         LOG_TRACE("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk->size());
         Status s = db_->PutChunk(key_current,
                                  chunk,
