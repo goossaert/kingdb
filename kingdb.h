@@ -15,6 +15,7 @@
 #include "status.h"
 #include "common.h"
 #include "byte_array.h"
+#include "options.h"
 
 #include "compressor.h"
 #include "crc32c.h"
@@ -23,24 +24,28 @@ namespace kdb {
 
 class KingDB: public Interface {
  public:
-  KingDB(std::string dbname):
-    dbname_(dbname),
-    se_(dbname)
+  KingDB(const DatabaseOptions& db_options, const std::string dbname)
+      : db_options_(db_options),
+        dbname_(dbname),
+        bm_(db_options),
+        se_(db_options, dbname)
   {
   }
   virtual ~KingDB() {}
 
-  virtual Status Get(ByteArray* key, ByteArray** value_out) override;
-  virtual Status Put(ByteArray *key, ByteArray *chunk) override;
-  virtual Status PutChunk(ByteArray *key,
+  virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override;
+  virtual Status Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk) override;
+  virtual Status PutChunk(WriteOptions& write_options,
+                          ByteArray *key,
                           ByteArray *chunk,
                           uint64_t offset_chunk,
                           uint64_t size_value) override;
-  virtual Status Remove(ByteArray *key) override;
+  virtual Status Remove(WriteOptions& write_options, ByteArray *key) override;
 
  private:
   // TODO: Make sure that if multilpe threads are creating KingDB objects,
   //       they would all refer to the same buffer manager and storage engine.
+  kdb::DatabaseOptions db_options_;
   std::string dbname_;
   std::mutex mutex_;
   kdb::BufferManager bm_;

@@ -26,6 +26,7 @@
 #include <string>
 #include <chrono>
 
+#include "options.h"
 #include "logger.h"
 #include "kdb.h"
 #include "threadpool.h"
@@ -56,7 +57,11 @@ class NetworkTask: public Task {
 
 class Server {
  public:
-  Status Start(std::string dbname, int port, int backlog, int num_threads);
+  Status Start(DatabaseOptions& options,
+               std::string& dbname,
+               int port,
+               int backlog,
+               int num_threads);
  private:
   void* GetSockaddrIn(struct sockaddr *sa);
 };

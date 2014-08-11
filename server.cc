@@ -30,6 +30,8 @@ void NetworkTask::Run(std::thread::id tid) {
   LOG_TRACE("NetworkTask", "ENTER");
   // TODO: replace the memory allocation performed for 'key' and 'buffer' by a
   //       pool of pre-allocated buffers
+  ReadOptions read_options;
+  WriteOptions write_options;
 
   while(true) {
         
@@ -152,7 +154,8 @@ void NetworkTask::Run(std::thread::id tid) {
                                     // TODO: replace the pointer with a reference
                                     //       count
         buffer->SetOffset(4, buffer->size() - 4 - 2);
-        Status s = db_->Get(buffer, &value);
+        Status s = db_->Get(read_options, buffer, &value);
+
         if (s.IsOK()) {
           LOG_TRACE("NetworkTask", "GET: found");
           sprintf(buffer_send, "VALUE %s 0 %llu\r\n", buffer->ToString().c_str(), value->size());
@@ -162,32 +165,52 @@ void NetworkTask::Run(std::thread::id tid) {
             break;
           }
 
-          char *chunk;
-          uint64_t size_chunk;
-          while (true) {
+          if (!value->is_compressed()) {
+            char *chunk;
+            uint64_t size_chunk;
             s = value->data_chunk(&chunk, &size_chunk);
-            if (s.IsDone()) break;
-            if (!s.IsOK()) {
+            if (!s.IsOK() && !s.IsDone()) {
+              // TODO: this won't work, as it has to be sent before
+              //       the 'VALUE' command
+              if (send(sockfd_, "SERVER_ERROR Bad CRC32\r\n", 24, 0) == -1) {
+                LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+              }
+            } else {
+              if (send(sockfd_, chunk, size_chunk, 0) == -1) {
+                LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+              }
+            }
+          } else {
+            // If the value is compressed
+            char *chunk;
+            uint64_t size_chunk;
+            while (true) {
+              s = value->data_chunk(&chunk, &size_chunk);
+              if (s.IsDone()) break;
+              if (!s.IsOK()) {
+                delete[] chunk;
+                LOG_TRACE("NetworkTask", "Error - data_chunk(): %s", s.ToString().c_str());
+                break;
+              }
+              if (send(sockfd_, chunk, size_chunk, 0) == -1) {
+                delete[] chunk;
+                LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+                break;
+              }
               delete[] chunk;
-              LOG_TRACE("NetworkTask", "Error - data_chunk(): %s", s.ToString().c_str());
+            }
+
+            if (!s.IsOK() && !s.IsDone()) {
+              LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
               break;
             }
-            if (send(sockfd_, chunk, size_chunk, 0) == -1) {
-              delete[] chunk;
-              LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+          }
+
+          if (s.IsOK() || s.IsDone()) {
+            if (send(sockfd_, "\r\nEND\r\n", 7, 0) == -1) {
+              LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
               break;
             }
-            delete[] chunk;
-          }
-
-          if (!s.IsOK() && !s.IsDone()) {
-            LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
-            break;
-          }
-
-          if (send(sockfd_, "\r\nEND\r\n", 7, 0) == -1) {
-            LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
-            break;
           }
 
           /*
@@ -221,7 +244,7 @@ void NetworkTask::Run(std::thread::id tid) {
       std::string str_buffer = buffer->ToString();
       if (std::regex_search(str_buffer, matches, regex_remove)) {
         buffer->SetOffset(7, buffer->size() - 7 - 2);
-        Status s = db_->Remove(buffer);
+        Status s = db_->Remove(write_options, buffer);
         if (s.IsOK()) {
           // TODO: check for [noreply], which may be present (see Memcached
           // protocol specs)
@@ -269,7 +292,8 @@ void NetworkTask::Run(std::thread::id tid) {
         ByteArray *key_current = new SharedAllocatedByteArray(key->size());
         memcpy(key_current->data(), key->data(), key->size());
         LOG_TRACE("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk->size());
-        Status s = db_->PutChunk(key_current,
+        Status s = db_->PutChunk(write_options,
+                                 key_current,
                                  chunk,
                                  offset_chunk,
                                  size_value);
@@ -314,7 +338,11 @@ void* Server::GetSockaddrIn(struct sockaddr *sa)
 }
 
 
-Status Server::Start(std::string dbname, int port, int backlog, int num_threads) {
+Status Server::Start(DatabaseOptions& options,
+                     std::string& dbname,
+                     int port,
+                     int backlog,
+                     int num_threads) {
 
   // Ignoring SIGPIPE, which would crash the program when writing to
   // a broken socket -- doing this because MSG_NOSIGNAL doesn't work on Mac OS X
@@ -360,7 +388,7 @@ Status Server::Start(std::string dbname, int port, int backlog, int num_threads)
   }
 
   // Create the database object and the thread pool
-  kdb::KingDB db(dbname);
+  kdb::KingDB db(options, dbname);
   ThreadPool tp(num_threads);
   tp.Start();
   LOG_TRACE("Server", "waiting for connections...");

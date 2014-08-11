@@ -6,9 +6,9 @@
 
 namespace kdb {
 
-Status KingDB::Get(ByteArray* key, ByteArray** value_out) {
+Status KingDB::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
   LOG_TRACE("KingDB Get()", "[%s]", key->ToString().c_str());
-  Status s = bm_.Get(key, value_out);
+  Status s = bm_.Get(read_options, key, value_out);
   if (s.IsRemoveOrder()) {
     return Status::NotFound("Unable to find entry");
   } else if (s.IsNotFound()) {
@@ -31,11 +31,12 @@ Status KingDB::Get(ByteArray* key, ByteArray** value_out) {
 }
 
 
-Status KingDB::Put(ByteArray *key, ByteArray *chunk) {
-  return PutChunk(key, chunk, 0, chunk->size());
+Status KingDB::Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk) {
+  return PutChunk(write_options, key, chunk, 0, chunk->size());
 }
 
-Status KingDB::PutChunk(ByteArray *key,
+Status KingDB::PutChunk(WriteOptions& write_options,
+                        ByteArray *key,
                         ByteArray *chunk,
                         uint64_t offset_chunk,
                         uint64_t size_value) {
@@ -47,8 +48,12 @@ Status KingDB::PutChunk(ByteArray *key,
   SharedAllocatedByteArray *chunk_compressed = nullptr;
 
   bool is_last_chunk = (chunk->size() + offset_chunk == size_value);
+  LOG_TRACE("KingDB PutChunk()", "CompressionType:%d", db_options_.compression.type);
 
-  if (chunk->size() == 0) do_compression = false;
+  if (   chunk->size() == 0
+      || db_options_.compression.type == kNoCompression) {
+    do_compression = false;
+  }
 
   if (do_compression) {
     if (offset_chunk == 0) {
@@ -88,7 +93,8 @@ Status KingDB::PutChunk(ByteArray *key,
 
   LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu crc32:%u END", key->ToString().c_str(), size_value_compressed, crc32);
 
-  return bm_.PutChunk(key,
+  return bm_.PutChunk(write_options,
+                      key,
                       chunk_final,
                       offset_chunk_compressed,
                       size_value,
@@ -97,9 +103,9 @@ Status KingDB::PutChunk(ByteArray *key,
 }
 
 
-Status KingDB::Remove(ByteArray *key) {
+Status KingDB::Remove(WriteOptions& write_options, ByteArray *key) {
   LOG_TRACE("KingDB Remove()", "[%s]", key->ToString().c_str());
-  return bm_.Remove(key);
+  return bm_.Remove(write_options, key);
 }
 
 };

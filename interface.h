@@ -5,6 +5,7 @@
 #ifndef KINGDB_INTERFACE_H_
 #define KINGDB_INTERFACE_H_
 
+#include "options.h"
 #include "status.h"
 #include "common.h"
 #include "byte_array.h"
@@ -13,13 +14,14 @@ namespace kdb {
 
 class Interface {
  public:
-  virtual Status Get(ByteArray* key, ByteArray** value_out) = 0;
-  virtual Status Put(ByteArray *key, ByteArray *chunk) = 0;
-  virtual Status PutChunk(ByteArray *key,
+  virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) = 0;
+  virtual Status Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk) = 0;
+  virtual Status PutChunk(WriteOptions& write_options,
+                          ByteArray *key,
                           ByteArray *chunk,
                           uint64_t offset_chunk,
                           uint64_t size_value) = 0;
-  virtual Status Remove(ByteArray *key) = 0;
+  virtual Status Remove(WriteOptions& write_options, ByteArray *key) = 0;
 
 };
 

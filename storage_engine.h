@@ -18,6 +18,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#include "options.h"
 #include "kdb.h"
 #include "common.h"
 #include "byte_array.h"
@@ -159,10 +160,12 @@ class LogfileManager {
       LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
     }
 
-    // If this is a last chunk, the header are written again to save the right size of compressed value,
+    // If this is a last chunk, the header is written again to save the right size of compressed value,
     // and the crc32 is saved too
-    if (   order.size_value_compressed > 0
-        && order.chunk->size() + order.offset_chunk == order.size_value_compressed) {
+    //if (   order.size_value_compressed > 0
+    //    && order.chunk->size() + order.offset_chunk == order.size_value_compressed) {
+    if (   (order.size_value_compressed == 0 && order.chunk->size() + order.offset_chunk == order.size_value)
+        || (order.size_value_compressed != 0 && order.chunk->size() + order.offset_chunk == order.size_value_compressed) ) {
       LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:%u", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct Entry entry;
       entry.action_type = 7;
@@ -245,16 +248,18 @@ class LogfileManager {
       // 1. The order is the first chunk of a very large entry, so we
       //    create a very large file and write the first chunk in there
       uint64_t location = 0;
-      if (   order.key->size() + order.size_value > size_block_
+      if (   order.key->size() + order.size_value > size_block_ // TODO: shouldn't this be testing size_value_compressed as well?
           && order.offset_chunk == 0) {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "1. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         location = PrepareFileLargeOrder(order);
       // 2. The order is a non-first chunk, so we
       //    open the file, pwrite() the chunk, and close the file.
       } else if (   order.offset_chunk != 0
+                 /*
                  && (   (order.size_value_compressed == 0 && order.chunk->size() != order.size_value) // TODO: are those two tests on the size necessary?
                      || (order.size_value_compressed != 0 && order.chunk->size() != order.size_value_compressed)
                     )
+                 */
                 ) {
         //  TODO: replace the tests on compression "order.size_value_compressed ..." by a real test on a flag or a boolean
         //  TODO: replace the use of size_value or size_value_compressed by a unique size() which would already return the right value
@@ -273,8 +278,7 @@ class LogfileManager {
         location = WriteSmallOrder(order);
       }
 
-      // If the order was the self-contained or the last chunk, add his location
-      // to the output map_index_out[]
+      // If the order was the self-contained or the last chunk, add his location to the output map_index_out[]
       if (   (order.size_value_compressed == 0 && order.offset_chunk + order.chunk->size() == order.size_value)
           || (order.size_value_compressed != 0 && order.offset_chunk + order.chunk->size() == order.size_value_compressed)) {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%llu offset_chunk: %llu location:%llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk, location);
@@ -284,7 +288,7 @@ class LogfileManager {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
         }
         key_to_location.erase(order.key->ToString());
-      // Else, if the order is not self-contained and is the fisrt chunk,
+      // Else, if the order is not self-contained and is the first chunk,
       // the location is saved in key_to_location[]
       } else if (order.offset_chunk == 0) {
         if (location != 0) {
@@ -326,8 +330,9 @@ class LogfileManager {
 
 class StorageEngine {
  public:
-  StorageEngine(std::string dbname, int size_block=0)
-    : logfile_manager_(dbname) {
+  StorageEngine(DatabaseOptions db_options, std::string dbname, int size_block=0)
+      : db_options_(db_options),
+        logfile_manager_(dbname) {
     LOG_TRACE("StorageEngine:StorageEngine()", "dbname: %s", dbname.c_str());
     dbname_ = dbname;
     thread_index_ = std::thread(&StorageEngine::ProcessingLoopIndex, this);
@@ -465,6 +470,9 @@ class StorageEngine {
   }
 
  private:
+  // Options
+  DatabaseOptions db_options_;
+
   // Data
   std::string dbname_;
   std::map<uint64_t, std::string> data_;

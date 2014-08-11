@@ -26,7 +26,12 @@
 
 int main() {
   ProfilerStart("/tmp/kingdb.prof");
-  kdb::KingDB db("mydb");
+
+  kdb::DatabaseOptions options;
+  kdb::KingDB db(options, "mydb");
+
+  kdb::ReadOptions read_options;
+  kdb::WriteOptions write_options;
 
   int size = SIZE_LARGE_TEST_ITEMS;
   char *buffer_large = new char[size+1];
@@ -47,12 +52,12 @@ int main() {
     items.push_back(ss.str());
   }
 
-
   std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
   for (auto i = 0; i < num_items; i++) {
     kdb::ByteArray *key = new kdb::SimpleByteArray(items[i].c_str(), items[i].size());
     kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_large, 100);
-    kdb::Status s = db.PutChunk(key,
+    kdb::Status s = db.PutChunk(write_options,
+                                key,
                                 value,
                                 0,
                                 100);

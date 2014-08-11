@@ -9,7 +9,7 @@
 
 namespace kdb {
 
-Status BufferManager::Get(ByteArray* key, ByteArray** value_out) {
+Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
   // TODO: need to fix the way the value is returned here: to create a new
   //       memory space and then return.
   // TODO: make sure the live buffer doesn't need to be protected by a mutex in
@@ -96,13 +96,14 @@ Status BufferManager::Get(ByteArray* key, ByteArray** value_out) {
 }
 
 
-Status BufferManager::Put(ByteArray* key, ByteArray* chunk) {
+Status BufferManager::Put(WriteOptions& write_options, ByteArray* key, ByteArray* chunk) {
   //return Write(OrderType::Put, key, value);
   return Status::InvalidArgument("BufferManager::Put() is not implemented");
 }
 
 
-Status BufferManager::PutChunk(ByteArray* key,
+Status BufferManager::PutChunk(WriteOptions& write_options,
+                               ByteArray* key,
                                ByteArray* chunk,
                                uint64_t offset_chunk,
                                uint64_t size_value,
@@ -119,7 +120,7 @@ Status BufferManager::PutChunk(ByteArray* key,
 }
 
 
-Status BufferManager::Remove(ByteArray* key) {
+Status BufferManager::Remove(WriteOptions& write_options, ByteArray* key) {
   // TODO: The storage engine is calling data() and size() on the chunk ByteArray.
   //       The use of SimpleByteArray here is a hack to guarantee that data()
   //       and size() won't be called on a nullptr -- this needs to be cleaned up.

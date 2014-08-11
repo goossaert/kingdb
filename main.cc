@@ -5,6 +5,7 @@
 #include <sys/resource.h>
 #include "server.h"
 #include "threadpool.h"
+#include "options.h"
 
 void show_usage(char *program_name) {
   printf("Example: %s --db-name mydb --port 3490 --backlog 150 --num-threads 150\n", program_name);
@@ -40,6 +41,7 @@ int main(int argc, char** argv) {
   int backlog = 0;
   int num_threads = 0;
   std::string dbname = "";
+  kdb::CompressionType ctype = kdb::kLZ4Compression;
 
   if (argc > 2) {
     for (int i = 1; i < argc; i += 2 ) {
@@ -56,6 +58,16 @@ int main(int argc, char** argv) {
           fprintf(stderr, "Unknown log level: [%s]\n", argv[i+1]);
           exit(-1); 
         }
+      } else if (strcmp(argv[i], "--compression" ) == 0) {
+        std::string compression(argv[i+1]);
+        if (compression == "disabled") {
+          ctype = kdb::kNoCompression;
+        } else if (compression == "lz4") {
+          ctype = kdb::kLZ4Compression;
+        } else {
+          fprintf(stderr, "Unknown compression option: [%s]\n", argv[i+1]);
+          exit(-1); 
+        }
       } else {
         fprintf(stderr, "Unknown parameter [%s]\n", argv[i]);
         exit(-1); 
@@ -68,7 +80,10 @@ int main(int argc, char** argv) {
     exit(-1); 
   }
 
+  kdb::DatabaseOptions options;
+  options.compression = ctype;
+
   kdb::Server server;
-  server.Start(dbname, port, backlog, num_threads);
+  server.Start(options, dbname, port, backlog, num_threads);
   return 0;
 }

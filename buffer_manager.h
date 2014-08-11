@@ -14,12 +14,14 @@
 #include "kdb.h"
 #include "common.h"
 #include "byte_array.h"
+#include "options.h"
 
 namespace kdb {
 
 class BufferManager {
  public:
-  BufferManager() {
+  BufferManager(const DatabaseOptions& db_options)
+      : db_options_(db_options){
     im_live_ = 0;
     im_copy_ = 1;
     num_readers_ = 0;
@@ -31,15 +33,16 @@ class BufferManager {
   ~BufferManager() {}
 
 
-  Status Get(ByteArray* key, ByteArray** value_out);
-  Status Put(ByteArray* key, ByteArray* chunk);
-  Status PutChunk(ByteArray* key,
+  Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out);
+  Status Put(WriteOptions& write_options, ByteArray* key, ByteArray* chunk);
+  Status PutChunk(WriteOptions& write_options,
+                  ByteArray* key,
                   ByteArray* chunk,
                   uint64_t offset_chunk,
                   uint64_t size_value,
                   uint64_t size_value_compressed,
                   uint32_t crc32);
-  Status Remove(ByteArray* key);
+  Status Remove(WriteOptions& write_options, ByteArray* key);
 
 
  private:
@@ -52,6 +55,7 @@ class BufferManager {
                     uint32_t crc32);
   void ProcessingLoop();
 
+  DatabaseOptions db_options_;
   int im_live_;
   int im_copy_;
   int buffer_size_;

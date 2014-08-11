@@ -31,14 +31,13 @@ class ByteArray {
   ByteArray() {
     data_ = nullptr;
     size_ = 0;
-    is_compressed_ = false;
   }
   virtual ~ByteArray() {}
   char* data() { return data_; }
   char* data_const() const { return data_; }
   uint64_t size() { return size_; }
   uint64_t size_const() const { return size_; }
-  bool is_compressed() { return is_compressed_; }
+  bool is_compressed() { return size_compressed_ > 0; }
 
   bool StartsWith(const char *substr, int n) {
     return (n <= size_ && strncmp(data_, substr, n) == 0);
@@ -62,7 +61,6 @@ class ByteArray {
     return std::string(data_, size_);
   }
 
-  void SetCompression(bool c) { is_compressed_ = c; }
   void SetSizeCompressed(uint64_t s) { size_compressed_ = s; }
   void SetCRC32(uint64_t c) { crc32_value_ = c; }
 
@@ -76,7 +74,6 @@ class ByteArray {
   uint64_t size_;
   uint64_t size_compressed_;
   uint32_t crc32_value_;
-  bool is_compressed_;
 };
 
 
@@ -159,9 +156,14 @@ class SharedMmappedByteArray: public ByteArray {
 
   virtual Status data_chunk(char **data_out, uint64_t *size_out) {
     if (size_compressed_ == 0) { // if no compression
+      crc32_.stream(data_, size_);
+      if (crc32_.get() != crc32_value_) {
+        fprintf(stderr, "Bad CRC32 - stored:%u computed:%u\n", crc32_value_, crc32_.get());
+        return Status::IOError("Bad CRC32");
+      }
       *data_out = data_;
       *size_out = size_;
-      return Status::Done();
+      return Status::OK();
     }
 
     *data_out = nullptr;
