@@ -40,3 +40,5 @@ location of their respective LICENSE files.
 
 - LevelDB, under BSD 3-Clause License: /3rdparty/leveldb/
 - LZ4, under BSD 2-Clause License: /3rdparty/lz4/
+- Murmurhash3, public domain: /3rdparty/murmurhash3/
+- xxHash, under BSD 2-Clause License: /3rdparty/xxhash/
