@@ -7,6 +7,10 @@
 
 namespace kdb {
 
+enum HashType {
+  kMurmurHash3_64 = 0x0,
+  kxxHash_64      = 0x1
+};
 
 enum CompressionType {
   kNoCompression  = 0x0,
@@ -23,10 +27,12 @@ struct CompressionOptions {
 struct DatabaseOptions {
   DatabaseOptions()
       : max_open_files(65535),
+        hash(kxxHash_64),
         compression(kLZ4Compression) {
   }
 
   uint64_t max_open_files;
+  HashType hash;
   CompressionOptions compression;
 };
 

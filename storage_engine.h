@@ -18,8 +18,9 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#include "options.h"
 #include "kdb.h"
+#include "options.h"
+#include "hash.h"
 #include "common.h"
 #include "byte_array.h"
 
@@ -338,6 +339,7 @@ class StorageEngine {
     thread_index_ = std::thread(&StorageEngine::ProcessingLoopIndex, this);
     thread_data_ = std::thread(&StorageEngine::ProcessingLoopData, this);
     num_readers_ = 0;
+    hash_ = MakeHash(db_options.hash);
   }
 
   ~StorageEngine() {
@@ -488,6 +490,7 @@ class StorageEngine {
   std::thread thread_index_;
   std::mutex mutex_index_;
 
+  Hash *hash_;
   LogfileManager logfile_manager_;
 };
 
