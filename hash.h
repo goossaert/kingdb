@@ -18,21 +18,21 @@ class Hash {
  public:
   Hash() {}
   virtual ~Hash() {}
-  virtual uint64_t HashFunction(char *data, uint32_t len) = 0;
+  virtual uint64_t HashFunction(const char *data, uint32_t len) = 0;
 };
 
 class MurmurHash3: public Hash {
  public:
   MurmurHash3() {}
   virtual ~MurmurHash3() {}
-  virtual uint64_t HashFunction(char *data, uint32_t len);
+  virtual uint64_t HashFunction(const char *data, uint32_t len);
 };
 
 class xxHash: public Hash {
  public:
   xxHash() {}
   virtual ~xxHash() {}
-  virtual uint64_t HashFunction(char *data, uint32_t len);
+  virtual uint64_t HashFunction(const char *data, uint32_t len);
  private:
 };
 

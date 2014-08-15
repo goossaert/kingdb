@@ -13,8 +13,12 @@ Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray**
   // TODO: need to fix the way the value is returned here: to create a new
   //       memory space and then return.
   // TODO: make sure the live buffer doesn't need to be protected by a mutex in
-  //       order to be accessed -- right now I'm relying to timing, but that may
+  //       order to be accessed -- right now I'm relying on timing, but that may
   //       be too weak to guarantee proper access
+  // TODO: for items being stored that are not small enough, only chunks will
+  //       be found in the buffers -- should the kv-store return "not found"
+  //       or should it try to send the data from the disk and the partially
+  //       available chunks in the buffer?
 
   // read the "live" buffer
   mutex_live_write_level1_.lock();
@@ -31,7 +35,7 @@ Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray**
   Order order_found;
   for (int i = 0; i < num_items; i++) {
     auto& order = buffer_live[i];
-    if (order.key == key) {
+    if (*order.key == *key) {
       found = true;
       order_found = order;
     }
@@ -58,7 +62,7 @@ Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray**
   mutex_copy_read_level5_.unlock();
   LOG_DEBUG("LOCK", "5 unlock");
   mutex_copy_write_level4_.unlock();
-  LOG_DEBUG("LOCK", "5 unlock");
+  LOG_DEBUG("LOCK", "4 unlock");
 
   // read from "copy" buffer
   found = false;
@@ -68,10 +72,24 @@ Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray**
   mutex_indices_level3_.unlock();
   LOG_DEBUG("LOCK", "3 unlock");
   for (auto& order: buffer_copy) {
-    if (order.key == key) {
+    if (*order.key == *key) {
       found = true;
       order_found = order;
     }
+  }
+
+  Status s;
+  if (found) LOG_DEBUG("BufferManager::Get()", "found in buffer_copy");
+  if (   found
+      && order_found.type == OrderType::Put
+      && order_found.chunk->size() == order_found.size_value) {
+    *value_out = order_found.chunk;
+    s = Status::OK();
+  } else if (   found
+             && order_found.type == OrderType::Remove) {
+    s = Status::RemoveOrder("Unable to find entry");
+  } else {
+    s = Status::NotFound("Unable to find entry");
   }
 
   // exit the "copy" buffer
@@ -81,18 +99,8 @@ Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray**
   mutex_copy_read_level5_.unlock();
   LOG_DEBUG("LOCK", "5 unlock");
   cv_read_.notify_one();
-  if (found) LOG_DEBUG("BufferManager::Get()", "found in buffer_copy");
-  if (   found
-      && order_found.type == OrderType::Put
-      && order_found.chunk->size() == order_found.size_value) {
-    *value_out = order_found.chunk;
-    return Status::OK();
-  } else if (   found
-             && order_found.type == OrderType::Remove) {
-    return Status::RemoveOrder("Unable to find entry");
-  } else {
-    return Status::NotFound("Unable to find entry");
-  }
+
+  return s;
 }
 
 
@@ -283,6 +291,10 @@ void BufferManager::ProcessingLoop() {
     LOG_DEBUG("LOCK", "5 unlock");
 
     // Clear flush buffer
+    for(auto &p: buffers_[im_copy_]) {
+      delete p.key;
+      delete p.chunk;
+    }
     sizes_[im_copy_] = 0;
     buffers_[im_copy_].clear();
 

@@ -34,7 +34,7 @@ struct Order {
 
 
 struct Entry {
-  uint32_t action_type;
+  uint32_t type;
   uint64_t size_key;
   uint64_t size_value;
   uint64_t size_value_compressed;

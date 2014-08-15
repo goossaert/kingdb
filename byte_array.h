@@ -53,6 +53,7 @@ class ByteArray {
   };
   */
   bool operator ==(const ByteArray &right) const {
+    //fprintf(stderr, "ByteArray operator==() -- left: %p %llu [%s] right: %p %llu [%s]\n", data_, size_, std::string(data_, size_).c_str(), right.data_const(), right.size_const(), std::string(right.data_const(), right.size_const()).c_str());
     return (   size_ == right.size_const()
             && memcmp(data_, right.data_const(), size_) == 0);
   }

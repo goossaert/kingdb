@@ -6,7 +6,7 @@
 
 namespace kdb {
 
-uint64_t MurmurHash3::HashFunction(char *data, uint32_t len) {
+uint64_t MurmurHash3::HashFunction(const char *data, uint32_t len) {
   // NOTE: You may need to change the seed, which by default is 0
   static char hash[16];
   static uint64_t output;
@@ -16,7 +16,7 @@ uint64_t MurmurHash3::HashFunction(char *data, uint32_t len) {
   return output;
 }
 
-uint64_t xxHash::HashFunction(char *data, uint32_t len) {
+uint64_t xxHash::HashFunction(const char *data, uint32_t len) {
   // NOTE: You may need to change the seed, which by default is 0
   return XXH64(data, len, 0);
 }

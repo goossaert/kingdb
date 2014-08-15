@@ -112,7 +112,7 @@ class LogfileManager {
 
     char buffer[1024];
     struct Entry* entry = reinterpret_cast<struct Entry*>(buffer);
-    entry->action_type = 7;
+    entry->type = kPutEntry;
     entry->size_key = order.key->size();
     entry->size_value = order.size_value;
     entry->size_value_compressed = order.size_value_compressed;
@@ -169,7 +169,7 @@ class LogfileManager {
         || (order.size_value_compressed != 0 && order.chunk->size() + order.offset_chunk == order.size_value_compressed) ) {
       LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:%u", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct Entry entry;
-      entry.action_type = 7;
+      entry.type = kPutEntry;
       entry.size_key = order.key->size();
       entry.size_value = order.size_value;
       entry.size_value_compressed = order.size_value_compressed;
@@ -190,7 +190,7 @@ class LogfileManager {
     uint64_t offset_out = 0;
     struct Entry* entry = reinterpret_cast<struct Entry*>(buffer_raw_ + offset_end_);
     if (order.type == OrderType::Put) {
-      entry->action_type = 7;
+      entry->type = kPutEntry;
       entry->size_key = order.key->size();
       entry->size_value = order.size_value;
       entry->size_value_compressed = order.size_value_compressed;
@@ -218,15 +218,18 @@ class LogfileManager {
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "Put [%s]", order.key->ToString().c_str());
     } else { // order.type == OrderType::Remove
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "Remove [%s]", order.key->ToString().c_str());
-      entry->action_type = 2;
+      entry->type = kRemoveEntry;
       entry->size_key = order.key->size();
       entry->size_value = 0;
       entry->size_value_compressed = 0;
       entry->crc32 = 0;
-      memcpy(buffer_raw_ + sizeof(struct Entry), order.key->data(), order.key->size());
+      memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry), order.key->data(), order.key->size());
+
+      uint64_t fileid_shifted = fileid_;
+      fileid_shifted <<= 32;
+      offset_out = fileid_shifted | offset_end_;
+      //offset_out = 0;
       offset_end_ += sizeof(struct Entry) + order.key->size();
-      offset_out = 0;
-      //map_index[order.key] = 0;
     }
     return offset_out;
   }
@@ -267,7 +270,7 @@ class LogfileManager {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "2. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         location = key_to_location[order.key->ToString()];
         if (location != 0) {
-          WriteChunk(order, key_to_location[order.key->ToString()]);
+          WriteChunk(order, location);
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
         }
@@ -283,7 +286,7 @@ class LogfileManager {
       if (   (order.size_value_compressed == 0 && order.offset_chunk + order.chunk->size() == order.size_value)
           || (order.size_value_compressed != 0 && order.offset_chunk + order.chunk->size() == order.size_value_compressed)) {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%llu offset_chunk: %llu location:%llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk, location);
-        if (location != 0 || order.type == OrderType::Remove) {
+        if (location != 0) {
           map_index_out[order.key->ToString()] = location;
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
@@ -292,14 +295,12 @@ class LogfileManager {
       // Else, if the order is not self-contained and is the first chunk,
       // the location is saved in key_to_location[]
       } else if (order.offset_chunk == 0) {
-        if (location != 0) {
+        if (location != 0 && order.type != OrderType::Remove) {
           key_to_location[order.key->ToString()] = location;
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
         }
       }
-      delete order.key;
-      delete order.chunk;
     }
     LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "end flush");
     FlushCurrentFile(0, 0);
@@ -386,6 +387,7 @@ class StorageEngine {
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "got index_updates");
       mutex_index_.lock();
 
+      /*
       for (auto& p: index_updates) {
         if (p.second == 0) {
           LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "remove [%s] num_items_index [%d]", p.first.c_str(), index_.size());
@@ -394,6 +396,13 @@ class StorageEngine {
           LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "put [%s]", p.first.c_str());
           index_[p.first] = p.second;
         }
+      }
+      */
+
+      for (auto& p: index_updates) {
+        uint64_t hashed_key = hash_->HashFunction(p.first.c_str(), p.first.size());
+        LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "put [%s] location [%llu] hash [%llu]", p.first.c_str(), p.second, hashed_key);
+        index_.insert(std::pair<uint64_t,uint64_t>(hashed_key, p.second));
       }
 
       /*
@@ -415,14 +424,23 @@ class StorageEngine {
     //LOG_TRACE("INDEX", "WAIT: Get()-mutex_index_");
     std::unique_lock<std::mutex> lock(mutex_index_);
     LOG_TRACE("StorageEngine::Get()", "%s", key->ToString().c_str());
-    auto p = index_.find(key->ToString());
-    if (p != index_.end()) {
+
+    // NOTE: Since C++11, the relative ordering of elements with equivalent keys
+    //       in a multimap is preserved.
+    uint64_t hashed_key = hash_->HashFunction(key->data(), key->size());
+    auto range = index_.equal_range(hashed_key);
+    auto rbegin = --range.second;
+    auto rend  = --range.first;
+    for (auto it = rbegin; it != rend; --it) {
       ByteArray *key_temp;
-      Status s = GetEntry(index_[key->ToString()], &key_temp, value_out); 
-      LOG_TRACE("StorageEngine::Get()", "key:[%s] key_temp:[%s]", key->ToString().c_str(), key_temp->ToString().c_str());
+      Status s = GetEntry(it->second, &key_temp, value_out); 
+      LOG_TRACE("StorageEngine::Get()", "key:[%s] key_temp:[%s] hashed_key:[%llu] hashed_key_temp:[%llu] size_key:[%llu] size_key_temp:[%llu]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
+      if (*key_temp == *key) {
+        delete key_temp;
+        return s;
+      }
       delete key_temp;
-      return s;
-      //return Status::OK();
+      delete *value_out;
     }
     LOG_TRACE("StorageEngine::Get()", "%s - not found!", key->ToString().c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
@@ -444,7 +462,7 @@ class StorageEngine {
     mutex_read_.unlock();
     mutex_write_.unlock();
 
-    LOG_TRACE("StorageEngine::GetEntry()", "fileid:%u offset_file:%u filesize:%llu", fileid, offset_file, filesize);
+    LOG_TRACE("StorageEngine::GetEntry()", "location:%llu fileid:%u offset_file:%u filesize:%llu", offset, fileid, offset_file, filesize);
     std::string filepath = dbname_ + "/" + std::to_string(fileid); // TODO: optimize here
 
     auto key_temp = new SharedMmappedByteArray(filepath,
@@ -459,13 +477,20 @@ class StorageEngine {
     value_temp->SetSizeCompressed(entry->size_value_compressed);
     value_temp->SetCRC32(entry->crc32);
 
-    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out");
+    if (entry->type == kRemoveEntry) {
+      s = Status::NotFound("Unable to find the entry in the storage engine");
+      delete value_temp;
+      value_temp = nullptr;
+    }
+
+    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out - type:%d", entry->type);
 
     mutex_read_.lock();
     num_readers_ -= 1;
     LOG_TRACE("GetEntry()", "num_readers_: %d", num_readers_);
     mutex_read_.unlock();
     cv_read_.notify_one();
+
     *key_out = key_temp;
     *value_out = value_temp;
     return s;
@@ -486,7 +511,7 @@ class StorageEngine {
   int num_readers_;
 
   // Index
-  std::map<std::string, uint64_t> index_;
+  std::multimap<uint64_t, uint64_t> index_;
   std::thread thread_index_;
   std::mutex mutex_index_;
 
