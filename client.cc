@@ -17,6 +17,8 @@
 #include "threadpool.h"
 #include "kdb.h"
 
+#define MAX_RETRIES 1
+
 namespace kdb {
 
 class Client {
@@ -115,9 +117,11 @@ class Client {
 
 class ClientTask: public Task {
  public:
-  ClientTask(std::string database, int num_items) {
+  ClientTask(std::string database, int num_writes, int num_removes, int num_reads) {
     database_ = database;
-    num_items_ = num_items;
+    num_writes_ = num_writes;
+    num_removes_ = num_removes;
+    num_reads_ = num_reads;
   }
   virtual ~ClientTask() {};
 
@@ -125,7 +129,7 @@ class ClientTask: public Task {
     //std::cout << "Thread " << tid << std::endl;
   }
 
-  virtual void Run(std::thread::id tid) {
+  virtual void Run(std::thread::id tid, uint64_t id) {
     Client client(database_);
     int size = SIZE_LARGE_TEST_ITEMS;
     char *buffer_large = new char[size+1];
@@ -143,21 +147,21 @@ class ClientTask: public Task {
     std::mt19937 generator(seq);
     std::uniform_int_distribution<int> random_dist(256*1024, 512*1024);
 
-    for (auto i = 0; i < num_items_; i++) {
+    for (auto i = 0; i < num_writes_; i++) {
       std::stringstream ss;
-      ss << tid << "-" << i;
+      ss << id << "-" << i;
       std::string key = ss.str();
       int size_value = random_dist(generator);
       char *value = MakeValue(key, size_value);
-      for (auto retry = 0; retry < 3; retry++) {
+      for (auto retry = 0; retry < MAX_RETRIES; retry++) {
         s = client.Put(ss.str().c_str(), ss.str().size(), value, size_value);
         if (s.IsOK()) {
-          retry = 3;
+          retry = MAX_RETRIES;
         } else {
           LOG_INFO("ClientTask", "Put() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
         }
         
-        if (retry == 3) break;
+        if (retry == MAX_RETRIES) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10000));
         LOG_INFO("ClientTask", "retry key: [%s]", key.c_str());
       }
@@ -165,14 +169,11 @@ class ClientTask: public Task {
       delete[] value;
     }
 
-
-
     std::mt19937 generator_remove(seq);
     std::uniform_int_distribution<int> random_dist_remove(256*1024, 512*1024);
-
-    for (auto i = 0; i < num_items_ / 2; i++) {
+    for (auto i = 0; i < num_removes_ / 2; i++) {
       std::stringstream ss;
-      ss << tid << "-" << i;
+      ss << id << "-" << i;
       std::string key = ss.str();
       s = client.Remove(key.c_str(), key.size());
       if (!s.IsOK()) {
@@ -184,10 +185,9 @@ class ClientTask: public Task {
 
     std::mt19937 generator2(seq);
     std::uniform_int_distribution<int> random_dist2(256*1024, 512*1024);
-
-    for (auto i = 0; i < num_items_; i++) {
+    for (auto i = 0; i < num_reads_; i++) {
       std::stringstream ss;
-      ss << tid << "-" << i;
+      ss << id << "-" << i;
       std::string key = ss.str();
       int size_value = random_dist2(generator2);
 
@@ -197,12 +197,12 @@ class ClientTask: public Task {
 
       char *value = nullptr;
       int size_value_get;
-      for (auto retry = 0; retry < 3; retry++) {
+      for (auto retry = 0; retry < MAX_RETRIES; retry++) {
         s = client.Get(key, &value, &size_value_get);
         if (!has_item) { 
           if (s.IsNotFound()) {
             LOG_INFO("ClientTask", "Get() OK for removed key [%s]: %s", key.c_str(), s.ToString().c_str());
-            retry = 3;
+            retry = MAX_RETRIES;
           } else {
             LOG_INFO("ClientTask", "Get() Error for removed key [%s]: %s", key.c_str(), s.ToString().c_str());
           }
@@ -218,11 +218,11 @@ class ClientTask: public Task {
               LOG_INFO("ClientTask", "Found error in content for key [%s]", key.c_str());
             } else {
               LOG_INFO("ClientTask", "Verified content of key [%s]", key.c_str());
-              retry = 3;
+              retry = MAX_RETRIES;
             }
           }
         }
-        if (retry == 3) break;
+        if (retry == MAX_RETRIES) break;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(5000));
         LOG_INFO("ClientTask", "retry key: [%s]", key.c_str());
@@ -325,7 +325,9 @@ class ClientTask: public Task {
 
 
   std::string database_;
-  int num_items_;
+  int num_writes_;
+  int num_reads_;
+  int num_removes_;
   std::set<std::string> keys_removed;
 };
 
@@ -333,7 +335,7 @@ class ClientTask: public Task {
 
 
 void show_usage(char *program_name) {
-  printf("Example: %s --host 127.0.0.1:3490 --num-threads 120 --num-items 10000\n", program_name);
+  printf("Example: %s --host 127.0.0.1:3490 --num-threads 120 --write 10000 --remove 5000 --read 10000\n", program_name);
 }
 
 
@@ -351,16 +353,22 @@ int main(int argc, char **argv) {
 
   std::string host("");
   int num_threads = 0;
-  int num_items = 0;
+  int num_writes = 0;
+  int num_removes = 0;
+  int num_reads = 0;
 
   if (argc > 2) {
     for (int i = 1; i < argc; i += 2 ) {
       if (strcmp(argv[i], "--host" ) == 0) {
         host = "--SERVER=" + std::string(argv[i+1]);
-      } else if (strcmp(argv[i], "--num-items" ) == 0) {
-        num_items = atoi(argv[i+1]);
       } else if (strcmp(argv[i], "--num-threads" ) == 0) {
         num_threads = atoi(argv[i+1]);
+      } else if (strcmp(argv[i], "--write" ) == 0) {
+        num_writes = atoi(argv[i+1]);
+      } else if (strcmp(argv[i], "--remove" ) == 0) {
+        num_removes = atoi(argv[i+1]);
+      } else if (strcmp(argv[i], "--read" ) == 0) {
+        num_reads = atoi(argv[i+1]);
       } else if (strcmp(argv[i], "--log-level" ) == 0) {
         if (kdb::Logger::set_current_level(argv[i+1]) < 0 ) {
           fprintf(stderr, "Unknown log level: [%s]\n", argv[i+1]);
@@ -373,7 +381,7 @@ int main(int argc, char **argv) {
     }
   }
 
-  if (host == "" || num_items == 0 || num_threads == 0) {
+  if (host == "" || num_threads == 0) {
     fprintf(stderr, "Missing arguments\n");
     exit(-1); 
   }
@@ -381,7 +389,7 @@ int main(int argc, char **argv) {
   kdb::ThreadPool tp(num_threads);
   tp.Start();
   for (auto i = 0; i < num_threads; i++ ) {
-    tp.AddTask(new kdb::ClientTask(host, num_items));
+    tp.AddTask(new kdb::ClientTask(host, num_writes, num_removes, num_reads));
   }
   return 0;
 

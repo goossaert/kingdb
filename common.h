@@ -55,6 +55,16 @@ struct Metadata {
   uint64_t pointer_compaction;
 };
 
+struct LogFileFooter {
+  uint64_t num_entries;
+  uint64_t magic_number;
+};
+
+struct LogFileFooterIndex {
+  uint64_t hashed_key;
+  uint64_t offset_entry; // TODO: this only needs to be uint32_t really, but due to alignment/padding, I have set it to be uint64_t
+};
+
 
 
 }

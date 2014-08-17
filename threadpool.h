@@ -19,7 +19,7 @@ class Task {
   Task() {}
   virtual ~Task() {}
   virtual void RunInLock(std::thread::id tid) = 0;
-  virtual void Run(std::thread::id tid) = 0;
+  virtual void Run(std::thread::id tid, uint64_t id) = 0;
 };
 
 
@@ -38,9 +38,12 @@ class ThreadPool {
   std::condition_variable cv_;
   std::mutex mutex_;
   std::vector<std::thread> threads_;
+  std::map<std::thread::id, uint64_t> tid_to_id;
+  uint64_t seq_id;
 
   ThreadPool(int num_threads) {
     num_threads_ = num_threads;
+    seq_id = 0;
   }
 
   ~ThreadPool() {
@@ -57,9 +60,12 @@ class ThreadPool {
       }
       auto task = queue_.front();
       queue_.pop();
-      task->RunInLock(std::this_thread::get_id());
+      auto tid = std::this_thread::get_id();
+      auto it_find = tid_to_id.find(tid);
+      if (it_find == tid_to_id.end()) tid_to_id[tid] = seq_id++;
+      task->RunInLock(tid);
       lock.unlock();
-      task->Run(std::this_thread::get_id());
+      task->Run(tid, tid_to_id[tid]);
       delete task;
     }
   }
@@ -71,6 +77,9 @@ class ThreadPool {
   }
 
   int Start() {
+    // NOTE: Should each thread run the loop, or should the loop be running in a
+    //       main thread that is then dispatching work by notifying other
+    //       threads?
     for (auto i = 0; i < num_threads_; i++) {
       threads_.push_back(std::thread(&ThreadPool::ProcessingLoop, this));
     }

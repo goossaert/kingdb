@@ -30,8 +30,19 @@ class KingDB: public Interface {
         bm_(db_options),
         se_(db_options, dbname)
   {
+    self_ = this;
+    signal(SIGINT, SigIntHandlerStatic);
   }
   virtual ~KingDB() {}
+
+  static void SigIntHandlerStatic(int signal) {
+    KingDB::self_->SigIntHandler(signal);
+  }
+
+  void SigIntHandler(int signal) {
+    se_.Close();
+    exit(0);
+  }
 
   virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override;
   virtual Status Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk) override;
@@ -52,6 +63,7 @@ class KingDB: public Interface {
   kdb::StorageEngine se_;
   kdb::CompressorLZ4 compressor_;
   kdb::CRC32 crc32_;
+  static KingDB* self_;
 };
 
 };

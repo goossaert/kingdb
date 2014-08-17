@@ -93,7 +93,7 @@ class SimpleByteArray: public ByteArray {
 
 
 
-
+// TODO: what if filesize gets bigger than maxint?
 class Mmap {
  public:
   Mmap(std::string filepath, int filesize) {
@@ -101,11 +101,11 @@ class Mmap {
     filesize_ = filesize;
     if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
       std::string msg = std::string("Count not open file [") + filepath + std::string("]");
-      LOG_EMERG("ByteArrayMmap()::ctor()", "%s", msg.c_str());
+      LOG_EMERG("Mmap()::ctor()", "%s", msg.c_str());
       //return Status::IOError(msg, strerror(errno));
     }
 
-    LOG_TRACE("StorageEngine::GetEntry()", "open file: ok");
+    LOG_TRACE("Mmap::ctor()", "open file: ok");
 
     datafile_ = static_cast<char*>(mmap(0,
                                        filesize, 
@@ -114,18 +114,28 @@ class Mmap {
                                        fd_,
                                        0));
     if (datafile_ == MAP_FAILED) {
-      //return Status::IOError("Could not mmap() file", strerror(errno));
+      // TODO: fix how errors are managed here
       LOG_EMERG("Could not mmap() file: %s", strerror(errno));
       exit(-1);
     }
-    
   }
 
   virtual ~Mmap() {
-    munmap(datafile_, filesize_);
-    close(fd_);
-    LOG_DEBUG("Mmap::~Mmap()", "released mmap on file: [%s]", filepath_.c_str());
+    Close();
   }
+
+  void Close() {
+    if (datafile_ != nullptr) {
+      munmap(datafile_, filesize_);
+      close(fd_);
+      datafile_ = nullptr;
+      LOG_DEBUG("Mmap::~Mmap()", "released mmap on file: [%s]", filepath_.c_str());
+    }
+  }
+
+  char* datafile() { return datafile_; }
+  int filesize() { return filesize_; }
+  const char* filepath() const { return filepath_.c_str(); } // for debugging
 
   int fd_;
   int filesize_;
@@ -139,15 +149,22 @@ class SharedMmappedByteArray: public ByteArray {
   SharedMmappedByteArray() {}
   SharedMmappedByteArray(std::string filepath, int filesize) {
     mmap_ = std::shared_ptr<Mmap>(new Mmap(filepath, filesize));
-    data_ = mmap_->datafile_;
+    data_ = mmap_->datafile();
     size_ = 0;
+    compressor_.Reset();
+    crc32_.reset();
+  }
+
+  SharedMmappedByteArray(char *data, uint64_t size) {
+    data_ = data;
+    size_ = size;
     compressor_.Reset();
     crc32_.reset();
   }
 
   void SetOffset(uint64_t offset, uint64_t size) {
     offset_ = offset;
-    data_ = mmap_->datafile_ + offset;
+    data_ = mmap_->datafile() + offset;
     size_ = size;
   }
 
@@ -192,7 +209,7 @@ class SharedMmappedByteArray: public ByteArray {
     return Status::OK();
   }
 
-  char* datafile() { return mmap_->datafile_; };
+  char* datafile() { return mmap_->datafile(); };
 
  private:
   CompressorLZ4 compressor_;

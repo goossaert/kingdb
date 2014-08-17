@@ -7,7 +7,7 @@
 namespace kdb {
 
 Event<std::vector<Order>> EventManager::flush_buffer;
-Event<std::map<std::string, uint64_t>> EventManager::update_index;
+Event<std::multimap<uint64_t, uint64_t>> EventManager::update_index;
 Event<int> EventManager::clear_buffer;
 
 };

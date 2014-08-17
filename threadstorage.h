@@ -14,6 +14,9 @@ namespace kdb {
 // TODO: Change this for a "thread_local static" -- when LLVM will support it
 // TODO: Be careful, because if threads are renewed, the set of thread ids
 //       will grow, and as will the "status" map.
+// TODO: Templatize this class so it can be used to create whatever type is
+//       needed, and replace the unique mutex by an array of mutexes to avoid
+//       lock contention -- they would be multiple maps as well.
 class ThreadStorage {
  public:
   uint64_t get() {

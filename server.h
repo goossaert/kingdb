@@ -50,7 +50,7 @@ class NetworkTask: public Task {
     std::cout << "Thread " << tid << std::endl;
   }
 
-  virtual void Run(std::thread::id tid);
+  virtual void Run(std::thread::id tid, uint64_t id);
 
 };
 

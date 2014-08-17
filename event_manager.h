@@ -55,7 +55,7 @@ class EventManager {
  public:
   EventManager() {}
   static Event<std::vector<Order>> flush_buffer;
-  static Event<std::map<std::string, uint64_t>> update_index;
+  static Event<std::multimap<uint64_t, uint64_t>> update_index;
   static Event<int> clear_buffer;
 };
 

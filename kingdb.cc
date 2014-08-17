@@ -6,6 +6,8 @@
 
 namespace kdb {
 
+KingDB* KingDB::self_;
+
 Status KingDB::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
   LOG_TRACE("KingDB Get()", "[%s]", key->ToString().c_str());
   Status s = bm_.Get(read_options, key, value_out);

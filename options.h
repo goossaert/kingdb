@@ -32,11 +32,15 @@ struct CompressionOptions {
 struct DatabaseOptions {
   DatabaseOptions()
       : max_open_files(65535),
+        create_if_missing(true),
+        error_if_exists(false),
         hash(kxxHash_64),
         compression(kLZ4Compression) {
   }
 
   uint64_t max_open_files;
+  bool create_if_missing;
+  bool error_if_exists;
   HashType hash;
   CompressionOptions compression;
 };

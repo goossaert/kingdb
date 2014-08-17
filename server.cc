@@ -6,7 +6,7 @@
 
 namespace kdb {
 
-void NetworkTask::Run(std::thread::id tid) {
+void NetworkTask::Run(std::thread::id tid, uint64_t id) {
 
   int bytes_received_last;
   std::regex regex_get {"get ([^\\s]*)"};
