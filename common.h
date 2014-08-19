@@ -33,13 +33,59 @@ struct Order {
 };
 
 
+enum EntryFlag { // 32-bit flags
+  kIsTypeRemove = 0x1,
+  kHasPadding   = 0x2
+};
+
+
 struct Entry {
-  uint32_t type;
+  uint32_t flags;
+  uint32_t crc32;
   uint64_t size_key;
   uint64_t size_value;
   uint64_t size_value_compressed;
   uint64_t hash;
-  uint32_t crc32;
+
+  void SetHasPadding(bool b) {
+    if (b) {
+      flags |= kHasPadding;
+    } else {
+      flags &= ~kHasPadding; 
+    }
+  }
+
+  bool HasPadding() {
+    return (flags & kHasPadding);
+  }
+
+  void SetTypeRemove() {
+    flags |= kIsTypeRemove; 
+  }
+
+  void SetTypePut() {
+    // do nothing
+  }
+
+  bool IsTypeRemove() {
+    return (flags & kIsTypeRemove);
+  }
+  
+  bool IsTypePut() {
+    return !IsTypeRemove();
+  }
+
+  bool IsCompressed() {
+    return (size_value_compressed > 0); 
+  }
+
+  uint64_t size_value_used() {
+    if (IsCompressed() > 0 && HasPadding()) {
+      return size_value_compressed;
+    } else {
+      return size_value;
+    }
+  }
 };
 
 struct EntryFooter {
@@ -55,8 +101,16 @@ struct Metadata {
   uint64_t pointer_compaction;
 };
 
+enum FileType {
+  kLogType   = 0x0,
+  kLargeType = 0x1
+};
+
 struct LogFileFooter {
+  uint32_t filetype;
   uint64_t num_entries;
+  uint16_t has_padding_in_values; // 1 if some values have size_value space but only use size_value_compressed and therefore need compaction, 0 otherwise
+  uint16_t has_invalid_entries;   // 1 if some values have erroneous content that needs to be washed out in a compaction process -- will be set to 1 during a file recovery
   uint64_t magic_number;
 };
 

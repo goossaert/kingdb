@@ -10,6 +10,7 @@
 #include <chrono>
 #include <vector>
 #include <map>
+#include <set>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -88,6 +89,7 @@ class LogfileManager {
     // Reserving space for header
     offset_start_ = 0;
     offset_end_ = SIZE_LOGFILE_HEADER;
+    has_padding_in_values_ = false;
     logindex_.clear();
   }
 
@@ -122,7 +124,7 @@ class LogfileManager {
     if (offset_end_ >= size_block_ || (force_new_file && offset_end_ > SIZE_LOGFILE_HEADER)) {
       LOG_TRACE("LogfileManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
       uint64_t size_logindex;
-      WriteLogIndex(fd_, logindex_, &size_logindex);
+      WriteLogIndex(fd_, logindex_, &size_logindex, kLogType, has_padding_in_values_, false);
       offset_end_ += size_logindex;
       file_sizes[fileid_] = offset_end_;
       CloseCurrentFile();
@@ -133,13 +135,16 @@ class LogfileManager {
 
   Status FlushLogIndex() {
     uint64_t dummy_size_logindex;
-    return WriteLogIndex(fd_, logindex_, &dummy_size_logindex);
+    return WriteLogIndex(fd_, logindex_, &dummy_size_logindex, kLogType, has_padding_in_values_, false);
   }
 
 
   Status WriteLogIndex(int fd,
                        std::vector< std::pair<uint64_t, uint32_t> >& logindex_current,
-                       uint64_t* size_out) {
+                       uint64_t* size_out,
+                       FileType filetype,
+                       bool has_padding_in_values,
+                       bool has_invalid_entries) {
     uint64_t offset = 0;
     for (auto& p: logindex_current) {
       auto item = reinterpret_cast<struct LogFileFooterIndex*>(buffer_index_ + offset);
@@ -151,8 +156,11 @@ class LogfileManager {
       LOG_TRACE("StorageEngine::WriteLogIndex()", "hashed_key:[%llu] offset:[%u] offset_hex:[%s]", p.first, p.second, num_to_hex(p.second).c_str());
     }
     struct LogFileFooter* footer = reinterpret_cast<struct LogFileFooter*>(buffer_index_ + offset);
+    footer->filetype = filetype;
     footer->num_entries = logindex_current.size();
     footer->magic_number = get_magic_number();
+    footer->has_padding_in_values = has_padding_in_values;
+    footer->has_invalid_entries = has_invalid_entries;
     offset += sizeof(struct LogFileFooter);
     if (write(fd, buffer_index_, offset) < 0) {
       LOG_TRACE("StorageEngine::WriteLogIndex()", "Error write(): %s", strerror(errno));
@@ -176,12 +184,13 @@ class LogfileManager {
 
     char buffer[1024];
     struct Entry* entry = reinterpret_cast<struct Entry*>(buffer);
-    entry->type = kPutEntry;
+    entry->SetTypePut();
     entry->size_key = order.key->size();
     entry->size_value = order.size_value;
     entry->size_value_compressed = order.size_value_compressed;
     entry->hash = hashed_key;
     entry->crc32 = 0;
+    entry->SetHasPadding(false);
     if(write(fd, buffer_raw_, SIZE_LOGFILE_HEADER) < 0) { // write header
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
@@ -206,7 +215,7 @@ class LogfileManager {
   }
 
 
-  uint64_t WriteChunk(Order& order, uint64_t hashed_key, uint64_t location) {
+  uint64_t WriteChunk(Order& order, uint64_t hashed_key, uint64_t location, bool is_large_order) {
     uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
     uint32_t offset_file = location & 0x00000000FFFFFFFF;
     std::string filepath = dbname_ + "/" + LogfileManager::num_to_hex(fileid);
@@ -233,16 +242,32 @@ class LogfileManager {
         || (order.size_value_compressed != 0 && order.chunk->size() + order.offset_chunk == order.size_value_compressed) ) {
       LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:%u", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct Entry entry;
-      entry.type = kPutEntry;
+      entry.SetTypePut();
       entry.size_key = order.key->size();
       entry.size_value = order.size_value;
       entry.size_value_compressed = order.size_value_compressed;
+      if (!is_large_order && entry.size_value_compressed > 0) {
+        entry.SetHasPadding(true);
+        has_padding_in_values_ = true;
+      }
       entry.hash = hashed_key;
       entry.crc32 = order.crc32;
       if (pwrite(fd, &entry, sizeof(struct Entry), offset_file) < 0) {
         LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
       }
+
+      if (is_large_order && entry.size_value_compressed > 0) {
+        uint64_t filesize = SIZE_LOGFILE_HEADER + sizeof(struct Entry) + order.key->size() + order.size_value_compressed;
+        uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
+        file_sizes[fileid] = filesize;
+        ftruncate(fd, filesize);
+      }
     }
+
+    // TODO: If this is the last chunk of a large entry, then:
+    //         1. the footer has to be written
+    //         2. file_sizes[] has to be updated to be the compressed size (if
+    //            compression is activated)
 
     close(fd);
     LOG_TRACE("LogfileManager::WriteChunk()", "all good");
@@ -250,16 +275,22 @@ class LogfileManager {
   }
 
 
-  uint64_t WriteSmallOrder(Order& order, uint64_t hashed_key) {
+  uint64_t WriteFirstChunkOrSmallOrder(Order& order, uint64_t hashed_key) {
     uint64_t location_out = 0;
     struct Entry* entry = reinterpret_cast<struct Entry*>(buffer_raw_ + offset_end_);
     if (order.type == OrderType::Put) {
-      entry->type = kPutEntry;
+      entry->SetTypePut();
       entry->size_key = order.key->size();
       entry->size_value = order.size_value;
       entry->size_value_compressed = order.size_value_compressed;
       entry->hash = hashed_key;
       entry->crc32 = order.crc32;
+      if (order.chunk->size() != order.size_value && db_options_.compression.type != kNoCompression) {
+        entry->SetHasPadding(true);
+        has_padding_in_values_ = true;
+      } else {
+        entry->SetHasPadding(false);
+      }
       memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry), order.key->data(), order.key->size());
       memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry) + order.key->size(), order.chunk->data(), order.chunk->size());
 
@@ -273,7 +304,11 @@ class LogfileManager {
       if (order.chunk->size() != order.size_value) {
         LOG_TRACE("StorageEngine::ProcessingLoopData()", "BEFORE fileid_ %u", fileid_);
         FlushCurrentFile(0, order.size_value - order.chunk->size());
-        // TODO: might be better to lseek() instead of doing a large write
+        // NOTE: A better way to do it would be to copy things into the buffer, and
+        // then for the other chunks, either copy in the buffer if the position
+        // to write is >= offset_end_, or do a pwrite() if the position is <
+        // offset_end_
+        // NOTE: might be better to lseek() instead of doing a large write
         //offset_end_ += order.size_value - order.size_chunk;
         //FlushCurrentFile();
         //ftruncate(fd_, offset_end_);
@@ -283,7 +318,7 @@ class LogfileManager {
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "Put [%s]", order.key->ToString().c_str());
     } else { // order.type == OrderType::Remove
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "Remove [%s]", order.key->ToString().c_str());
-      entry->type = kRemoveEntry;
+      entry->SetTypeRemove();
       entry->size_key = order.key->size();
       entry->size_value = 0;
       entry->size_value_compressed = 0;
@@ -314,6 +349,11 @@ class LogfileManager {
       // TODO: if the item is self-contained (unique chunk), then no need to
       //       have size_value space, size_value_compressed is enough.
 
+      // TODO: If the db is embedded, then all order are self contained,
+      //       independently of their sizes. Would the compression and CRC32 still
+      //       work? Would storing the data (i.e. choosing between the different
+      //       storing functions) still work?
+
       // NOTE: orders can be of various sizes: when using the storage engine as an
       // embedded engine, orders can be of any size, and when plugging the
       // storage engine to a network server, orders can be chucks of data.
@@ -321,8 +361,11 @@ class LogfileManager {
       // 1. The order is the first chunk of a very large entry, so we
       //    create a very large file and write the first chunk in there
       uint64_t location = 0;
-      if (   order.key->size() + order.size_value > size_block_ // TODO: shouldn't this be testing size_value_compressed as well?
-          && order.offset_chunk == 0) {
+      bool is_large_order = order.key->size() + order.size_value > size_block_;
+      if (is_large_order && order.offset_chunk == 0) {
+        // TODO: shouldn't this be testing size_value_compressed as well? -- yes, only if the order
+        // is a full entry by itself (will happen when the kvstore will be embedded and not accessed
+        // through the network), otherwise we don't know yet what the total compressed size will be.
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "1. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         location = PrepareFileLargeOrder(order, hashed_key);
       // 2. The order is a non-first chunk, so we
@@ -339,7 +382,7 @@ class LogfileManager {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "2. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         location = key_to_location[order.key->ToString()];
         if (location != 0) {
-          WriteChunk(order, hashed_key, location);
+          WriteChunk(order, hashed_key, location, is_large_order);
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
         }
@@ -348,7 +391,7 @@ class LogfileManager {
       } else {
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "3. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         buffer_has_items_ = true;
-        location = WriteSmallOrder(order, hashed_key);
+        location = WriteFirstChunkOrSmallOrder(order, hashed_key);
       }
 
       // If the order was the self-contained or the last chunk, add his location to the output map_index_out[]
@@ -459,29 +502,39 @@ class LogfileManager {
   Status RecoverFile(Mmap& mmap,
                      uint32_t fileid,
                      std::multimap<uint64_t, uint64_t>& index_se) {
+    // TODO: what about the files that have been flushed (and thus have a
+    //       footer) but are still being written to due to some multi-chunk
+    //       entry? This means the footer would be prevent but some data
+    //       could be missing => need to have an extra mechanism to check on
+    //       files after they've been written.
     uint32_t offset = SIZE_LOGFILE_HEADER;
     std::vector< std::pair<uint64_t, uint32_t> > logindex_current;
+    bool has_padding_in_values = false;
+    bool has_invalid_entries   = false;
     while (true) {
       struct Entry* entry = reinterpret_cast<struct Entry*>(mmap.datafile() + offset);
       if (   offset + sizeof(struct Entry) >= mmap.filesize()
           || entry->size_key == 0
           || offset + sizeof(struct Entry) + entry->size_key > mmap.filesize()
-          || offset + sizeof(struct Entry) + entry->size_key + entry->size_value > mmap.filesize()) {
+          || offset + sizeof(struct Entry) + entry->size_key + entry->size_value_used() > mmap.filesize()) {
         // end of file
         LOG_TRACE("Logmanager::RecoverFile", "end of file [%llu] [%llu] [%llu] - filesize:[%llu]", 
           (uint64_t)offset + sizeof(struct Entry),
           (uint64_t)SIZE_LOGFILE_HEADER + offset + entry->size_key,
-          (uint64_t)SIZE_LOGFILE_HEADER + offset + entry->size_key + entry->size_value,
+          (uint64_t)SIZE_LOGFILE_HEADER + offset + entry->size_key + entry->size_value_used(),
           (uint64_t)mmap.filesize());
         break;
       }
       crc32_.reset();
       // TODO: need a way to check the crc32 for the entry header and the key
-      if (entry->size_value_compressed == 0) { // TODO: change for better way to detect compression
-        crc32_.stream(mmap.datafile() + sizeof(struct Entry) + entry->size_key, entry->size_value);
-      } else {
-        crc32_.stream(mmap.datafile() + sizeof(struct Entry) + entry->size_key, entry->size_value_compressed);
-      }
+      //       maybe the CRC32 could be computed on the final frames, and not
+      //       the data inside of the frames -- need to check if the CRC32
+      //       values are the same in both cases though:
+      //       We compress data and create frames with it. Are the CRC32 the
+      //       sames if:
+      //          1. it is computed over the sequence of frames,
+      //          2. it is computed over each frame separately then added.
+      crc32_.stream(mmap.datafile() + sizeof(struct Entry) + entry->size_key, entry->size_value_used());
       if (true || entry->crc32 == crc32_.get()) { // TODO: fix CRC32 check
         // Valid content, add to index
         // TODO: make sure invalid entries get marked as invalid so that the
@@ -490,8 +543,11 @@ class LogfileManager {
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
         index_se.insert(std::pair<uint64_t, uint64_t>(entry->hash, fileid_shifted | offset));
+      } else {
+        has_invalid_entries = true; 
       }
-      offset += sizeof(struct Entry) + entry->size_key + entry->size_value;
+      if (entry->HasPadding()) has_padding_in_values = true;
+      offset += sizeof(struct Entry) + entry->size_key + entry->size_value_used();
     }
 
     if (offset > SIZE_LOGFILE_HEADER) {
@@ -504,9 +560,11 @@ class LogfileManager {
       ftruncate(fd, offset);
       lseek(fd, 0, SEEK_END);
       uint64_t size_logindex;
-      WriteLogIndex(fd, logindex_current, &size_logindex);
+      WriteLogIndex(fd, logindex_current, &size_logindex, kLogType, has_padding_in_values, has_invalid_entries);
       file_sizes[fileid] = mmap.filesize() + size_logindex;
       close(fd);
+    } else {
+      // TODO: were not able to recover anything in the file
     }
 
     return Status::OK();
@@ -531,6 +589,7 @@ class LogfileManager {
   char *buffer_raw_;
   char *buffer_index_;
   bool buffer_has_items_;
+  bool has_padding_in_values_;
   std::vector< std::pair<uint64_t, uint32_t> > logindex_;
   kdb::CRC32 crc32_;
 
@@ -683,6 +742,9 @@ class StorageEngine {
     uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
     uint32_t offset_file = location & 0x00000000FFFFFFFF;
     uint64_t filesize = 0;
+    // TODO: not sure that the locking on the readers should be placed here --
+    // what about putting it around the retrieval of the location through the
+    // index in Get() ?
     mutex_write_.lock();
     mutex_read_.lock();
     num_readers_ += 1;
@@ -705,13 +767,13 @@ class StorageEngine {
     value_temp->SetSizeCompressed(entry->size_value_compressed);
     value_temp->SetCRC32(entry->crc32);
 
-    if (entry->type == kRemoveEntry) {
+    if (entry->IsTypeRemove()) {
       s = Status::NotFound("Unable to find the entry in the storage engine");
       delete value_temp;
       value_temp = nullptr;
     }
 
-    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out - type:%d", entry->type);
+    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry->IsTypeRemove());
 
     mutex_read_.lock();
     num_readers_ -= 1;
@@ -722,6 +784,77 @@ class StorageEngine {
     *key_out = key_temp;
     *value_out = value_temp;
     return s;
+  }
+
+  Status Compaction(std::string dbname) {
+
+    // Quick hack to get the files for compaction: going through all the files
+    std::multimap<uint64_t, uint64_t> index_compaction;
+    DIR *directory;
+    struct dirent *entry;
+    if ((directory = opendir(dbname.c_str())) == NULL) {
+      return Status::IOError("Could not open database directory", dbname.c_str());
+    }
+    char filepath[2048];
+    uint32_t fileid = 0;
+    Status s;
+    struct stat info;
+    uint32_t fileid_start = fileid_compaction_start_;
+    uint32_t fileid_end   = fileid_compaction_start_ + 10;
+    while ((entry = readdir(directory)) != NULL) {
+      sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
+      if (stat(filepath, &info) != 0 || !(info.st_mode & S_IFREG)) continue;
+      fileid = LogfileManager::hex_to_num(entry->d_name);
+      if (fileid < fileid_start) continue;
+      if (fileid > fileid_end) break;
+      if (info.st_size <= SIZE_LOGFILE_HEADER) {
+        continue;
+      }
+      Mmap mmap(filepath, info.st_size);
+      s = logfile_manager_.LoadFile(mmap, fileid, index_compaction);
+      if (!s.IsOK()) {
+        LOG_WARN("LogfileManager::Compaction()", "Could not load index in file [%s]", filepath);
+        // TODO: handle the case where a file is found to be damaged during recovery
+      }
+    }
+    closedir(directory);
+
+    // Iterating over all unique keys of index_compaction, and determine which
+    // locations with similar hashes will need to be compacted.
+    mutex_index_.lock();
+    std::multimap<uint64_t, uint64_t> index_compaction_se;
+    for (auto it = index_compaction.begin(); it != index_compaction.end(); it = index_compaction.upper_bound(it->first)) {
+      auto range = index_.equal_range(it->first);
+      for (auto it_se = range.first; it_se != range.second; it_se++) {
+        index_compaction.insert(std::pair<uint64_t, uint64_t>(it_se->first, it_se->second));
+      }
+    }
+    mutex_index_.unlock();
+
+    // Compute which keys have to be kept, which have to be deleted, and the
+    // overall set of file ids that need to be compacted
+    std::map<std::string, uint64_t> keys_to_locations_keep;
+    std::multimap<std::string, uint64_t> keys_to_locations_delete;
+    std::set<uint32_t> fileids_compaction;
+    for (auto &p: index_compaction) {
+      ByteArray *key, *value;
+      uint64_t location = p.second;
+      uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
+      if (fileid > fileid_end) continue;
+      fileids_compaction.insert(fileid);
+      Status s = GetEntry(location, &key, &value);
+      delete key;
+      delete value;
+      std::string str_key = key->ToString();
+      auto it_find = keys_to_locations_keep.find(str_key);
+      if (it_find == keys_to_locations_keep.end()) {
+        keys_to_locations_keep[str_key] = p.second;
+      } else {
+        keys_to_locations_delete.insert(std::pair<std::string, uint64_t>(str_key, p.second));
+      }
+    }
+
+    return Status::OK();
   }
 
  private:
@@ -745,6 +878,10 @@ class StorageEngine {
 
   Hash *hash_;
   LogfileManager logfile_manager_;
+
+  // Compaction;
+  uint32_t fileid_compaction_start_;
+  uint32_t fileid_compaction_end_;
 };
 
 };

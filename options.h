@@ -7,10 +7,6 @@
 
 namespace kdb {
 
-enum EntryType {
-  kPutEntry    = 0x0,
-  kRemoveEntry = 0x1
-};
 
 enum HashType {
   kMurmurHash3_64 = 0x0,
