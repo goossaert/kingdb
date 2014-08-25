@@ -11,6 +11,7 @@
 #include <vector>
 #include <map>
 #include <set>
+#include <algorithm>
 
 #include <unistd.h>
 #include <sys/types.h>
@@ -30,7 +31,11 @@
 
 namespace kdb {
 
-
+// TODO: Due to padding/alignment, the structs that are used to store data in
+//       files will see their size influenced by the architecture on which
+//       the database is running (i.e. 32 bits or 64 bits), and thus the actual
+//       storage will need serialization (along with proper endian-ness
+//       handling)
 
 class LogfileManager {
  public:
@@ -79,11 +84,9 @@ class LogfileManager {
     filepath_ = dbname_ + "/" + LogfileManager::num_to_hex(sequence_fileid_); // TODO: optimize here
     if ((fd_ = open(filepath_.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
       LOG_EMERG("StorageEngine::ProcessingLoopData()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
-      exit(-1); // TODO: gracefully open() errors
+      exit(-1); // TODO: gracefully handle open() errors
     }
     has_file_ = true;
-    // TODO: pre-shifting fileid_ here is weird -- either not shift, or change
-    //       its name to make it clear that it's shifted
     fileid_ = sequence_fileid_;
 
     // Reserving space for header
@@ -179,7 +182,7 @@ class LogfileManager {
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
       LOG_EMERG("StorageEngine::PrepareFileLargeOrder()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
-      exit(-1); // TODO: gracefully open() errors
+      exit(-1); // TODO: gracefully handle open() errors
     }
 
     char buffer[1024];
@@ -223,7 +226,7 @@ class LogfileManager {
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
       LOG_EMERG("StorageEngine::WriteChunk()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
-      exit(-1); // TODO: gracefully open() errors
+      exit(-1); // TODO: gracefully handle open() errors
     }
 
     // Write the chunk
@@ -504,7 +507,7 @@ class LogfileManager {
                      std::multimap<uint64_t, uint64_t>& index_se) {
     // TODO: what about the files that have been flushed (and thus have a
     //       footer) but are still being written to due to some multi-chunk
-    //       entry? This means the footer would be prevent but some data
+    //       entry? This means the footer would be present but some data
     //       could be missing => need to have an extra mechanism to check on
     //       files after they've been written.
     uint32_t offset = SIZE_LOGFILE_HEADER;
@@ -786,6 +789,12 @@ class StorageEngine {
     return s;
   }
 
+  bool IsFileLarge(uint32_t fileid) {
+    // TODO: implement this
+    return false;
+  }
+
+
   Status Compaction(std::string dbname) {
 
     // Quick hack to get the files for compaction: going through all the files
@@ -826,31 +835,56 @@ class StorageEngine {
     for (auto it = index_compaction.begin(); it != index_compaction.end(); it = index_compaction.upper_bound(it->first)) {
       auto range = index_.equal_range(it->first);
       for (auto it_se = range.first; it_se != range.second; it_se++) {
-        index_compaction.insert(std::pair<uint64_t, uint64_t>(it_se->first, it_se->second));
+        index_compaction_se.insert(std::pair<uint64_t, uint64_t>(it_se->first, it_se->second));
       }
     }
     mutex_index_.unlock();
 
-    // Compute which keys have to be kept, which have to be deleted, and the
-    // overall set of file ids that need to be compacted
-    std::map<std::string, uint64_t> keys_to_locations_keep;
-    std::multimap<std::string, uint64_t> keys_to_locations_delete;
+    // For each entry, determine which location has to be kept, which has to be deleted,
+    // and the overall set of file ids that need to be compacted
+    std::set<uint64_t> locations_delete;
     std::set<uint32_t> fileids_compaction;
-    for (auto &p: index_compaction) {
+    std::set<uint32_t> fileids_largefiles_keep;
+    std::set<std::string> keys_encountered;
+    std::map<uint64_t, uint64_t> hashedkeys_to_locations_large_keep;
+    std::multimap<uint64_t, uint64_t> hashedkeys_to_locations_regular_keep;
+    for (auto &p: index_compaction_se) {
       ByteArray *key, *value;
-      uint64_t location = p.second;
+      uint64_t& location = p.second;
       uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
       if (fileid > fileid_end) continue;
       fileids_compaction.insert(fileid);
       Status s = GetEntry(location, &key, &value);
+      std::string str_key = key->ToString();
       delete key;
       delete value;
-      std::string str_key = key->ToString();
-      auto it_find = keys_to_locations_keep.find(str_key);
-      if (it_find == keys_to_locations_keep.end()) {
-        keys_to_locations_keep[str_key] = p.second;
+      if (keys_encountered.find(str_key) == keys_encountered.end()) {
+        keys_encountered.insert(str_key);
+        if (IsFileLarge(fileid)) {
+          hashedkeys_to_locations_large_keep[p.first] = p.second;
+          fileids_largefiles_keep.insert(fileid);
+        } else {
+          hashedkeys_to_locations_regular_keep.insert(p);
+        }
       } else {
-        keys_to_locations_delete.insert(std::pair<std::string, uint64_t>(str_key, p.second));
+        locations_delete.insert(location);
+      }
+    }
+
+    // Building the clusters of locations, indexed by the smallest location per cluster.
+    // All the non-smallest locations are stored as secondary locations.
+    std::map<uint64_t, std::vector<uint64_t>> locations_keep;
+    std::set<uint64_t> locations_keep_secondary;
+    for (auto it = hashedkeys_to_locations_regular_keep.begin(); it != hashedkeys_to_locations_regular_keep.end(); it = hashedkeys_to_locations_regular_keep.upper_bound(it->first)) {
+      auto range = hashedkeys_to_locations_regular_keep.equal_range(it->first);
+      std::vector<uint64_t> locations;
+      for (auto it_bucket = range.first; it_bucket != range.second; it_bucket++) {
+        locations.push_back(it->second);
+      }
+      std::sort(locations.begin(), locations.end());
+      locations_keep[locations[0]] = locations;
+      for (auto i = 1; i < locations.size(); i++) {
+        locations_keep_secondary.insert(locations[i]);
       }
     }
 
