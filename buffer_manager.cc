@@ -47,7 +47,7 @@ Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray**
       *value_out = order_found.chunk;
       return Status::OK();
     } else if (order_found.type == OrderType::Remove) {
-      return Status::RemoveOrder("Unable to find entry");
+      return Status::RemoveOrder();
     } else {
       return Status::NotFound("Unable to find entry");
     }
@@ -87,7 +87,7 @@ Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray**
     s = Status::OK();
   } else if (   found
              && order_found.type == OrderType::Remove) {
-    s = Status::RemoveOrder("Unable to find entry");
+    s = Status::RemoveOrder();
   } else {
     s = Status::NotFound("Unable to find entry");
   }

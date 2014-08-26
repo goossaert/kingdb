@@ -34,12 +34,10 @@ class Status {
 
   static Status Done() { return Status(kDone); }
 
+  static Status RemoveOrder() { return Status(kRemoveOrder); }
+
   static Status NotFound(const std::string& message1, const std::string& message2="") {
     return Status(kNotFound, message1, message2);
-  }
-
-  static Status RemoveOrder(const std::string& message1, const std::string& message2="") {
-    return Status(kRemoveOrder, message1, message2);
   }
 
   static Status InvalidArgument(const std::string& message1, const std::string& message2="") {
