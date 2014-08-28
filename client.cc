@@ -171,7 +171,7 @@ class ClientTask: public Task {
 
     std::mt19937 generator_remove(seq);
     std::uniform_int_distribution<int> random_dist_remove(256*1024, 512*1024);
-    for (auto i = 0; i < num_removes_ / 2; i++) {
+    for (auto i = 0; i < num_removes_; i++) {
       std::stringstream ss;
       ss << id << "-" << i;
       std::string key = ss.str();

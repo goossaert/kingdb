@@ -40,12 +40,17 @@ enum EntryFlag { // 32-bit flags
 
 
 struct Entry {
+  Entry() { flags = 0; }
   uint32_t flags;
   uint32_t crc32;
   uint64_t size_key;
   uint64_t size_value;
   uint64_t size_value_compressed;
   uint64_t hash;
+
+  void print() {
+    LOG_TRACE("Entry::print()", "flags:%u crc32:%u size_key:%llu size_value:%llu size_value_compressed:%llu hash:%llu", flags, crc32, size_key, size_value, size_value_compressed, hash);
+  }
 
   void SetHasPadding(bool b) {
     if (b) {
@@ -68,6 +73,7 @@ struct Entry {
   }
 
   bool IsTypeRemove() {
+    LOG_TRACE("IsTypeRemove()", "flags %u", flags);
     return (flags & kIsTypeRemove);
   }
   
@@ -80,12 +86,21 @@ struct Entry {
   }
 
   uint64_t size_value_used() {
-    if (IsCompressed() > 0 && HasPadding()) {
+    if (IsCompressed() && HasPadding()) {
       return size_value_compressed;
     } else {
       return size_value;
     }
   }
+
+  uint64_t size_value_offset() {
+    if (!IsCompressed() || HasPadding()) {
+      return size_value;
+    } else {
+      return size_value_compressed;
+    }
+  }
+
 };
 
 struct EntryFooter {

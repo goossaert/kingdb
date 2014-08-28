@@ -77,6 +77,8 @@ class LogfileManager {
     sequence_fileid_ = seq;
   }
 
+  uint32_t GetSequenceFileId() { return sequence_fileid_; }
+
   static std::string num_to_hex(uint64_t num) {
     char buffer[20];
     sprintf(buffer, "%08llX", num);
@@ -628,7 +630,9 @@ class StorageEngine {
     dbname_ = dbname;
     thread_index_ = std::thread(&StorageEngine::ProcessingLoopIndex, this);
     thread_data_ = std::thread(&StorageEngine::ProcessingLoopData, this);
+    thread_compaction_ = std::thread(&StorageEngine::ProcessingLoopCompaction, this);
     num_readers_ = 0;
+    is_compaction_in_progress_ = false;
     hash_ = MakeHash(db_options.hash);
     logfile_manager_.LoadDatabase(dbname, index_);
   }
@@ -636,6 +640,7 @@ class StorageEngine {
   ~StorageEngine() {
     thread_index_.join();
     thread_data_.join();
+    thread_compaction_.join();
   }
 
   void Close() {
@@ -649,6 +654,20 @@ class StorageEngine {
     logfile_manager_.FlushLogIndex();
     logfile_manager_.CloseCurrentFile();
     fprintf(stderr, "Close file\n");
+  }
+
+  void ProcessingLoopCompaction() {
+    std::chrono::milliseconds duration(10000);
+    std::chrono::milliseconds forever(100000000000000000);
+    while(true) {
+      struct stat info;
+      if (stat("/tmp/do_compaction", &info) == 0) {
+        uint32_t seq = logfile_manager_.GetSequenceFileId();
+        Compaction(dbname_, 1, seq+1); 
+        std::this_thread::sleep_for(forever);
+      }
+      std::this_thread::sleep_for(duration);
+    }
   }
 
   void ProcessingLoopData() {
@@ -701,10 +720,19 @@ class StorageEngine {
       }
       */
 
+      std::multimap<uint64_t, uint64_t> *index;
+      mutex_compaction_.lock();
+      if (is_compaction_in_progress_) {
+        index = &index_compaction_;
+      } else {
+        index = &index_;
+      }
+      mutex_compaction_.unlock();
+
       for (auto& p: index_updates) {
         //uint64_t hashed_key = hash_->HashFunction(p.first.c_str(), p.first.size());
         LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "hash [%llu] location [%llu]", p.first, p.second);
-        index_.insert(std::pair<uint64_t,uint64_t>(p.first, p.second));
+        index->insert(std::pair<uint64_t,uint64_t>(p.first, p.second));
       }
 
       /*
@@ -721,16 +749,40 @@ class StorageEngine {
     }
   }
 
-  // NOTE: value_out must be deleled by the caller
+  // NOTE: key_out and value_out must be deleted by the caller
   Status Get(ByteArray* key, ByteArray** value_out) {
-    //LOG_TRACE("INDEX", "WAIT: Get()-mutex_index_");
+    bool has_compaction_index = false;
+    mutex_compaction_.lock();
+    has_compaction_index = is_compaction_in_progress_;
+    mutex_compaction_.unlock();
+
+    Status s;
+    if (has_compaction_index) {
+      s = GetWithIndex(index_compaction_, key, value_out);
+      if (s.IsOK()) return s;
+      delete key;
+      delete *value_out;
+    }
+
+    s = GetWithIndex(index_, key, value_out);
+    return s;
+  }
+
+  // NOTE: value_out must be deleled by the caller
+  Status GetWithIndex(std::multimap<uint64_t, uint64_t>& index,
+                      ByteArray* key,
+                      ByteArray** value_out) {
     std::unique_lock<std::mutex> lock(mutex_index_);
+    // TODO: should not be locking here, instead, should store the hashed key
+    // and location from the index and release the lock right away -- should not
+    // be locking while calling GetEntry()
+    
     LOG_TRACE("StorageEngine::Get()", "%s", key->ToString().c_str());
 
     // NOTE: Since C++11, the relative ordering of elements with equivalent keys
     //       in a multimap is preserved.
     uint64_t hashed_key = hash_->HashFunction(key->data(), key->size());
-    auto range = index_.equal_range(hashed_key);
+    auto range = index.equal_range(hashed_key);
     auto rbegin = --range.second;
     auto rend  = --range.first;
     for (auto it = rbegin; it != rend; --it) {
@@ -814,10 +866,15 @@ class StorageEngine {
                     uint32_t fileid_start,
                     uint32_t fileid_end) {
 
+    mutex_compaction_.lock();
+    is_compaction_in_progress_ = true;
+    mutex_compaction_.unlock();
+
     // 1. Get the files needed for compaction
     // TODO: This is a quick hack to get the files for compaction, by going
     //       through all the files. Fix that to be only the latest non-handled
     //       log files
+    LOG_TRACE("Compaction()", "Get files");
     std::multimap<uint64_t, uint64_t> index_compaction;
     DIR *directory;
     struct dirent *entry;
@@ -841,6 +898,11 @@ class StorageEngine {
       }
       // NOTE: Here the locations are read directly from the secondary storage,
       //       which could be optimized by reading them from the index in memory. 
+      //       One way to do that is to have a temporary index to which all
+      //       updates are synced during compaction. That way, the main index is
+      //       guaranteed to not be changed, thus all sorts of scans and changes
+      //       can be done on it. Once compaction is over, the temporary index
+      //       can just be poured into the main index.
       Mmap mmap(filepath, info.st_size);
       s = logfile_manager_.LoadFile(mmap, fileid, index_compaction);
       if (!s.IsOK()) {
@@ -852,25 +914,27 @@ class StorageEngine {
 
     // 2. Iterating over all unique hashed keys of index_compaction, and determine which
     // locations of the storage engine index with similar hashes will need to be compacted.
-    mutex_index_.lock();
-    std::multimap<uint64_t, uint64_t> index_compaction_se;
+    LOG_TRACE("Compaction()", "Get unique hashed keys");
+    std::vector<std::pair<uint64_t, uint64_t>> index_compaction_se;
     for (auto it = index_compaction.begin(); it != index_compaction.end(); it = index_compaction.upper_bound(it->first)) {
       auto range = index_.equal_range(it->first);
       for (auto it_se = range.first; it_se != range.second; ++it_se) {
-        index_compaction_se.insert(std::pair<uint64_t, uint64_t>(it_se->first, it_se->second));
+        index_compaction_se.push_back(*it_se);
       }
     }
-    mutex_index_.unlock();
     index_compaction.clear(); // no longer needed
 
     // 3. For each entry, determine which location has to be kept, which has to be deleted,
     // and the overall set of file ids that needs to be compacted
+    LOG_TRACE("Compaction()", "Determine locations");
     std::set<uint64_t> locations_delete;
     std::set<uint32_t> fileids_compaction;
     std::set<uint32_t> fileids_largefiles_keep;
     std::set<std::string> keys_encountered;
     std::multimap<uint64_t, uint64_t> hashedkeys_to_locations_regular_keep;
     std::map<uint64_t, uint64_t> hashedkeys_to_locations_large_keep;
+    //for (auto &p: std::reverse(index_compaction_se)) {
+    std::reverse(index_compaction_se.begin(), index_compaction_se.end());
     for (auto &p: index_compaction_se) {
       ByteArray *key, *value;
       uint64_t& location = p.second;
@@ -910,12 +974,14 @@ class StorageEngine {
     // per cluster. All the non-smallest locations are stored as secondary
     // locations. Only regular entries are used: it would not make sense
     // to compact large entries anyway.
+    LOG_TRACE("Compaction()", "Building clusters");
     std::map<uint64_t, std::vector<uint64_t>> hashedkeys_clusters;
     std::set<uint64_t> locations_secondary;
     for (auto it = hashedkeys_to_locations_regular_keep.begin(); it != hashedkeys_to_locations_regular_keep.end(); it = hashedkeys_to_locations_regular_keep.upper_bound(it->first)) {
       auto range = hashedkeys_to_locations_regular_keep.equal_range(it->first);
       std::vector<uint64_t> locations;
       for (auto it_bucket = range.first; it_bucket != range.second; ++it_bucket) {
+        LOG_TRACE("Compaction()", "Building clusters - location:%llu", it->second);
         locations.push_back(it->second);
       }
       std::sort(locations.begin(), locations.end());
@@ -948,9 +1014,8 @@ class StorageEngine {
      *
      */
 
-    // Now building a vector of orders, that will be passed to the
-    // logmanager_compaction_ object to persist them on disk
-    std::vector<Order> orders;
+    // Mmapping all the files involved in the compaction
+    LOG_TRACE("Compaction()", "Mmap() all the files! ALL THE FILES!");
     std::map<uint32_t, Mmap*> mmaps;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
       uint32_t fileid = *it;
@@ -964,6 +1029,10 @@ class StorageEngine {
       mmaps[fileid] = mmap;
     }
 
+    // Now building a vector of orders, that will be passed to the
+    // logmanager_compaction_ object to persist them on disk
+    LOG_TRACE("Compaction()", "Build order list");
+    std::vector<Order> orders;
     std::multimap<uint64_t, uint64_t> index_compaction_out;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
       uint32_t fileid = *it;
@@ -976,18 +1045,22 @@ class StorageEngine {
           || rewind < 0
           || rewind > mmap->filesize() - SIZE_LOGFILE_HEADER) {
         // TODO: handle error
+        fprintf(stderr, "Compaction - invalid footer\n");
       }
 
       uint32_t offset = SIZE_LOGFILE_HEADER;
       uint64_t offset_end = mmap->filesize() - rewind;
       while (offset < offset_end) {
+        LOG_TRACE("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
         struct Entry* entry = reinterpret_cast<struct Entry*>(mmap->datafile() + offset);
         if (   offset + sizeof(struct Entry) >= mmap->filesize()
             || entry->size_key == 0
             || offset + sizeof(struct Entry) + entry->size_key > mmap->filesize()
-            || offset + sizeof(struct Entry) + entry->size_key + entry->size_value_used() > mmap->filesize()) {
+            || offset + sizeof(struct Entry) + entry->size_key + entry->size_value_offset() > mmap->filesize()) {
           // TODO: make sure invalid entries get marked as invalid so that the
           //       compaction process can clean them up
+          fprintf(stderr, "Compaction - unexpected end of file - mmap->filesize():%d\n", mmap->filesize());
+          entry->print();
           break;
         }
 
@@ -995,33 +1068,40 @@ class StorageEngine {
         fileid_shifted <<= 32;
         uint64_t location = fileid_shifted | offset;
 
+        LOG_TRACE("Compaction()", "order list loop - check if we should keep it - fileid:%u offset:%u", fileid, offset);
         if (   locations_delete.find(location) != locations_delete.end()
             || locations_secondary.find(location) != locations_secondary.end()) {
+          offset += sizeof(struct Entry) + entry->size_key + entry->size_value_offset();
           continue;
         }
 
         // TODO: do CRC32 check
  
         // TODO: make function to get location from fileid and offset, and the
-        //       and fileid and offset from location
+        //       fileid and offset from location
         std::vector<uint64_t> locations;
         if (hashedkeys_clusters.find(location) == hashedkeys_clusters.end()) {
+          LOG_TRACE("Compaction()", "order list loop - does not have cluster");
           locations.push_back(location);
         } else {
+          LOG_TRACE("Compaction()", "order list loop - has cluster of %d items", hashedkeys_clusters[location].size());
           locations = hashedkeys_clusters[location];
         }
 
         for (auto it_location = locations.begin(); it_location != locations.end(); ++it_location) {
-          uint64_t location = *it;
+          uint64_t location = *it_location;
           uint32_t fileid_location = (location & 0xFFFFFFFF00000000) >> 32;
           uint32_t offset_file = location & 0x00000000FFFFFFFF;
+          LOG_TRACE("Compaction()", "order list loop - it_location fileid:%u offset:%u", fileid_location, offset_file);
           Mmap *mmap_location = mmaps[fileid_location];
           struct Entry* entry = reinterpret_cast<struct Entry*>(mmap_location->datafile() + offset_file);
 
           index_compaction_out.insert(std::pair<uint64_t, uint64_t>(entry->hash, location));
 
+          LOG_TRACE("Compaction()", "order list loop - create byte arrays");
           ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + sizeof(struct Entry), entry->size_key);
           ByteArray *chunk = new SimpleByteArray(mmap_location->datafile() + offset_file + sizeof(struct Entry) + entry->size_key, entry->size_value_used());
+          LOG_TRACE("Compaction()", "order list loop - push_back() orders");
           orders.push_back(Order{OrderType::Put,
                                  key,
                                  chunk,
@@ -1030,7 +1110,7 @@ class StorageEngine {
                                  entry->size_value_compressed,
                                  entry->crc32});
         }
-        offset += sizeof(struct Entry) + entry->size_key + entry->size_value_used();
+        offset += sizeof(struct Entry) + entry->size_key + entry->size_value_offset();
       }
     }
 
@@ -1046,6 +1126,7 @@ class StorageEngine {
     // 7. update changelogs and fsync() (journal, or whatever name, which has
     //    the sequence of operations that can be used to recover)
 
+    LOG_TRACE("Compaction()", "Write compacted files");
     std::multimap<uint64_t, uint64_t> map_index;
     logfile_manager_compaction_.WriteOrdersAndFlushFile(orders, map_index);
     // TODO: update index with regurn from WriteOrdersAndFlushFile
@@ -1074,11 +1155,15 @@ class StorageEngine {
 
   // Index
   std::multimap<uint64_t, uint64_t> index_;
+  std::multimap<uint64_t, uint64_t> index_compaction_;
   std::thread thread_index_;
   std::mutex mutex_index_;
 
   // Compaction;
   LogfileManager logfile_manager_compaction_;
+  std::mutex mutex_compaction_;
+  bool is_compaction_in_progress_;
+  std::thread thread_compaction_;
 };
 
 };
