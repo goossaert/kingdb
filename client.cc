@@ -161,7 +161,7 @@ class ClientTask: public Task {
           LOG_INFO("ClientTask", "Put() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
         }
         
-        if (retry == MAX_RETRIES) break;
+        if (retry >= MAX_RETRIES - 1) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10000));
         LOG_INFO("ClientTask", "retry key: [%s]", key.c_str());
       }
@@ -222,7 +222,7 @@ class ClientTask: public Task {
             }
           }
         }
-        if (retry == MAX_RETRIES) break;
+        if (retry >= MAX_RETRIES - 1) break;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(5000));
         LOG_INFO("ClientTask", "retry key: [%s]", key.c_str());

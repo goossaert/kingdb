@@ -86,7 +86,7 @@ struct Entry {
   }
 
   uint64_t size_value_used() {
-    if (IsCompressed() && HasPadding()) {
+    if (IsCompressed()) {
       return size_value_compressed;
     } else {
       return size_value;
