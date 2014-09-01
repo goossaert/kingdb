@@ -868,6 +868,7 @@ class StorageEngine {
                     uint32_t fileid_start,
                     uint32_t fileid_end) {
 
+    // TODO: replace the change on is_compaction_in_progress_ by a RAII
     mutex_compaction_.lock();
     is_compaction_in_progress_ = true;
     mutex_compaction_.unlock();
@@ -916,7 +917,7 @@ class StorageEngine {
 
 
     // 2. Iterating over all unique hashed keys of index_compaction, and determine which
-    // locations of the storage engine index with similar hashes will need to be compacted.
+    // locations of the storage engine index 'index_' with similar hashes will need to be compacted.
     LOG_TRACE("Compaction()", "Get unique hashed keys");
     std::vector<std::pair<uint64_t, uint64_t>> index_compaction_se;
     for (auto it = index_compaction.begin(); it != index_compaction.end(); it = index_compaction.upper_bound(it->first)) {
@@ -936,8 +937,9 @@ class StorageEngine {
     std::set<uint32_t> fileids_largefiles_keep;
     std::set<std::string> keys_encountered;
     std::multimap<uint64_t, uint64_t> hashedkeys_to_locations_regular_keep;
-    std::map<uint64_t, uint64_t> hashedkeys_to_locations_large_keep;
-    //for (auto &p: std::reverse(index_compaction_se)) {
+    std::multimap<uint64_t, uint64_t> hashedkeys_to_locations_large_keep;
+    // Reversing the order of the vector to guarantee that
+    // the most recent locations are treated first
     std::reverse(index_compaction_se.begin(), index_compaction_se.end());
     for (auto &p: index_compaction_se) {
       ByteArray *key, *value;
@@ -960,7 +962,7 @@ class StorageEngine {
       if (keys_encountered.find(str_key) == keys_encountered.end()) {
         keys_encountered.insert(str_key);
         if (IsFileLarge(fileid)) {
-          hashedkeys_to_locations_large_keep[p.first] = p.second;
+          hashedkeys_to_locations_large_keep.insert(p);
           fileids_largefiles_keep.insert(fileid);
         } else if (!s.IsRemoveOrder()) {
           hashedkeys_to_locations_regular_keep.insert(p);
@@ -1039,10 +1041,9 @@ class StorageEngine {
     //    logmanager_compaction_ object to persist them on disk
     LOG_TRACE("Compaction()", "Build order list");
     std::vector<Order> orders;
-    std::multimap<uint64_t, uint64_t> index_compaction_out;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
       uint32_t fileid = *it;
-      if (fileids_largefiles_keep.find(fileid) != fileids_largefiles_keep.end()) continue;
+      if (IsFileLarge(fileid)) continue;
       Mmap* mmap = mmaps[fileid];
 
       struct LogFileFooter* footer = reinterpret_cast<struct LogFileFooter*>(mmap->datafile() + mmap->filesize() - sizeof(struct LogFileFooter));
@@ -1094,15 +1095,14 @@ class StorageEngine {
           locations = hashedkeys_clusters[location];
         }
 
-        for (auto it_location = locations.begin(); it_location != locations.end(); ++it_location) {
-          uint64_t location = *it_location;
+        //for (auto it_location = locations.begin(); it_location != locations.end(); ++it_location) {
+          //uint64_t location = *it_location;
+        for (auto& location: locations) {
           uint32_t fileid_location = (location & 0xFFFFFFFF00000000) >> 32;
           uint32_t offset_file = location & 0x00000000FFFFFFFF;
-          LOG_TRACE("Compaction()", "order list loop - it_location fileid:%u offset:%u", fileid_location, offset_file);
+          LOG_TRACE("Compaction()", "order list loop - location fileid:%u offset:%u", fileid_location, offset_file);
           Mmap *mmap_location = mmaps[fileid_location];
           struct Entry* entry = reinterpret_cast<struct Entry*>(mmap_location->datafile() + offset_file);
-
-          index_compaction_out.insert(std::pair<uint64_t, uint64_t>(entry->hash, location));
 
           LOG_TRACE("Compaction()", "order list loop - create byte arrays");
           ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + sizeof(struct Entry), entry->size_key);
@@ -1127,7 +1127,6 @@ class StorageEngine {
     logfile_manager_compaction_.WriteOrdersAndFlushFile(orders, map_index);
     logfile_manager_compaction_.FlushLogIndex();
     logfile_manager_compaction_.CloseCurrentFile();
-    // TODO: update index with regurn from WriteOrdersAndFlushFile
     orders.clear();
     mmaps.clear();
 
@@ -1169,7 +1168,11 @@ class StorageEngine {
     map_index.clear();
 
 
-    // 11. Update the storage engine index_, by removing the locations that have
+    // 11. Add the large entries to be kept to the map that will update the 'index_'
+    map_index_shifted.insert(hashedkeys_to_locations_large_keep.begin(), hashedkeys_to_locations_large_keep.end());
+
+
+    // 12. Update the storage engine index_, by removing the locations that have
     //     been compacted, while making sure that the locations that have been
     //     added as the compaction are not removed
     int num_iterations_per_lock = 10;
@@ -1215,7 +1218,8 @@ class StorageEngine {
     }
     ReleaseWriteLock();
 
-    // 12. Put all the locations inserted after the compaction started
+
+    // 13. Put all the locations inserted after the compaction started
     //     stored in 'index_compactions_' into the main index 'index_'
     AcquireWriteLock();
     index_.insert(index_compaction_.begin(), index_compaction_.end()); 
@@ -1225,7 +1229,8 @@ class StorageEngine {
     mutex_compaction_.unlock();
     ReleaseWriteLock();
 
-    // 13. Remove compacted files
+
+    // 14. Remove compacted files
     for (auto& fileid: fileids_compaction) {
       if (fileids_largefiles_keep.find(fileid) != fileids_largefiles_keep.end()) continue;
       LOG_TRACE("Compaction()", "Removing [%s]", logfile_manager_.GetFilepath(fileid).c_str());
@@ -1233,8 +1238,6 @@ class StorageEngine {
         LOG_EMERG("Compaction()", "Could not remove file");
       }
     }
-
-    // TODO: make sure that files with large entries are handled correctly
 
     // TODO: update changelogs and fsync() wherever necessary (journal, or whatever name, which has
     //       the sequence of operations that can be used to recover)
@@ -1246,7 +1249,7 @@ class StorageEngine {
  private:
 
   void AcquireWriteLock() {
-    // also waits for readers to finish
+    // Also waits for readers to finish
     mutex_write_.lock();
     while(true) {
       std::unique_lock<std::mutex> lock_read(mutex_read_);
