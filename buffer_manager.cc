@@ -4,9 +4,6 @@
 
 #include "buffer_manager.h"
 
-// TODO: add timer to force flush in case the buffer hasn't reached his maximum
-//       capacity after N milliseconds
-
 namespace kdb {
 
 Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
@@ -197,17 +194,11 @@ Status BufferManager::WriteChunk(const OrderType& op,
 
   // test on size for debugging remove()
   if (buffers_[im_live_].size() > 256) {
-    // TODO: make this value optional -- a good default value would be the
-    // number of client threads
+    // TODO-2: make this value optional -- a good default value would be the
+    //         number of client threads
     force_swap_ = true;
   }
   /*
-  */
-
-  // TODO: remove when the calls to wait() will have been replaced
-  //       by calls to wait_for() -- i.e. proper timing out
-  /*
-  force_swap_ = true;
   */
 
   if (sizes_[im_live_] > buffer_size_ || force_swap_) {
@@ -247,6 +238,7 @@ void BufferManager::ProcessingLoop() {
     while (sizes_[im_copy_] == 0) {
       LOG_TRACE("BufferManager", "ProcessingLoop() - wait - %llu %llu", buffers_[im_copy_].size(), buffers_[im_live_].size());
       can_swap_ = true;
+      // TODO-2: parametrize the wait period
       std::cv_status status = cv_flush_.wait_for(lock_flush, std::chrono::milliseconds(500));
       if (status == std::cv_status::no_timeout) {
         //LOG_INFO("BufferManager", "ProcessingLoop() - swapped no timeout");

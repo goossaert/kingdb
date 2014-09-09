@@ -38,15 +38,15 @@ enum EntryFlag { // 32-bit flags
   kHasPadding   = 0x2
 };
 
-// TODO: As part of the flags, we should also have information as to whether the 
-//       entry is full (has all its data contiguous), is a first chunk, a middle
-//       chunk, or a last chunk. This will be useful if in the future, the way
-//       items are stored is changed.
+// TODO-4: As part of the flags, we should also have information as to whether the 
+//         entry is full (has all its data contiguous), is a first chunk, a middle
+//         chunk, or a last chunk. This will be useful if in the future, the way
+//         items are stored is changed.
 
-// TODO: File ids cannot be used as temporal ids, because the compaction process
-//       may write older entries to file with newer ids: the files need to have
-//       a sequence id so that the ordering the of the entries they contain in
-//       the overall set of entries can be determined
+// TODO-5: File ids cannot be used as temporal ids, because the compaction process
+//         may write older entries to file with newer ids: the files need to have
+//         a sequence id so that the ordering the of the entries they contain in
+//         the overall set of entries can be determined
 
 struct Entry {
   Entry() { flags = 0; }

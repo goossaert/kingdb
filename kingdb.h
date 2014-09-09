@@ -54,8 +54,9 @@ class KingDB: public Interface {
   virtual Status Remove(WriteOptions& write_options, ByteArray *key) override;
 
  private:
-  // TODO: Make sure that if multilpe threads are creating KingDB objects,
-  //       they would all refer to the same buffer manager and storage engine.
+  // TODO-6: Make sure that if multiple threads are creating KingDB objects with
+  //         the same database name, they would all refer to the same buffer
+  //         manager and storage engine.
   kdb::DatabaseOptions db_options_;
   std::string dbname_;
   std::mutex mutex_;

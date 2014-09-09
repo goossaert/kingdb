@@ -32,11 +32,11 @@
 
 namespace kdb {
 
-// TODO: Due to padding/alignment, the structs that are used to store data in
-//       files will see their size influenced by the architecture on which
-//       the database is running (i.e. 32 bits or 64 bits), and thus the actual
-//       storage will need serialization (along with proper endian-ness
-//       handling)
+// TODO-21: Due to padding/alignment, the structs that are used to store data in
+//          files will see their size influenced by the architecture on which
+//          the database is running (i.e. 32 bits or 64 bits), and thus the actual
+//          storage will need serialization (along with proper endian-ness
+//          handling)
 
 class LogfileManager {
  public:
@@ -106,7 +106,7 @@ class LogfileManager {
     filepath_ = GetFilepath(GetSequenceFileId());
     if ((fd_ = open(filepath_.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
       LOG_EMERG("StorageEngine::ProcessingLoopData()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
-      exit(-1); // TODO: gracefully handle open() errors
+      exit(-1); // TODO-3: gracefully handle open() errors
     }
     has_file_ = true;
     fileid_ = GetSequenceFileId();
@@ -119,7 +119,7 @@ class LogfileManager {
   }
 
   void CloseCurrentFile() {
-    // TODO: the fact that sometimes FlushLogIndex() has to be called
+    // TODO-9: the fact that sometimes FlushLogIndex() has to be called
     // beforehands is confusing -- find a way to fix it.
     close(fd_);
     IncrementSequenceFileId(1);
@@ -205,7 +205,7 @@ class LogfileManager {
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
       LOG_EMERG("StorageEngine::WriteFirstChunkLargeOrder()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
-      exit(-1); // TODO: gracefully handle open() errors
+      exit(-1); // TODO-3: gracefully handle open() errors
     }
 
     char buffer[1024];
@@ -249,7 +249,7 @@ class LogfileManager {
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
       LOG_EMERG("StorageEngine::WriteChunk()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
-      exit(-1); // TODO: gracefully handle open() errors
+      exit(-1); // TODO-3: gracefully handle open() errors
     }
 
     // Write the chunk
@@ -290,10 +290,10 @@ class LogfileManager {
       }
     }
 
-    // TODO: If this is the last chunk of a large entry, then:
-    //         1. the footer has to be written
-    //         2. file_sizes[] has to be updated to be the compressed size (if
-    //            compression is activated)
+    // TODO-10: If this is the last chunk of a large entry, then:
+    //            1. the footer has to be written
+    //            2. file_sizes[] has to be updated to be the compressed size (if
+    //               compression is activated)
 
     close(fd);
     LOG_TRACE("LogfileManager::WriteChunk()", "all good");
@@ -379,10 +379,10 @@ class LogfileManager {
       }
 
       uint64_t hashed_key = hash_->HashFunction(order.key->data(), order.key->size());
-      // TODO: if the item is self-contained (unique chunk), then no need to
+      // TODO-13: if the item is self-contained (unique chunk), then no need to
       //       have size_value space, size_value_compressed is enough.
 
-      // TODO: If the db is embedded, then all order are self contained,
+      // TODO-12: If the db is embedded, then all order are self contained,
       //       independently of their sizes. Would the compression and CRC32 still
       //       work? Would storing the data (i.e. choosing between the different
       //       storing functions) still work?
@@ -396,22 +396,16 @@ class LogfileManager {
       uint64_t location = 0;
       bool is_large_order = order.key->size() + order.size_value > size_block_;
       if (is_large_order && order.offset_chunk == 0) {
-        // TODO: shouldn't this be testing size_value_compressed as well? -- yes, only if the order
+        // TODO-11: shouldn't this be testing size_value_compressed as well? -- yes, only if the order
         // is a full entry by itself (will happen when the kvstore will be embedded and not accessed
         // through the network), otherwise we don't know yet what the total compressed size will be.
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "1. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         location = WriteFirstChunkLargeOrder(order, hashed_key);
       // 2. The order is a non-first chunk, so we
       //    open the file, pwrite() the chunk, and close the file.
-      } else if (   order.offset_chunk != 0
-                 /*
-                 && (   (order.size_value_compressed == 0 && order.chunk->size() != order.size_value) // TODO: are those two tests on the size necessary?
-                     || (order.size_value_compressed != 0 && order.chunk->size() != order.size_value_compressed)
-                    )
-                 */
-                ) {
-        //  TODO: replace the tests on compression "order.size_value_compressed ..." by a real test on a flag or a boolean
-        //  TODO: replace the use of size_value or size_value_compressed by a unique size() which would already return the right value
+      } else if (order.offset_chunk != 0) {
+        //  TODO-11: replace the tests on compression "order.size_value_compressed ..." by a real test on a flag or a boolean
+        //  TODO-11: replace the use of size_value or size_value_compressed by a unique size() which would already return the right value
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "2. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
         location = key_to_location[order.key->ToString()];
         if (location != 0) {
@@ -502,8 +496,8 @@ class LogfileManager {
   Status LoadFile(Mmap& mmap,
                   uint32_t fileid,
                   std::multimap<uint64_t, uint64_t>& index_se) {
-    // TODO: need to check CRC32 for the footer and the footer indexes.
-    // TODO: handle large file (with very large, unique entry)
+    // TODO-17: need to check CRC32 for the footer and the footer indexes.
+    // TODO-15: handle large file (with very large, unique entry)
     struct LogFileFooter* footer = reinterpret_cast<struct LogFileFooter*>(mmap.datafile() + mmap.filesize() - sizeof(struct LogFileFooter));
     int rewind = sizeof(struct LogFileFooter) + footer->num_entries * (sizeof(struct LogFileFooterIndex));
     if (   footer->magic_number == get_magic_number()
@@ -529,18 +523,18 @@ class LogfileManager {
 
     //LOG_TRACE("LoadFile()", "Invalid magic number for file [%s]", filename);
     //return Status::IOError("Invalid magic number");
-    // TODO: add the recovery code here
+    // TODO-15: add the recovery code here
     return Status::OK();
   }
 
   Status RecoverFile(Mmap& mmap,
                      uint32_t fileid,
                      std::multimap<uint64_t, uint64_t>& index_se) {
-    // TODO: what about the files that have been flushed (and thus have a
-    //       footer) but are still being written to due to some multi-chunk
-    //       entry? This means the footer would be present but some data
-    //       could be missing => need to have an extra mechanism to check on
-    //       files after they've been written.
+    // TODO-16: what about the files that have been flushed (and thus have a
+    //          footer) but are still being written to due to some multi-chunk
+    //          entry? This means the footer would be present but some data
+    //          could be missing => need to have an extra mechanism to check on
+    //          files after they've been written.
     uint32_t offset = SIZE_LOGFILE_HEADER;
     std::vector< std::pair<uint64_t, uint32_t> > logindex_current;
     bool has_padding_in_values = false;
@@ -560,19 +554,19 @@ class LogfileManager {
         break;
       }
       crc32_.reset();
-      // TODO: need a way to check the crc32 for the entry header and the key
-      //       maybe the CRC32 could be computed on the final frames, and not
-      //       the data inside of the frames -- need to check if the CRC32
-      //       values are the same in both cases though:
-      //       We compress data and create frames with it. Are the CRC32 the
-      //       sames if:
-      //          1. it is computed over the sequence of frames,
-      //          2. it is computed over each frame separately then added.
+      // TODO-17: need a way to check the crc32 for the entry header and the key
+      //          maybe the CRC32 could be computed on the final frames, and not
+      //          the data inside of the frames -- need to check if the CRC32
+      //          values are the same in both cases though:
+      //          We compress data and create frames with it. Are the CRC32 the
+      //          sames if:
+      //             1. it is computed over the sequence of frames,
+      //             2. it is computed over each frame separately then added.
       crc32_.stream(mmap.datafile() + sizeof(struct Entry) + entry->size_key, entry->size_value_used());
-      if (true || entry->crc32 == crc32_.get()) { // TODO: fix CRC32 check
+      if (true || entry->crc32 == crc32_.get()) { // TODO-17: fix CRC32 check
         // Valid content, add to index
-        // TODO: make sure invalid entries get marked as invalid so that the
-        //       compaction process can clean them up
+        // TODO-18: make sure invalid entries get marked as invalid so that the
+        //          compaction process can clean them up
         logindex_current.push_back(std::pair<uint64_t, uint32_t>(entry->hash, offset));
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
@@ -630,13 +624,13 @@ class LogfileManager {
   std::string prefix_;
 
  public:
-  // TODO: make accessors for file_sizes that are protected by a mutex
+  // TODO-14: make accessors for file_sizes that are protected by a mutex
   std::map<uint32_t, uint64_t> file_sizes; // fileid to file size
   std::map<std::string, uint64_t> key_to_location;
-  // TODO: make sure that the case where two writers simultaneously write entries with the same key is taken 
-  //       into account -- add thread id in the key of key_to_location? use unique sequence id from the interface?
-  // TODO: make sure that the writes that fail gets all their temporary data
-  //       cleaned up (including whatever is in key_to_location)
+  // TODO-5: make sure that the case where two writers simultaneously write entries with the same key is taken 
+  //         into account -- add thread id in the key of key_to_location? use unique sequence id from the interface?
+  // TODO-5: make sure that the writes that fail gets all their temporary data
+  //         cleaned up (including whatever is in key_to_location)
 };
 
 
@@ -787,7 +781,7 @@ class StorageEngine {
                       ByteArray* key,
                       ByteArray** value_out) {
     std::unique_lock<std::mutex> lock(mutex_index_);
-    // TODO: should not be locking here, instead, should store the hashed key
+    // TODO-26: should not be locking here, instead, should store the hashed key
     // and location from the index and release the lock right away -- should not
     // be locking while calling GetEntry()
     
@@ -859,7 +853,7 @@ class StorageEngine {
   }
 
   bool IsFileLarge(uint32_t fileid) {
-    // TODO: implement this
+    // TODO-24: implement this
     return false;
   }
 
@@ -867,8 +861,12 @@ class StorageEngine {
   Status Compaction(std::string dbname,
                     uint32_t fileid_start,
                     uint32_t fileid_end) {
+    // TODO: make sure that all sets, maps and multimaps are cleared whenever
+    // they are no longer needed
 
-    // TODO: replace the change on is_compaction_in_progress_ by a RAII
+    // TODO-23: replace the change on is_compaction_in_progress_ by a RAII
+    //          WARNING: this is not the only part of the code with this issue,
+    //          some code digging in all files is required
     mutex_compaction_.lock();
     is_compaction_in_progress_ = true;
     mutex_compaction_.unlock();
@@ -1064,8 +1062,7 @@ class StorageEngine {
             || entry->size_key == 0
             || offset + sizeof(struct Entry) + entry->size_key > mmap->filesize()
             || offset + sizeof(struct Entry) + entry->size_key + entry->size_value_offset() > mmap->filesize()) {
-          // TODO: make sure invalid entries get marked as invalid so that the
-          //       compaction process can clean them up
+          // TODO: handle error
           fprintf(stderr, "Compaction - unexpected end of file - mmap->filesize():%d\n", mmap->filesize());
           entry->print();
           break;
@@ -1082,10 +1079,10 @@ class StorageEngine {
           continue;
         }
 
-        // TODO: do CRC32 check
+        // TODO-17: do CRC32 check
  
-        // TODO: make function to get location from fileid and offset, and the
-        //       fileid and offset from location
+        // TODO-19: make function to get location from fileid and offset, and the
+        //          fileid and offset from location
         std::vector<uint64_t> locations;
         if (hashedkeys_clusters.find(location) == hashedkeys_clusters.end()) {
           LOG_TRACE("Compaction()", "order list loop - does not have cluster");
@@ -1239,8 +1236,8 @@ class StorageEngine {
       }
     }
 
-    // TODO: update changelogs and fsync() wherever necessary (journal, or whatever name, which has
-    //       the sequence of operations that can be used to recover)
+    // TODO-20: update changelogs and fsync() wherever necessary (journal, or whatever name, which has
+    //          the sequence of operations that can be used to recover)
  
     return Status::OK();
   }
@@ -1250,6 +1247,7 @@ class StorageEngine {
 
   void AcquireWriteLock() {
     // Also waits for readers to finish
+    // NOTE: should this be made its own templated class?
     mutex_write_.lock();
     while(true) {
       std::unique_lock<std::mutex> lock_read(mutex_read_);

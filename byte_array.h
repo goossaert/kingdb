@@ -22,8 +22,8 @@
 
 namespace kdb {
 
-// TODO: most of the uses of ByteArray classes are pointers
-//       => change that to use references whenever possible
+// TODO-1: most of the uses of ByteArray classes are pointers
+//         => change that to use references whenever possible
 
 
 class ByteArray {
@@ -114,7 +114,7 @@ class Mmap {
                                        fd_,
                                        0));
     if (datafile_ == MAP_FAILED) {
-      // TODO: fix how errors are managed here
+      // TODO-3: fix how errors are managed here
       LOG_EMERG("Could not mmap() file: %s", strerror(errno));
       exit(-1);
     }

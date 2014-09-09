@@ -28,8 +28,8 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   SharedAllocatedByteArray *key = nullptr;
   int size_key = 0;
   LOG_TRACE("NetworkTask", "ENTER");
-  // TODO: replace the memory allocation performed for 'key' and 'buffer' by a
-  //       pool of pre-allocated buffers
+  // TODO-7: replace the memory allocation performed for 'key' and 'buffer' by a
+  //         pool of pre-allocated buffers
   ReadOptions read_options;
   WriteOptions write_options;
 
@@ -285,7 +285,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       }
 
       if (chunk->size() > 0) {
-        // TODO: make sure that 'key_current' is not created as a new allocated
+        // TODO-8: make sure that 'key_current' is not created as a new allocated
         // ByteArray but just a shared copy of 'key' -- there is currently a bug
         // in the ByteArray code so new allocated is an acceptable temporary
         // solution. Once the bug is fixed, memory must be shared.
