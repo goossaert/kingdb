@@ -5,6 +5,7 @@
 #ifndef KINGDB_COMMON_H_
 #define KINGDB_COMMON_H_
 
+#include <thread>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -23,6 +24,7 @@ enum class OrderType { Put, Remove };
 class ByteArray;
 
 struct Order {
+  std::thread::id tid;
   OrderType type;
   ByteArray* key;
   ByteArray* chunk;
@@ -36,12 +38,12 @@ struct Order {
 // NOTE: kEntryFirst, kEntryMiddle and kEntryLast are not used yet,
 //       they are reserved for possible future implementation.
 enum EntryFlag {
-  kIsTypeRemove  = 0x1,
+  kTypeRemove    = 0x1,
   kHasPadding    = 0x2,
-  kEntryFull     = 0x3,
-  kEntryFirst    = 0x4,
-  kEntryMiddle   = 0x5,
-  kEntryLast     = 0x6
+  kEntryFull     = 0x4,
+  kEntryFirst    = 0x8,
+  kEntryMiddle   = 0x10,
+  kEntryLast     = 0x20
 };
 
 // TODO-27: File ids cannot be used as temporal ids, because the compaction process
@@ -75,7 +77,7 @@ struct Entry {
   }
 
   void SetTypeRemove() {
-    flags |= kIsTypeRemove; 
+    flags |= kTypeRemove; 
   }
 
   void SetTypePut() {
@@ -84,7 +86,7 @@ struct Entry {
 
   bool IsTypeRemove() {
     LOG_TRACE("IsTypeRemove()", "flags %u", flags);
-    return (flags & kIsTypeRemove);
+    return (flags & kTypeRemove);
   }
   
   bool IsTypePut() {

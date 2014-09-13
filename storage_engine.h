@@ -411,7 +411,11 @@ class LogfileManager {
         //  TODO-11: replace the tests on compression "order.size_value_compressed ..." by a real test on a flag or a boolean
         //  TODO-11: replace the use of size_value or size_value_compressed by a unique size() which would already return the right value
         LOG_TRACE("StorageEngine::WriteOrdersAndFlushFile()", "2. key: [%s] size_chunk:%llu offset_chunk: %llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
-        location = key_to_location[order.key->ToString()];
+        if (key_to_location.find(order.tid) == key_to_location.end()) {
+          location = 0;
+        } else {
+          location = key_to_location[order.tid][order.key->ToString()];
+        }
         if (location != 0) {
           WriteChunk(order, hashed_key, location, is_large_order);
         } else {
@@ -434,12 +438,14 @@ class LogfileManager {
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
         }
-        key_to_location.erase(order.key->ToString());
+        if (key_to_location.find(order.tid) != key_to_location.end()) {
+          key_to_location[order.tid].erase(order.key->ToString());
+        }
       // Else, if the order is not self-contained and is the first chunk,
       // the location is saved in key_to_location[]
       } else if (order.offset_chunk == 0) {
         if (location != 0 && order.type != OrderType::Remove) {
-          key_to_location[order.key->ToString()] = location;
+          key_to_location[order.tid][order.key->ToString()] = location;
         } else {
           LOG_EMERG("StorageEngine", "Avoided catastrophic location error"); 
         }
@@ -630,11 +636,12 @@ class LogfileManager {
  public:
   // TODO-14: make accessors for file_sizes that are protected by a mutex
   std::map<uint32_t, uint64_t> file_sizes; // fileid to file size
-  std::map<std::string, uint64_t> key_to_location;
-  // TODO-5: make sure that the case where two writers simultaneously write entries with the same key is taken 
-  //         into account -- add thread id in the key of key_to_location? use unique sequence id from the interface?
-  // TODO-5: make sure that the writes that fail gets all their temporary data
-  //         cleaned up (including whatever is in key_to_location)
+
+  // key_to_location is made to be dependent on the id of the thread that
+  // originated an order, so that if two writers simultaneously write entries
+  // with the same key, they will be properly stored into separate locations.
+  // NOTE: if a thread crashes or terminates, its data will *not* be cleaned up.
+  std::map< std::thread::id, std::map<std::string, uint64_t> > key_to_location;
 };
 
 
@@ -804,7 +811,7 @@ class StorageEngine {
       if (*key_temp == *key) {
         delete key_temp;
         if (s.IsRemoveOrder()) {
-          s = Status::NotFound("Unable to find the entry in the storage engine");
+          s = Status::NotFound("Unable to find the entry in the storage engine (remove order)");
         }
         return s;
       }
@@ -1114,7 +1121,8 @@ class StorageEngine {
           ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + sizeof(struct Entry), entry->size_key);
           ByteArray *chunk = new SimpleByteArray(mmap_location->datafile() + offset_file + sizeof(struct Entry) + entry->size_key, entry->size_value_used());
           LOG_TRACE("Compaction()", "order list loop - push_back() orders");
-          orders.push_back(Order{OrderType::Put,
+          orders.push_back(Order{std::this_thread::get_id(),
+                                 OrderType::Put,
                                  key,
                                  chunk,
                                  0,
@@ -1277,7 +1285,6 @@ class StorageEngine {
   std::string dbname_;
   LogfileManager logfile_manager_;
   std::map<uint64_t, std::string> data_;
-  std::map<std::string, uint64_t> key_to_location_;
   std::thread thread_data_;
   std::condition_variable cv_read_;
   std::mutex mutex_read_;

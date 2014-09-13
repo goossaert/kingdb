@@ -149,7 +149,8 @@ Status BufferManager::WriteChunk(const OrderType& op,
   LOG_TRACE("BufferManager", "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d", key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
 
   // not sure if I should add the item then test, or test then add the item
-  buffers_[im_live_].push_back(Order{op,
+  buffers_[im_live_].push_back(Order{std::this_thread::get_id(),
+                                     op,
                                      key,
                                      chunk,
                                      offset_chunk,
