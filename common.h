@@ -32,10 +32,16 @@ struct Order {
   uint32_t crc32;
 };
 
-
-enum EntryFlag { // 32-bit flags
-  kIsTypeRemove = 0x1,
-  kHasPadding   = 0x2
+// 32-bit flags
+// NOTE: kEntryFirst, kEntryMiddle and kEntryLast are not used yet,
+//       they are reserved for possible future implementation.
+enum EntryFlag {
+  kIsTypeRemove  = 0x1,
+  kHasPadding    = 0x2,
+  kEntryFull     = 0x3,
+  kEntryFirst    = 0x4,
+  kEntryMiddle   = 0x5,
+  kEntryLast     = 0x6
 };
 
 // TODO-4: As part of the flags, we should also have information as to whether the 
@@ -88,6 +94,14 @@ struct Entry {
   
   bool IsTypePut() {
     return !IsTypeRemove();
+  }
+
+  void SetEntryFull() {
+    flags |= kEntryFull; 
+  }
+
+  bool IsEntryFull() {
+    return (flags & kEntryFull); 
   }
 
   bool IsCompressed() {

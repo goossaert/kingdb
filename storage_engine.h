@@ -211,6 +211,7 @@ class LogfileManager {
     char buffer[1024];
     struct Entry* entry = reinterpret_cast<struct Entry*>(buffer);
     entry->SetTypePut();
+    entry->SetEntryFull();
     entry->size_key = order.key->size();
     entry->size_value = order.size_value;
     entry->size_value_compressed = order.size_value_compressed;
@@ -269,6 +270,7 @@ class LogfileManager {
       LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:%u", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct Entry entry;
       entry.SetTypePut();
+      entry.SetEntryFull();
       entry.size_key = order.key->size();
       entry.size_value = order.size_value;
       entry.size_value_compressed = order.size_value_compressed;
@@ -306,6 +308,7 @@ class LogfileManager {
     struct Entry* entry = reinterpret_cast<struct Entry*>(buffer_raw_ + offset_end_);
     if (order.type == OrderType::Put) {
       entry->SetTypePut();
+      entry->SetEntryFull();
       entry->size_key = order.key->size();
       entry->size_value = order.size_value;
       entry->size_value_compressed = order.size_value_compressed;
@@ -352,6 +355,7 @@ class LogfileManager {
     } else { // order.type == OrderType::Remove
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "Remove [%s]", order.key->ToString().c_str());
       entry->SetTypeRemove();
+      entry->SetEntryFull();
       entry->size_key = order.key->size();
       entry->size_value = 0;
       entry->size_value_compressed = 0;
@@ -838,6 +842,11 @@ class StorageEngine {
     value_temp->SetOffset(offset_file + sizeof(struct Entry) + entry->size_key, entry->size_value);
     value_temp->SetSizeCompressed(entry->size_value_compressed);
     value_temp->SetCRC32(entry->crc32);
+
+    if (!entry->IsEntryFull()) {
+      LOG_EMERG("StorageEngine::GetEntry()", "Entry is not of type FULL, which is not supported");
+      s = Status::IOError("Entries of type not FULL are not supported");
+    }
 
     if (entry->IsTypeRemove()) {
       s = Status::RemoveOrder();
