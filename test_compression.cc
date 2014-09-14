@@ -52,7 +52,7 @@ int main() {
 
   std::string key("0x10c095000-0");
   raw = MakeValue(key, size_value);
-  lz4.Reset();
+  lz4.ResetThreadLocalStorage();
   compressed = new char[SIZE_BUFFER];
 
   auto num_chunks = size_value / size_chunk;

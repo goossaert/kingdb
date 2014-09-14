@@ -59,7 +59,7 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 
   if (do_compression) {
     if (offset_chunk == 0) {
-      compressor_.Reset();
+      compressor_.ResetThreadLocalStorage();
     }
 
     LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu", key->ToString().c_str(), compressor_.size_compressed());
@@ -89,7 +89,7 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 
   // Compute CRC32 checksum
   uint32_t crc32 = 0;
-  if (offset_chunk == 0) crc32_.reset();
+  if (offset_chunk == 0) crc32_.ResetThreadLocalStorage();
   crc32_.stream(chunk_final->data(), chunk_final->size());
   if (is_last_chunk) crc32 = crc32_.get();
 

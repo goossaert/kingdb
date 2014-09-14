@@ -563,7 +563,7 @@ class LogfileManager {
           (uint64_t)mmap.filesize());
         break;
       }
-      crc32_.reset();
+      crc32_.ResetThreadLocalStorage();
       // TODO-17: need a way to check the crc32 for the entry header and the key
       //          maybe the CRC32 could be computed on the final frames, and not
       //          the data inside of the frames -- need to check if the CRC32

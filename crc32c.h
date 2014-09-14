@@ -124,8 +124,6 @@ class CRC32 {
     return *this;
   }
 
-
-
   void stream(const char* data, size_t n) {
     LOG_TRACE("CRC32", "size: %zu", n);
     uint64_t c = ts_.get();
@@ -135,7 +133,7 @@ class CRC32 {
   }
 
   uint32_t get() { return ts_.get(); }
-  void reset() { ts_.reset(); }
+  void ResetThreadLocalStorage() { ts_.reset(); }
    
  private:
   kdb::ThreadStorage ts_;

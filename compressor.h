@@ -21,7 +21,6 @@ namespace kdb {
 class CompressorLZ4 {
  public:
   CompressorLZ4() {
-    Reset();
   }
 
   // Added an empty copy assignment operator to avoid error messages of the type:
@@ -35,7 +34,7 @@ class CompressorLZ4 {
   virtual ~CompressorLZ4() {
   }
 
-  void Reset();
+  void ResetThreadLocalStorage();
 
   Status Compress(char *raw_in,
                   uint64_t size_raw_in,

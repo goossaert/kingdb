@@ -151,15 +151,15 @@ class SharedMmappedByteArray: public ByteArray {
     mmap_ = std::shared_ptr<Mmap>(new Mmap(filepath, filesize));
     data_ = mmap_->datafile();
     size_ = 0;
-    compressor_.Reset();
-    crc32_.reset();
+    compressor_.ResetThreadLocalStorage();
+    crc32_.ResetThreadLocalStorage();
   }
 
   SharedMmappedByteArray(char *data, uint64_t size) {
     data_ = data;
     size_ = size;
-    compressor_.Reset();
-    crc32_.reset();
+    compressor_.ResetThreadLocalStorage();
+    crc32_.ResetThreadLocalStorage();
   }
 
   void SetOffset(uint64_t offset, uint64_t size) {

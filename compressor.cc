@@ -6,7 +6,7 @@
 
 namespace kdb {
 
-void CompressorLZ4::Reset() {
+void CompressorLZ4::ResetThreadLocalStorage() {
   ts_compress_.reset();
   ts_uncompress_.reset();
 }
