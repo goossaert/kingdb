@@ -16,12 +16,13 @@
 
 #include "logger.h"
 #include "status.h"
+#include "byte_array_base.h"
 
 namespace kdb {
 
 enum class OrderType { Put, Remove };
 
-class ByteArray;
+//class ByteArray;
 
 struct Order {
   std::thread::id tid;
@@ -32,6 +33,19 @@ struct Order {
   uint64_t size_value;
   uint64_t size_value_compressed;
   uint32_t crc32;
+
+  bool IsFirstChunk() {
+    return (offset_chunk == 0);
+  }
+
+  bool IsLastChunk() {
+    return (   (size_value_compressed == 0 && chunk->size() + offset_chunk == size_value)
+            || (size_value_compressed != 0 && chunk->size() + offset_chunk == size_value_compressed));
+  }
+
+  bool IsSelfContained() {
+    return IsFirstChunk() && IsLastChunk();
+  }
 };
 
 // 32-bit flags
@@ -120,7 +134,6 @@ struct Entry {
       return size_value_compressed;
     }
   }
-
 };
 
 struct EntryFooter {
@@ -139,6 +152,10 @@ struct Metadata {
 enum FileType {
   kLogType   = 0x0,
   kLargeType = 0x1
+};
+
+struct LogFileHeader {
+  uint32_t filetype;
 };
 
 struct LogFileFooter {

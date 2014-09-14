@@ -311,7 +311,6 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
           LOG_EMERG("NetworkTask", "Error - send() %s", strerror(errno));
           break;
         }
-
       }
       is_new_buffer = true;
     } else {

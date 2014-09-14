@@ -20,26 +20,28 @@
 #include "compressor.h"
 #include "crc32c.h"
 
+#include "byte_array_base.h"
+
 namespace kdb {
 
 // TODO-1: most of the uses of ByteArray classes are pointers
 //         => change that to use references whenever possible
 
 
-class ByteArray {
+class ByteArrayCommon: public ByteArray {
  public:
-  ByteArray() {
+  ByteArrayCommon() {
     data_ = nullptr;
     size_ = 0;
   }
-  virtual ~ByteArray() {}
-  char* data() { return data_; }
-  char* data_const() const { return data_; }
-  uint64_t size() { return size_; }
-  uint64_t size_const() const { return size_; }
-  bool is_compressed() { return size_compressed_ > 0; }
+  virtual ~ByteArrayCommon() {}
+  virtual char* data() { return data_; }
+  virtual char* data_const() const { return data_; }
+  virtual uint64_t size() { return size_; }
+  virtual uint64_t size_const() const { return size_; }
+  virtual bool is_compressed() { return size_compressed_ > 0; }
 
-  bool StartsWith(const char *substr, int n) {
+  virtual bool StartsWith(const char *substr, int n) {
     return (n <= size_ && strncmp(data_, substr, n) == 0);
   }
 
@@ -52,18 +54,13 @@ class ByteArray {
     return data_[index];
   };
   */
-  bool operator ==(const ByteArray &right) const {
-    //fprintf(stderr, "ByteArray operator==() -- left: %p %llu [%s] right: %p %llu [%s]\n", data_, size_, std::string(data_, size_).c_str(), right.data_const(), right.size_const(), std::string(right.data_const(), right.size_const()).c_str());
-    return (   size_ == right.size_const()
-            && memcmp(data_, right.data_const(), size_) == 0);
-  }
 
-  std::string ToString() {
+  virtual std::string ToString() {
     return std::string(data_, size_);
   }
 
-  void SetSizeCompressed(uint64_t s) { size_compressed_ = s; }
-  void SetCRC32(uint64_t c) { crc32_value_ = c; }
+  virtual void SetSizeCompressed(uint64_t s) { size_compressed_ = s; }
+  virtual void SetCRC32(uint64_t c) { crc32_value_ = c; }
 
   virtual Status data_chunk(char **data, uint64_t *size) {
     *size = size_;
@@ -79,7 +76,7 @@ class ByteArray {
 
 
 
-class SimpleByteArray: public ByteArray {
+class SimpleByteArray: public ByteArrayCommon {
  public:
   SimpleByteArray(const char* data_in, uint64_t size_in) {
     data_ = const_cast<char*>(data_in);
@@ -144,7 +141,7 @@ class Mmap {
 };
 
 
-class SharedMmappedByteArray: public ByteArray {
+class SharedMmappedByteArray: public ByteArrayCommon {
  public:
   SharedMmappedByteArray() {}
   SharedMmappedByteArray(std::string filepath, int filesize) {
@@ -219,7 +216,7 @@ class SharedMmappedByteArray: public ByteArray {
 };
 
 
-class AllocatedByteArray: public ByteArray {
+class AllocatedByteArray: public ByteArrayCommon {
  public:
   AllocatedByteArray(const char* data_in, uint64_t size_in) {
     size_ = size_in;
@@ -238,7 +235,7 @@ class AllocatedByteArray: public ByteArray {
 };
 
 
-class SharedAllocatedByteArray: public ByteArray {
+class SharedAllocatedByteArray: public ByteArrayCommon {
  public:
   SharedAllocatedByteArray() {}
 
