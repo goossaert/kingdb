@@ -8,7 +8,7 @@
 #include <thread>
 #include <vector>
 #include <map>
-#include "kdb.h"
+#include "kingdb/kdb.h"
 
 namespace kdb {
 

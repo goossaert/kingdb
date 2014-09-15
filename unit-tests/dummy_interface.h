@@ -8,9 +8,9 @@
 #include <thread>
 #include <string>
 
-#include "interface.h"
-#include "status.h"
-#include "logger.h"
+#include "kingdb/interface.h"
+#include "util/status.h"
+#include "util/logger.h"
 
 namespace kdb {
 
