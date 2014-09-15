@@ -633,6 +633,9 @@ class LogfileManager {
     // the entries in a set of files, which is why we have a 'timestamp' in each
     // file. As a consequence, the sequence id is the concatenation of
     // the 'timestamp' and the 'fileid'.
+    // As the compaction process will always include at least one uncompacted
+    // file, the maximum timestamp is garanteed to be always increasing and no
+    // overlapping will occur.
     std::map<std::string, uint32_t> timestamp_fileid_to_fileid;
     char filepath[2048];
     char buffer_key[128];
@@ -793,7 +796,8 @@ class LogfileManager {
       ftruncate(fd, offset);
       lseek(fd, 0, SEEK_END);
       uint64_t size_logindex;
-      WriteLogIndex(fd, logindex_current, &size_logindex, kLogType, has_padding_in_values, has_invalid_entries); // TODO: will need kLargeType as well
+      // NOTE: fine to use kLogType as kLargeType files will not be recovered anyway
+      WriteLogIndex(fd, logindex_current, &size_logindex, kLogType, has_padding_in_values, has_invalid_entries);
       file_resource_manager.SetFileSize(fileid, mmap.filesize() + size_logindex);
       close(fd);
     } else {
