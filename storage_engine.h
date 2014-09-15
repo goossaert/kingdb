@@ -134,6 +134,7 @@ class LogfileManager {
     LOG_TRACE("LogfileManager::LogfileManager()", "dbname: %s", dbname.c_str());
     dbname_ = dbname;
     sequence_fileid_ = 1;
+    sequence_timestamp_ = 1;
     size_block_ = SIZE_LOGFILE_TOTAL;
     has_file_ = false;
     buffer_has_items_ = false;
@@ -141,6 +142,7 @@ class LogfileManager {
     buffer_index_ = new char[size_block_*2];
     hash_ = MakeHash(db_options.hash);
     is_closed_ = false;
+    is_locked_sequence_timestamp_ = false;
   }
 
   ~LogfileManager() {
@@ -164,8 +166,9 @@ class LogfileManager {
   std::string GetFilepath(uint32_t fileid) {
     //filepath_ = dbname_ + "/" + std::to_string(sequence_fileid_); // TODO: optimize here
     return dbname_ + "/" + prefix_ + LogfileManager::num_to_hex(fileid); // TODO: optimize here
-  } 
+  }
 
+  // File id sequence helpers
   void SetSequenceFileId(uint32_t seq) {
     std::unique_lock<std::mutex> lock(mutex_sequence_fileid_);
     sequence_fileid_ = seq;
@@ -181,6 +184,31 @@ class LogfileManager {
     sequence_fileid_ += inc;
     return sequence_fileid_;
   }
+
+
+  // Timestamp sequence helpers
+  void SetSequenceTimestamp(uint32_t seq) {
+    std::unique_lock<std::mutex> lock(mutex_sequence_timestamp_);
+    if (!is_locked_sequence_timestamp_) sequence_timestamp_ = seq;
+  }
+
+  uint64_t GetSequenceTimestamp() {
+    std::unique_lock<std::mutex> lock(mutex_sequence_timestamp_);
+    return sequence_timestamp_;
+  }
+
+  uint64_t IncrementSequenceTimestamp(uint64_t inc) {
+    std::unique_lock<std::mutex> lock(mutex_sequence_timestamp_);
+    if (!is_locked_sequence_timestamp_) sequence_timestamp_ += inc;
+    return sequence_timestamp_;
+  }
+
+  void LockSequenceTimestamp(uint64_t seq) {
+    std::unique_lock<std::mutex> lock(mutex_sequence_timestamp_);
+    is_locked_sequence_timestamp_ = true;
+    sequence_timestamp_ = seq;
+  }
+
 
   static std::string num_to_hex(uint64_t num) {
     char buffer[20];
@@ -202,6 +230,7 @@ class LogfileManager {
     }
     has_file_ = true;
     fileid_ = GetSequenceFileId();
+    timestamp_ = GetSequenceTimestamp();
 
     // Reserving space for header
     offset_start_ = 0;
@@ -210,15 +239,15 @@ class LogfileManager {
     // Filling in default header
     struct LogFileHeader* lfh = reinterpret_cast<struct LogFileHeader*>(buffer_raw_);
     lfh->filetype = kLogType;
+    lfh->timestamp = timestamp_;
   }
 
   void CloseCurrentFile() {
-    // TODO-9: the fact that sometimes FlushLogIndex() has to be called
-    // beforehands is confusing -- find a way to fix it.
     LOG_TRACE("LogfileManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
     FlushLogIndex();
     close(fd_);
     IncrementSequenceFileId(1);
+    IncrementSequenceTimestamp(1);
     buffer_has_items_ = false;
     has_file_ = false;
   }
@@ -306,6 +335,7 @@ class LogfileManager {
     // actions done for the last chunk in WriteChunk() -- maybe make a new
     // method to factorize that code
     uint64_t fileid_largefile = IncrementSequenceFileId(1);
+    uint64_t timestamp_largefile = IncrementSequenceTimestamp(1);
     std::string filepath = GetFilepath(fileid_largefile);
     LOG_TRACE("LogfileManager::WriteFirstChunkLargeOrder()", "enter %s", filepath.c_str());
     int fd = 0;
@@ -319,6 +349,7 @@ class LogfileManager {
     // Write header
     struct LogFileHeader* lfh = reinterpret_cast<struct LogFileHeader*>(buffer);
     lfh->filetype = kLargeType;
+    lfh->timestamp = timestamp_largefile;
     if(write(fd, buffer, SIZE_LOGFILE_HEADER) < 0) {
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
@@ -571,7 +602,6 @@ class LogfileManager {
   }
 
 
-
   Status LoadDatabase(std::string& dbname, std::multimap<uint64_t, uint64_t>& index_se) {
     struct stat info;
     if (   stat(dbname.c_str(), &info) != 0
@@ -590,7 +620,24 @@ class LogfileManager {
       return Status::IOError("Could not open database directory", dbname.c_str());
     }
 
+    // Sort the fileids by <timestamp, fileid>, so that puts and removes can be
+    // applied in the right order.
+    // Indeed, imagine that we have files with ids from 1 to 100, and a
+    // compaction process operating on files 1 through 50. The files 1-50 are
+    // going to be compacted and the result of this compaction written
+    // to ids 101 and above, which means that even though the entries in
+    // files 101 and above are older than the entries in files 51-100, they are
+    // in files with greater ids. Thus, the file ids cannot be used as a safe
+    // way to order the entries in a set of files, and we need to have a sequence id
+    // which will allow all other processes to know what is the order of
+    // the entries in a set of files, which is why we have a 'timestamp' in each
+    // file. As a consequence, the sequence id is the concatenation of
+    // the 'timestamp' and the 'fileid'.
+    std::map<std::string, uint32_t> timestamp_fileid_to_fileid;
     char filepath[2048];
+    char buffer_key[128];
+    uint32_t fileid_max = 0;
+    uint64_t timestamp_max = 0;
     uint32_t fileid = 0;
     Status s;
     while ((entry = readdir(directory)) != NULL) {
@@ -603,17 +650,40 @@ class LogfileManager {
         fprintf(stderr, "file: [%s] only has a header or less, skipping\n", entry->d_name);
         continue;
       }
+
       Mmap mmap(filepath, info.st_size);
+      struct LogFileHeader* lfh = reinterpret_cast<struct LogFileHeader*>(mmap.datafile());
+      // TODO: need CRC32 on the header
+
+      //std::string key = std::to_string(lfh->timestamp) + "-" + std::to_string(fileid);
+      sprintf(buffer_key, "%016llX-%016X", lfh->timestamp, fileid);
+      std::string key(buffer_key);
+      timestamp_fileid_to_fileid[key] = fileid;
+      fileid_max = std::max(fileid_max, fileid);
+      timestamp_max = std::max(timestamp_max, lfh->timestamp);
+    }
+
+    //while ((entry = readdir(directory)) != NULL) {
+    for (auto& p: timestamp_fileid_to_fileid) {
+      //sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
+      //if (strncmp(entry->d_name, "compaction", 10) == 0) continue;
+      //fileid = LogfileManager::hex_to_num(entry->d_name);
+      uint32_t fileid = p.second;
+      std::string filepath = GetFilepath(fileid);
+      LOG_TRACE("LogfileManager::LoadDatabase()", "Loading file:[%s] with key:[%s]", filepath.c_str(), p.first.c_str());
+      if (stat(filepath.c_str(), &info) != 0) continue;
+      Mmap mmap(filepath.c_str(), info.st_size);
       s = LoadFile(mmap, fileid, index_se);
       if (!s.IsOK()) {
-        LOG_WARN("LogfileManager::LoadDatabase()", "Could not load index in file [%s], entering recovery mode", filepath);
+        LOG_WARN("LogfileManager::LoadDatabase()", "Could not load index in file [%s], entering recovery mode", filepath.c_str());
         s = RecoverFile(mmap, fileid, index_se);
       }
       if (!s.IsOK()) {
-        LOG_WARN("LogfileManager::LoadDatabase()", "Recovery failed for file [%s]", filepath);
+        LOG_WARN("LogfileManager::LoadDatabase()", "Recovery failed for file [%s]", filepath.c_str());
       }
     }
-    SetSequenceFileId(fileid + 1);
+    SetSequenceFileId(fileid_max + 1);
+    SetSequenceTimestamp(timestamp_max + 1);
     closedir(directory);
     return Status::OK();
   }
@@ -643,12 +713,6 @@ class LogfileManager {
       if (footer->filetype == kLargeType) {
         file_resource_manager.SetFileLarge(fileid);
       }
-      // TODO: what to do with this file? remove it? quarantine it? Let the user
-      // choose based on options?
-      LOG_TRACE("Logmanager::RecoverFile", "Could not recover file [%s]\n", mmap.filepath());
-      return Status::OK();
-    }
-
       LOG_TRACE("LoadFile()", "Loaded [%s] num_entries:[%llu] rewind:[%llu]", mmap.filepath(), footer->num_entries, rewind);
     } else {
       // The footer is corrupted: go through every item and verify it
@@ -748,13 +812,19 @@ class LogfileManager {
   Hash *hash_;
   bool is_closed_;
 
-  int sequence_fileid_;
+  uint32_t fileid_;
+  uint32_t sequence_fileid_;
   std::mutex mutex_sequence_fileid_;
+
+  uint64_t timestamp_;
+  uint64_t sequence_timestamp_;
+  std::mutex mutex_sequence_timestamp_;
+  bool is_locked_sequence_timestamp_;
+
   int size_block_;
   bool has_file_;
   int fd_;
   std::string filepath_;
-  uint32_t fileid_;
   uint64_t offset_start_;
   uint64_t offset_end_;
   std::string dbname_;
@@ -1182,11 +1252,13 @@ class StorageEngine {
     //    logmanager_compaction_ object to persist them on disk
     LOG_TRACE("Compaction()", "Build order list");
     std::vector<Order> orders;
+    uint64_t timestamp_max = 0;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
       uint32_t fileid = *it;
       if (IsFileLarge(fileid)) continue;
       Mmap* mmap = mmaps[fileid];
 
+      // Check the footer
       struct LogFileFooter* footer = reinterpret_cast<struct LogFileFooter*>(mmap->datafile() + mmap->filesize() - sizeof(struct LogFileFooter));
       int rewind = sizeof(struct LogFileFooter) + footer->num_entries * (sizeof(struct LogFileFooterIndex));
       if (   footer->magic_number != LogfileManager::get_magic_number()
@@ -1196,6 +1268,11 @@ class StorageEngine {
         fprintf(stderr, "Compaction - invalid footer\n");
       }
 
+      // Update the maximimum timestamp
+      struct LogFileHeader* lfh = reinterpret_cast<struct LogFileHeader*>(mmap->datafile());
+      timestamp_max = std::max(timestamp_max, lfh->timestamp);
+
+      // Process entries in the file
       uint32_t offset = SIZE_LOGFILE_HEADER;
       uint64_t offset_end = mmap->filesize() - rewind;
       while (offset < offset_end) {
@@ -1262,9 +1339,14 @@ class StorageEngine {
     }
 
 
-    // 7. Flush compacted orders
+    // 7. Write compacted orders on secondary storage
     LOG_TRACE("Compaction()", "Write compacted files");
     std::multimap<uint64_t, uint64_t> map_index;
+    // All the resulting files will have the same timestamp, which is the
+    // maximum of all the timestamps in the set of files that have been
+    // compacted. This will allow the resulting files to be properly ordered
+    // during the next database startup or recovery process.
+    logfile_manager_compaction_.LockSequenceTimestamp(timestamp_max);
     logfile_manager_compaction_.WriteOrdersAndFlushFile(orders, map_index);
     logfile_manager_compaction_.CloseCurrentFile();
     orders.clear();

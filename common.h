@@ -60,10 +60,6 @@ enum EntryFlag {
   kEntryLast     = 0x20
 };
 
-// TODO-27: File ids cannot be used as temporal ids, because the compaction process
-//          may write older entries to file with newer ids: the files need to have
-//          a sequence id so that the ordering the of the entries they contain in
-//          the overall set of entries can be determined
 
 struct Entry {
   Entry() { flags = 0; }
@@ -156,6 +152,7 @@ enum FileType {
 
 struct LogFileHeader {
   uint32_t filetype;
+  uint64_t timestamp;
 };
 
 struct LogFileFooter {
