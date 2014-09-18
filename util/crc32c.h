@@ -17,54 +17,12 @@
 #include <string.h>
 
 #include "util/logger.h"
+#include "util/endian.h"
+#include "util/coding.h"
 #include "thread/threadstorage.h"
-
-// TODO: The endian-ness detection code below is dependent on LevelDB's build
-//       process, and I haven't yet made sure that it is supported on all
-//       platforms.
-#undef PLATFORM_IS_LITTLE_ENDIAN
-#if defined(__APPLE__)
-  #include <machine/endian.h>
-  #if defined(__DARWIN_LITTLE_ENDIAN) && defined(__DARWIN_BYTE_ORDER)
-    #define PLATFORM_IS_LITTLE_ENDIAN \
-        (__DARWIN_BYTE_ORDER == __DARWIN_LITTLE_ENDIAN)
-  #endif
-#elif defined(OS_SOLARIS)
-  #include <sys/isa_defs.h>
-  #ifdef _LITTLE_ENDIAN
-    #define PLATFORM_IS_LITTLE_ENDIAN true
-  #else
-    #define PLATFORM_IS_LITTLE_ENDIAN false
-  #endif
-#elif defined(OS_FREEBSD)
-  #include <sys/types.h>
-  #include <sys/endian.h>
-  #define PLATFORM_IS_LITTLE_ENDIAN (_BYTE_ORDER == _LITTLE_ENDIAN)
-#elif defined(OS_OPENBSD) || defined(OS_NETBSD) ||\
-      defined(OS_DRAGONFLYBSD)
-  #include <sys/types.h>
-  #include <sys/endian.h>
-#elif defined(OS_HPUX)
-  #define PLATFORM_IS_LITTLE_ENDIAN false
-#elif defined(OS_ANDROID)
-  // Due to a bug in the NDK x86 <sys/endian.h> definition,
-  // _BYTE_ORDER must be used instead of __BYTE_ORDER on Android.
-  // See http://code.google.com/p/android/issues/detail?id=39824
-  #include <endian.h>
-  #define PLATFORM_IS_LITTLE_ENDIAN  (_BYTE_ORDER == _LITTLE_ENDIAN)
-#else
-  #include <endian.h>
-#endif
-
-#ifndef PLATFORM_IS_LITTLE_ENDIAN
-#define PLATFORM_IS_LITTLE_ENDIAN (__BYTE_ORDER == __LITTLE_ENDIAN)
-#endif
 
 namespace kdb {
 namespace crc32c {
-
-static const bool kLittleEndian = PLATFORM_IS_LITTLE_ENDIAN;
-#undef PLATFORM_IS_LITTLE_ENDIAN
 
 // Return the crc32c of concat(A, data[0,n-1]) where init_crc is the
 // crc32c of some string A.  Extend() is often used to maintain the
@@ -94,22 +52,8 @@ inline uint32_t Unmask(uint32_t masked_crc) {
   return ((rot >> 17) | (rot << 15));
 }
 
-inline uint32_t DecodeFixed32(const char* ptr) {
-  if (kLittleEndian) {
-    // Load the raw bytes
-    uint32_t result;
-    memcpy(&result, ptr, sizeof(result));  // gcc optimizes this to a plain load
-    return result;
-  } else {
-    return ((static_cast<uint32_t>(static_cast<unsigned char>(ptr[0])))
-        | (static_cast<uint32_t>(static_cast<unsigned char>(ptr[1])) << 8)
-        | (static_cast<uint32_t>(static_cast<unsigned char>(ptr[2])) << 16)
-        | (static_cast<uint32_t>(static_cast<unsigned char>(ptr[3])) << 24));
-  }
-}
-
-
 }  // namespace crc32c
+
 
 class CRC32 {
  public:
