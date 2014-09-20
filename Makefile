@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-O3 -g -Wall -std=c++11 -stdlib=libc++ -Wc++11-extensions -Wl,-no-as-needed -c
+CFLAGS=-O3 -g -Wall -std=c++11 -stdlib=libc++ -Wc++11-extensions -Wc++1y-extensions -Wl,-no-as-needed -c
 INCLUDES=-I/opt/local/include/ -I. -I./include/
 LDFLAGS=-g -lprofiler
 LDFLAGS_CLIENT=-g -L/opt/local/lib/ -lmemcached -lprofiler -fPIC 
