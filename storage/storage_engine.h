@@ -237,9 +237,10 @@ class LogfileManager {
     offset_end_ = SIZE_LOGFILE_HEADER;
 
     // Filling in default header
-    struct LogFileHeader* lfh = reinterpret_cast<struct LogFileHeader*>(buffer_raw_);
-    lfh->filetype = kLogType;
-    lfh->timestamp = timestamp_;
+    struct LogFileHeader lfh;
+    lfh.filetype  = kLogType;
+    lfh.timestamp = timestamp_;
+    LogFileHeader::EncodeTo(&lfh, buffer_raw_);
   }
 
   void CloseCurrentFile() {
@@ -304,28 +305,32 @@ class LogfileManager {
                        bool has_padding_in_values,
                        bool has_invalid_entries) {
     uint64_t offset = 0;
+    struct LogFileFooterIndex lffi;
     for (auto& p: logindex_current) {
-      auto item = reinterpret_cast<struct LogFileFooterIndex*>(buffer_index_ + offset);
-      item->hashed_key = p.first;
-      item->offset_entry = p.second;
-      //memcpy(buffer_index_ + offset, &(p.first), sizeof(p.first));
-      //memcpy(buffer_index_ + offset + sizeof(p.first), &(p.second), sizeof(p.second));
-      offset += sizeof(struct LogFileFooterIndex);//sizeof(p.first) + sizeof(p.second);
+      lffi.hashed_key = p.first;
+      lffi.offset_entry = p.second;
+      uint32_t length = LogFileFooterIndex::EncodeTo(&lffi, buffer_index_ + offset);
+      offset += length;
       LOG_TRACE("StorageEngine::WriteLogIndex()", "hashed_key:[%llu] offset:[%u] offset_hex:[%s]", p.first, p.second, num_to_hex(p.second).c_str());
     }
-    struct LogFileFooter* footer = reinterpret_cast<struct LogFileFooter*>(buffer_index_ + offset);
-    footer->filetype = filetype;
-    footer->num_entries = logindex_current.size();
-    footer->magic_number = get_magic_number();
-    footer->has_padding_in_values = has_padding_in_values;
-    footer->has_invalid_entries = has_invalid_entries;
-    offset += sizeof(struct LogFileFooter);
-    lseek(fd, 0, SEEK_END);
+
+    uint64_t position = lseek(fd, 0, SEEK_END);
+    // NOTE: lseek() will not work to retrieve 'position' if the configs allow logfiles
+    // to have sizes larger than (2^32)-1 -- lseek64() could be used, but is not standard on all unixes
+    struct LogFileFooter footer;
+    footer.filetype = filetype;
+    footer.offset_indexes = position;
+    footer.num_entries = logindex_current.size();
+    footer.magic_number = get_magic_number();
+    if (has_padding_in_values) footer.SetFlagHasPaddingInValues();
+    if (has_invalid_entries) footer.SetFlagHasInvalidEntries();
+    uint32_t length = LogFileFooter::EncodeTo(&footer, buffer_index_ + offset);
+    offset += length;
     if (write(fd, buffer_index_, offset) < 0) {
       LOG_TRACE("StorageEngine::WriteLogIndex()", "Error write(): %s", strerror(errno));
     }
     *size_out = offset;
-    LOG_TRACE("StorageEngine::WriteLogIndex()", "num_entries:[%lu]", logindex_current.size());
+    LOG_TRACE("StorageEngine::WriteLogIndex()", "offset_indexes:%u, num_entries:[%lu]", position, logindex_current.size());
     return Status::OK();
   }
 
@@ -344,18 +349,18 @@ class LogfileManager {
       exit(-1); // TODO-3: gracefully handle open() errors
     }
 
-    char buffer[SIZE_LOGFILE_HEADER];
-
     // Write header
-    struct LogFileHeader* lfh = reinterpret_cast<struct LogFileHeader*>(buffer);
-    lfh->filetype = kLargeType;
-    lfh->timestamp = timestamp_largefile;
+    char buffer[SIZE_LOGFILE_HEADER];
+    struct LogFileHeader lfh;
+    lfh.filetype  = kLargeType;
+    lfh.timestamp = timestamp_largefile;
+    LogFileHeader::EncodeTo(&lfh, buffer);
     if(write(fd, buffer, SIZE_LOGFILE_HEADER) < 0) {
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
 
     // Write entry metadata
-    struct Entry entry;// = reinterpret_cast<struct Entry*>(buffer);
+    struct Entry entry;
     entry.SetTypePut();
     entry.SetEntryFull();
     entry.size_key = order.key->size();
@@ -454,7 +459,7 @@ class LogfileManager {
       }
 
       uint32_t num_writes = file_resource_manager.SetNumWritesInProgress(fileid, -1);
-      if (num_writes == 0) {
+      if (fileid != fileid_ && num_writes == 0) {
         lseek(fd, 0, SEEK_END);
         uint64_t size_logindex;
         FileType filetype = is_large_order ? kLargeType : kLogType;
@@ -476,7 +481,7 @@ class LogfileManager {
 
   uint64_t WriteFirstChunkOrSmallOrder(Order& order, uint64_t hashed_key) {
     uint64_t location_out = 0;
-    struct Entry entry;// = reinterpret_cast<struct Entry*>(buffer_raw_ + offset_end_);
+    struct Entry entry;
     if (order.type == OrderType::Put) {
       entry.SetTypePut();
       entry.SetEntryFull();
@@ -682,15 +687,20 @@ class LogfileManager {
       }
 
       Mmap mmap(filepath, info.st_size);
-      struct LogFileHeader* lfh = reinterpret_cast<struct LogFileHeader*>(mmap.datafile());
+      struct LogFileHeader lfh;
+      Status s = LogFileHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
+      if (!s.IsOK()) {
+        fprintf(stderr, "file: [%s] has an invalid header, skipping\n", entry->d_name);
+        continue;
+      }
       // TODO: need CRC32 on the header
 
       //std::string key = std::to_string(lfh->timestamp) + "-" + std::to_string(fileid);
-      sprintf(buffer_key, "%016llX-%016X", lfh->timestamp, fileid);
+      sprintf(buffer_key, "%016llX-%016X", lfh.timestamp, fileid);
       std::string key(buffer_key);
       timestamp_fileid_to_fileid[key] = fileid;
       fileid_max = std::max(fileid_max, fileid);
-      timestamp_max = std::max(timestamp_max, lfh->timestamp);
+      timestamp_max = std::max(timestamp_max, lfh.timestamp);
     }
 
     //while ((entry = readdir(directory)) != NULL) {
@@ -724,29 +734,31 @@ class LogfileManager {
     // TODO-17: need to check CRC32 for the footer and the footer indexes.
     // TODO-15: handle large file (with very large, unique entry)
 
-    struct LogFileFooter* footer = reinterpret_cast<struct LogFileFooter*>(mmap.datafile() + mmap.filesize() - sizeof(struct LogFileFooter));
-    int rewind = sizeof(struct LogFileFooter) + footer->num_entries * (sizeof(struct LogFileFooterIndex));
-    if (   footer->magic_number == get_magic_number()
-        && rewind >= 0
-        && rewind <= mmap.filesize() - SIZE_LOGFILE_HEADER) {
+    struct LogFileFooter footer;
+    Status s = LogFileFooter::DecodeFrom(mmap.datafile() + mmap.filesize() - LogFileFooter::GetFixedSize(), LogFileFooter::GetFixedSize(), &footer);
+    if (   s.IsOK()
+        && footer.magic_number == LogfileManager::get_magic_number()
+        && footer.offset_indexes < mmap.filesize()) {
       // The file has a clean footer, load all the offsets in the index
-      uint64_t offset_index = mmap.filesize() - rewind;
-      for (auto i = 0; i < footer->num_entries; i++) {
-        auto item = reinterpret_cast<struct LogFileFooterIndex*>(mmap.datafile() + offset_index);
+      uint64_t offset_index = footer.offset_indexes;
+      struct LogFileFooterIndex lffi;
+      for (auto i = 0; i < footer.num_entries; i++) {
+        uint32_t length_lffi;
+        LogFileFooterIndex::DecodeFrom(mmap.datafile() + offset_index, mmap.filesize() - offset_index, &lffi, &length_lffi);
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
-        index_se.insert(std::pair<uint64_t, uint64_t>(item->hashed_key, fileid_shifted | item->offset_entry));
-        LOG_TRACE("LoadFile()", "Add item to index -- hashed_key:[%llu] offset:[%u] -- offset_index:[%llu] -- sizeof(struct):[%d]", item->hashed_key, item->offset_entry, offset_index, sizeof(struct LogFileFooterIndex));
-        offset_index += sizeof(struct LogFileFooterIndex);
+        index_se.insert(std::pair<uint64_t, uint64_t>(lffi.hashed_key, fileid_shifted | lffi.offset_entry));
+        LOG_TRACE("LoadFile()", "Add item to index -- hashed_key:[%llu] offset:[%u] -- offset_index:[%llu] -- sizeof(struct):[%d]", lffi.hashed_key, lffi.offset_entry, offset_index, sizeof(struct LogFileFooterIndex));
+        offset_index += length_lffi;
       }
       file_resource_manager.SetFileSize(fileid, mmap.filesize());
-      if (footer->filetype == kLargeType) {
+      if (footer.filetype == kLargeType) {
         file_resource_manager.SetFileLarge(fileid);
       }
-      LOG_TRACE("LoadFile()", "Loaded [%s] num_entries:[%llu] rewind:[%llu]", mmap.filepath(), footer->num_entries, rewind);
+      LOG_TRACE("LoadFile()", "Loaded [%s] num_entries:[%llu]", mmap.filepath(), footer.num_entries);
     } else {
       // The footer is corrupted: go through every item and verify it
-      LOG_TRACE("LoadFile()", "Skipping [%s] - magic_number:[%llu/%llu] rewind:[%d]", mmap.filepath(), footer->magic_number, get_magic_number(), rewind);
+      LOG_TRACE("LoadFile()", "Skipping [%s] - magic_number:[%llu/%llu]", mmap.filepath(), footer.magic_number, get_magic_number());
       return Status::IOError("Invalid footer");
     }
 
@@ -764,8 +776,9 @@ class LogfileManager {
     bool has_padding_in_values = false;
     bool has_invalid_entries   = false;
 
-    struct LogFileHeader* lfh = reinterpret_cast<struct LogFileHeader*>(mmap.datafile());
-    if (lfh->filetype == kLargeType) {
+    struct LogFileHeader lfh;
+    Status s = LogFileHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
+    if (!s.IsOK() || lfh.filetype == kLargeType) {
       // TODO: what to do with this file? remove it? quarantine it? Let the user
       // choose based on options?
       LOG_TRACE("Logmanager::RecoverFile", "Could not recover file [%s]\n", mmap.filepath());
@@ -773,7 +786,7 @@ class LogfileManager {
     }
 
     while (true) {
-      struct Entry entry;// = reinterpret_cast<struct Entry*>(mmap.datafile() + offset);
+      struct Entry entry;
       uint32_t size_header;
       Status s = Entry::DecodeFrom(db_options_, mmap.datafile() + offset, mmap.filesize() - offset, &entry, &size_header);
       // NOTE: the uses of sizeof(struct Entry) here make not sense, since this
@@ -1088,7 +1101,7 @@ class StorageEngine {
     // the size was 0: should the size of an mmapped byte array be the size of
     // the file by default?
 
-    struct Entry entry;// = reinterpret_cast<struct Entry*>(value_temp->datafile() + offset_file);
+    struct Entry entry;
     uint32_t size_header;
     s = Entry::DecodeFrom(db_options_, value_temp->datafile() + offset_file, filesize - offset_file, &entry, &size_header);
     if (!s.IsOK()) return s;
@@ -1309,25 +1322,27 @@ class StorageEngine {
       Mmap* mmap = mmaps[fileid];
 
       // Check the footer
-      struct LogFileFooter* footer = reinterpret_cast<struct LogFileFooter*>(mmap->datafile() + mmap->filesize() - sizeof(struct LogFileFooter));
-      int rewind = sizeof(struct LogFileFooter) + footer->num_entries * (sizeof(struct LogFileFooterIndex));
-      if (   footer->magic_number != LogfileManager::get_magic_number()
-          || rewind < 0
-          || rewind > mmap->filesize() - SIZE_LOGFILE_HEADER) {
+      struct LogFileFooter footer;
+      Status s = LogFileFooter::DecodeFrom(mmap->datafile() + mmap->filesize() - LogFileFooter::GetFixedSize(), LogFileFooter::GetFixedSize(), &footer);
+      if (   !s.IsOK()
+          || footer.magic_number != LogfileManager::get_magic_number()
+          || footer.offset_indexes > mmap->filesize()) {
         // TODO: handle error
         fprintf(stderr, "Compaction - invalid footer\n");
       }
 
       // Update the maximimum timestamp
-      struct LogFileHeader* lfh = reinterpret_cast<struct LogFileHeader*>(mmap->datafile());
-      timestamp_max = std::max(timestamp_max, lfh->timestamp);
+      struct LogFileHeader lfh;
+      s = LogFileHeader::DecodeFrom(mmap->datafile(), mmap->filesize(), &lfh);
+      if (!s.IsOK()) return Status::IOError("Could not read file header during compaction");
+      timestamp_max = std::max(timestamp_max, lfh.timestamp);
 
       // Process entries in the file
       uint32_t offset = SIZE_LOGFILE_HEADER;
-      uint64_t offset_end = mmap->filesize() - rewind;
+      uint64_t offset_end = footer.offset_indexes;
       while (offset < offset_end) {
         LOG_TRACE("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
-        struct Entry entry;// = reinterpret_cast<struct Entry*>(mmap->datafile() + offset);
+        struct Entry entry;
         uint32_t size_header;
         Status s = Entry::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry, &size_header);
         // NOTE: the uses of sizeof(struct Entry) here make not sense, since this
@@ -1374,7 +1389,7 @@ class StorageEngine {
           uint32_t offset_file = location & 0x00000000FFFFFFFF;
           LOG_TRACE("Compaction()", "order list loop - location fileid:%u offset:%u", fileid_location, offset_file);
           Mmap *mmap_location = mmaps[fileid_location];
-          struct Entry entry;// = reinterpret_cast<struct Entry*>(mmap_location->datafile() + offset_file);
+          struct Entry entry;
           uint32_t size_header;
           Status s = Entry::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry, &size_header);
 

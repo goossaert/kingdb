@@ -23,6 +23,10 @@
 
 namespace kdb {
 
+// Data format is version 1.0
+static const uint32_t kVersionDataFormatMajor = 1;
+static const uint32_t kVersionDataFormatMinor = 0;
+
 enum class OrderType { Put, Remove };
 
 //class ByteArray;
@@ -137,6 +141,7 @@ struct Entry {
 
   static Status DecodeFrom(const DatabaseOptions& db_options, const char* buffer_in, uint64_t num_bytes_max, struct Entry *output, uint32_t *num_bytes_read) {
     /*
+    // Dumb serialization for debugging
     LOG_TRACE("Entry::DecodeFrom", "start num_bytes_max:%llu - sizeof(Entry):%d", num_bytes_max, sizeof(struct Entry));
     char *buffer = const_cast<char*>(buffer_in);
     struct Entry* entry = reinterpret_cast<struct Entry*>(buffer);
@@ -180,12 +185,15 @@ struct Entry {
 
   static uint32_t EncodeTo(const DatabaseOptions& db_options, const struct Entry *input, char* buffer) {
     /*
+    // Dumb serialization for debugging
     struct Entry *input_noncast = const_cast<struct Entry*>(input);
     memcpy(buffer, reinterpret_cast<char*>(input_noncast), sizeof(struct Entry));
-    //struct Entry *entry = reinterpret_cast<struct Entry*>(buffer);
-    //*entry = *input;
     return sizeof(struct Entry);
     */
+
+    // NOTE: it would be interesting to run an analysis and determine if it is
+    // better to store the crc32 and hash using fixed encoding or varints. For
+    // the hash, it will certainly be specific to each hash function.
 
     EncodeFixed32(buffer, input->crc32);
     char *ptr;
@@ -209,16 +217,11 @@ struct Entry {
 };
 
 struct EntryFooter {
+  // NOTE: at first I wanted to have the CRC32 as part of an entry footer, the
+  // since the compressed size has to be written in the header anyway, the
+  // header has to be written twice, thus having a footer is not necessary.
+  // I'm keeping this here to keep the idea in mind.
   uint32_t crc32;
-};
-
-struct Metadata {
-  uint32_t blocktype;
-  uint64_t timestamp;
-  uint64_t fileid_start;
-  uint64_t fileid_end;
-  uint64_t offset_compaction;
-  uint64_t pointer_compaction;
 };
 
 enum FileType {
@@ -227,21 +230,130 @@ enum FileType {
 };
 
 struct LogFileHeader {
+  uint32_t version_data_format_major;
+  uint32_t version_data_format_minor;
   uint32_t filetype;
   uint64_t timestamp;
+
+  bool IsTypeLog() {
+    return !(filetype & kLargeType);
+  }
+
+  bool IsTypeLarge() {
+    return (filetype & kLargeType);
+  }
+
+  bool IsFileVersionSupported() {
+    return (   version_data_format_major == kVersionDataFormatMajor
+            && version_data_format_minor == kVersionDataFormatMinor);
+  }
+
+  bool IsFileVersionNewer() {
+    if (   version_data_format_major > kVersionDataFormatMajor 
+        || (   version_data_format_major == kVersionDataFormatMajor
+            && version_data_format_minor > kVersionDataFormatMinor)
+       ) {
+      return true;
+    }
+    return false;
+  }
+
+  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct LogFileHeader *output) {
+    if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
+    GetFixed32(buffer_in,      &(output->version_data_format_major));
+    GetFixed32(buffer_in +  4, &(output->version_data_format_minor));
+    GetFixed32(buffer_in +  8, &(output->filetype));
+    GetFixed64(buffer_in + 12, &(output->timestamp));
+    if (!output->IsFileVersionSupported()) return Status::IOError("Data format version not supported");
+    return Status::OK();
+  }
+
+  static uint32_t EncodeTo(const struct LogFileHeader *input, char* buffer) {
+    EncodeFixed32(buffer,      kVersionDataFormatMajor);
+    EncodeFixed32(buffer +  4, kVersionDataFormatMinor);
+    EncodeFixed32(buffer +  8, input->filetype);
+    EncodeFixed64(buffer + 12, input->timestamp);
+    return GetFixedSize();
+  }
+
+  static uint32_t GetFixedSize() {
+    return 20; // in bytes
+  }
+};
+
+enum LogFileFooterFlags {
+  kHasPaddingInValues = 0x1, // 1 if some values have size_value space but only use size_value_compressed and therefore need compaction, 0 otherwise
+  kHasInvalidEntries  = 0x2  // 1 if some values have erroneous content that needs to be washed out in a compaction process -- will be set to 1 during a file recovery
 };
 
 struct LogFileFooter {
   uint32_t filetype;
+  uint32_t flags;
+  uint64_t offset_indexes;
   uint64_t num_entries;
-  uint16_t has_padding_in_values; // 1 if some values have size_value space but only use size_value_compressed and therefore need compaction, 0 otherwise
-  uint16_t has_invalid_entries;   // 1 if some values have erroneous content that needs to be washed out in a compaction process -- will be set to 1 during a file recovery
   uint64_t magic_number;
+
+  LogFileFooter() { flags = 0; }
+
+  void SetFlagHasPaddingInValues() {
+    flags |= kHasPaddingInValues; 
+  }
+
+  void SetFlagHasInvalidEntries() {
+    flags |= kHasInvalidEntries;
+  }
+
+  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct LogFileFooter *output) {
+    if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
+    GetFixed32(buffer_in,      &(output->filetype));
+    GetFixed32(buffer_in +  4, &(output->flags));
+    GetFixed64(buffer_in +  8, &(output->offset_indexes));
+    GetFixed64(buffer_in + 16, &(output->num_entries));
+    GetFixed64(buffer_in + 24, &(output->magic_number));
+    return Status::OK();
+  }
+
+  static uint32_t EncodeTo(const struct LogFileFooter *input, char* buffer) {
+    EncodeFixed32(buffer,      input->filetype);
+    EncodeFixed32(buffer +  4, input->flags);
+    EncodeFixed64(buffer +  8, input->offset_indexes);
+    EncodeFixed64(buffer + 16, input->num_entries);
+    EncodeFixed64(buffer + 24, input->magic_number);
+    return GetFixedSize();
+  }
+
+  static uint32_t GetFixedSize() {
+    return 32; // in bytes
+  }
 };
 
 struct LogFileFooterIndex {
   uint64_t hashed_key;
-  uint64_t offset_entry; // TODO: this only needs to be uint32_t really, but due to alignment/padding, I have set it to be uint64_t
+  uint32_t offset_entry;
+
+  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct LogFileFooterIndex *output, uint32_t *num_bytes_read) {
+    int length;
+    char *buffer = const_cast<char*>(buffer_in);
+    SimpleByteArray array(buffer, num_bytes_max);
+
+    length = GetVarint64(&array, &(output->hashed_key));
+    if (length == -1) return Status::IOError("Decoding error");
+    array.AddOffset(length);
+
+    length = GetVarint32(&array, &(output->offset_entry));
+    if (length == -1) return Status::IOError("Decoding error");
+    array.AddOffset(length);
+
+    *num_bytes_read = num_bytes_max - array.size();
+    return Status::OK();
+  }
+
+  static uint32_t EncodeTo(const struct LogFileFooterIndex *input, char* buffer) {
+    char *ptr;
+    ptr = EncodeVarint64(buffer, input->hashed_key);
+    ptr = EncodeVarint32(ptr, input->offset_entry);
+    return (ptr - buffer);
+  }
 };
 
 

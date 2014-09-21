@@ -39,7 +39,7 @@ void EncodeFixed64(char* buf, uint64_t value) {
   }
 }
 
-void GetFixed32(char* buf, uint32_t* value) {
+void GetFixed32(const char* buf, uint32_t* value) {
   if (kdb::kLittleEndian) {
     memcpy(value, buf, sizeof(*value));
   } else {
@@ -48,7 +48,7 @@ void GetFixed32(char* buf, uint32_t* value) {
   }
 }
 
-void GetFixed64(char* buf, uint64_t* value) {
+void GetFixed64(const char* buf, uint64_t* value) {
   if (kdb::kLittleEndian) {
     memcpy(value, buf, sizeof(*value));
   } else {
