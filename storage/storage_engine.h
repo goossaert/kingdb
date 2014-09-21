@@ -131,7 +131,7 @@ class LogfileManager {
   LogfileManager(DatabaseOptions& db_options, std::string dbname, std::string prefix)
       : db_options_(db_options),
         prefix_(prefix) {
-    LOG_TRACE("LogfileManager::LogfileManager()", "dbname: %s", dbname.c_str());
+    LOG_TRACE("LogfileManager::LogfileManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
     dbname_ = dbname;
     sequence_fileid_ = 1;
     sequence_timestamp_ = 1;
@@ -355,20 +355,23 @@ class LogfileManager {
     }
 
     // Write entry metadata
-    struct Entry* entry = reinterpret_cast<struct Entry*>(buffer);
-    entry->SetTypePut();
-    entry->SetEntryFull();
-    entry->size_key = order.key->size();
-    entry->size_value = order.size_value;
-    entry->size_value_compressed = order.size_value_compressed;
-    entry->hash = hashed_key;
-    entry->crc32 = 0;
-    entry->SetHasPadding(false);
-    if(write(fd, buffer, sizeof(struct Entry)) < 0) {
+    struct Entry entry;// = reinterpret_cast<struct Entry*>(buffer);
+    entry.SetTypePut();
+    entry.SetEntryFull();
+    entry.size_key = order.key->size();
+    entry.size_value = order.size_value;
+    entry.size_value_compressed = order.size_value_compressed;
+    entry.hash = hashed_key;
+    entry.crc32 = 0;
+    entry.SetHasPadding(false);
+    uint32_t size_header = Entry::EncodeTo(db_options_, &entry, buffer);
+    key_to_headersize[order.tid][order.key->ToString()] = size_header;
+    if(write(fd, buffer, size_header) < 0) {
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
 
     // Write key and chunk
+    // NOTE: Could also put the key and chunk in the buffer and do a single write
     if(write(fd, order.key->data(), order.key->size()) < 0) {
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
@@ -376,7 +379,7 @@ class LogfileManager {
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
 
-    uint64_t filesize = SIZE_LOGFILE_HEADER + sizeof(struct Entry) + order.key->size() + order.size_value;
+    uint64_t filesize = SIZE_LOGFILE_HEADER + size_header + order.key->size() + order.size_value;
     ftruncate(fd, filesize);
     file_resource_manager.SetFileSize(fileid_largefile, filesize);
     close(fd);
@@ -399,18 +402,25 @@ class LogfileManager {
       exit(-1); // TODO-3: gracefully handle open() errors
     }
 
+    if (key_to_headersize.find(order.tid) == key_to_headersize.end() ||
+        key_to_headersize[order.tid].find(order.key->ToString()) == key_to_headersize[order.tid].end()) {
+      LOG_TRACE("LogfileManager::WriteChunk()", "Missing in key_to_headersize[]");
+    }
+
+    uint32_t size_header = key_to_headersize[order.tid][order.key->ToString()];
+
     // Write the chunk
     if (pwrite(fd,
                order.chunk->data(),
                order.chunk->size(),
-               offset_file + sizeof(struct Entry) + order.key->size() + order.offset_chunk) < 0) {
+               offset_file + size_header + order.key->size() + order.offset_chunk) < 0) {
       LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
     }
 
     // If this is a last chunk, the header is written again to save the right size of compressed value,
     // and the crc32 is saved too
     if (order.IsLastChunk()) {
-      LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:%u", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
+      LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:0x%08llx", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct Entry entry;
       entry.SetTypePut();
       entry.SetEntryFull();
@@ -418,17 +428,27 @@ class LogfileManager {
       entry.size_value = order.size_value;
       entry.size_value_compressed = order.size_value_compressed;
       if (!is_large_order && entry.IsCompressed()) {
+        // NOTE: entry.IsCompressed() makes no sense since compression is
+        // handled at database level, not at entry level. All usages of
+        // IsCompressed() should be replaced by a check on the database options.
         entry.SetHasPadding(true);
         file_resource_manager.SetHasPaddingInValues(fileid_, true);
       }
       entry.hash = hashed_key;
       entry.crc32 = order.crc32;
-      if (pwrite(fd, &entry, sizeof(struct Entry), offset_file) < 0) {
+
+      char buffer[sizeof(struct Entry)*2];
+      uint32_t size_header_new = Entry::EncodeTo(db_options_, &entry, buffer);
+      if (size_header_new != size_header) {
+        LOG_EMERG("LogfileManager::WriteChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
+      }
+
+      if (pwrite(fd, buffer, size_header, offset_file) < 0) {
         LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
       }
       
       if (is_large_order && entry.IsCompressed()) {
-        uint64_t filesize = SIZE_LOGFILE_HEADER + sizeof(struct Entry) + order.key->size() + order.size_value_compressed;
+        uint64_t filesize = SIZE_LOGFILE_HEADER + size_header + order.key->size() + order.size_value_compressed;
         file_resource_manager.SetFileSize(fileid, filesize);
         ftruncate(fd, filesize);
       }
@@ -456,30 +476,33 @@ class LogfileManager {
 
   uint64_t WriteFirstChunkOrSmallOrder(Order& order, uint64_t hashed_key) {
     uint64_t location_out = 0;
-    struct Entry* entry = reinterpret_cast<struct Entry*>(buffer_raw_ + offset_end_);
+    struct Entry entry;// = reinterpret_cast<struct Entry*>(buffer_raw_ + offset_end_);
     if (order.type == OrderType::Put) {
-      entry->SetTypePut();
-      entry->SetEntryFull();
-      entry->size_key = order.key->size();
-      entry->size_value = order.size_value;
-      entry->size_value_compressed = order.size_value_compressed;
-      entry->hash = hashed_key;
-      entry->crc32 = order.crc32;
+      entry.SetTypePut();
+      entry.SetEntryFull();
+      entry.size_key = order.key->size();
+      entry.size_value = order.size_value;
+      entry.size_value_compressed = order.size_value_compressed;
+      entry.hash = hashed_key;
+      entry.crc32 = order.crc32;
       if (order.IsSelfContained()) {
-        entry->SetHasPadding(false);
+        entry.SetHasPadding(false);
       } else {
-        entry->SetHasPadding(true);
+        entry.SetHasPadding(true);
         file_resource_manager.SetHasPaddingInValues(fileid_, true);
+        // TODO: check that the has_padding_in_values field in fields is used during compaction
       }
-      memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry), order.key->data(), order.key->size());
-      memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry) + order.key->size(), order.chunk->data(), order.chunk->size());
+      uint32_t size_header = Entry::EncodeTo(db_options_, &entry, buffer_raw_ + offset_end_);
+      key_to_headersize[order.tid][order.key->ToString()] = size_header;
+      memcpy(buffer_raw_ + offset_end_ + size_header, order.key->data(), order.key->size());
+      memcpy(buffer_raw_ + offset_end_ + size_header + order.key->size(), order.chunk->data(), order.chunk->size());
 
       //map_index[order.key] = fileid_ | offset_end_;
       uint64_t fileid_shifted = fileid_;
       fileid_shifted <<= 32;
       location_out = fileid_shifted | offset_end_;
       file_resource_manager.AddLogIndex(fileid_, std::pair<uint64_t, uint32_t>(hashed_key, offset_end_));
-      offset_end_ += sizeof(struct Entry) + order.key->size() + order.chunk->size();
+      offset_end_ += size_header + order.key->size() + order.chunk->size();
 
       if (!order.IsSelfContained()) {
         LOG_TRACE("StorageEngine::ProcessingLoopData()", "BEFORE fileid_ %u", fileid_);
@@ -501,19 +524,20 @@ class LogfileManager {
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "Put [%s]", order.key->ToString().c_str());
     } else { // order.type == OrderType::Remove
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "Remove [%s]", order.key->ToString().c_str());
-      entry->SetTypeRemove();
-      entry->SetEntryFull();
-      entry->size_key = order.key->size();
-      entry->size_value = 0;
-      entry->size_value_compressed = 0;
-      entry->crc32 = 0;
-      memcpy(buffer_raw_ + offset_end_ + sizeof(struct Entry), order.key->data(), order.key->size());
+      entry.SetTypeRemove();
+      entry.SetEntryFull();
+      entry.size_key = order.key->size();
+      entry.size_value = 0;
+      entry.size_value_compressed = 0;
+      entry.crc32 = 0;
+      uint32_t size_header = Entry::EncodeTo(db_options_, &entry, buffer_raw_ + offset_end_);
+      memcpy(buffer_raw_ + offset_end_ + size_header, order.key->data(), order.key->size());
 
       uint64_t fileid_shifted = fileid_;
       fileid_shifted <<= 32;
       location_out = fileid_shifted | offset_end_;
       file_resource_manager.AddLogIndex(fileid_, std::pair<uint64_t, uint32_t>(hashed_key, offset_end_));
-      offset_end_ += sizeof(struct Entry) + order.key->size();
+      offset_end_ += size_header + order.key->size();
     }
     return location_out;
   }
@@ -586,6 +610,9 @@ class LogfileManager {
         }
         if (key_to_location.find(order.tid) != key_to_location.end()) {
           key_to_location[order.tid].erase(order.key->ToString());
+        }
+        if (key_to_headersize.find(order.tid) != key_to_headersize.end()) {
+          key_to_headersize[order.tid].erase(order.key->ToString());
         }
       // Else, if the order is not self-contained and is the first chunk,
       // the location is saved in key_to_location[]
@@ -746,17 +773,22 @@ class LogfileManager {
     }
 
     while (true) {
-      struct Entry* entry = reinterpret_cast<struct Entry*>(mmap.datafile() + offset);
-      if (   offset + sizeof(struct Entry) >= mmap.filesize()
-          || entry->size_key == 0
-          || offset + sizeof(struct Entry) + entry->size_key > mmap.filesize()
-          || offset + sizeof(struct Entry) + entry->size_key + entry->size_value_offset() > mmap.filesize()) {
+      struct Entry entry;// = reinterpret_cast<struct Entry*>(mmap.datafile() + offset);
+      uint32_t size_header;
+      Status s = Entry::DecodeFrom(db_options_, mmap.datafile() + offset, mmap.filesize() - offset, &entry, &size_header);
+      // NOTE: the uses of sizeof(struct Entry) here make not sense, since this
+      // size is variable based on the local architecture
+      if (   !s.IsOK()
+          || offset + sizeof(struct Entry) >= mmap.filesize()
+          || entry.size_key == 0
+          || offset + sizeof(struct Entry) + entry.size_key > mmap.filesize()
+          || offset + sizeof(struct Entry) + entry.size_key + entry.size_value_offset() > mmap.filesize()) {
         // end of file
         LOG_TRACE("Logmanager::RecoverFile", "end of file [%llu] [%llu] [%llu] [%llu] - filesize:[%llu]", 
           (uint64_t)offset + sizeof(struct Entry),
-          entry->size_key,
-          (uint64_t)offset + sizeof(struct Entry) + entry->size_key,
-          (uint64_t)offset + sizeof(struct Entry) + entry->size_key + entry->size_value_offset(),
+          entry.size_key,
+          (uint64_t)offset + sizeof(struct Entry) + entry.size_key,
+          (uint64_t)offset + sizeof(struct Entry) + entry.size_key + entry.size_value_offset(),
           (uint64_t)mmap.filesize());
         break;
       }
@@ -769,21 +801,21 @@ class LogfileManager {
       //          sames if:
       //             1. it is computed over the sequence of frames,
       //             2. it is computed over each frame separately then added.
-      crc32_.stream(mmap.datafile() + sizeof(struct Entry) + entry->size_key, entry->size_value_used());
-      if (true || entry->crc32 == crc32_.get()) { // TODO-17: fix CRC32 check
+      crc32_.stream(mmap.datafile() + size_header + entry.size_key, entry.size_value_used());
+      if (true || entry.crc32 == crc32_.get()) { // TODO-17: fix CRC32 check
         // Valid content, add to index
         // TODO-18: make sure invalid entries get marked as invalid so that the
         //          compaction process can clean them up
-        logindex_current.push_back(std::pair<uint64_t, uint32_t>(entry->hash, offset));
+        logindex_current.push_back(std::pair<uint64_t, uint32_t>(entry.hash, offset));
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
-        index_se.insert(std::pair<uint64_t, uint64_t>(entry->hash, fileid_shifted | offset));
+        index_se.insert(std::pair<uint64_t, uint64_t>(entry.hash, fileid_shifted | offset));
       } else {
         has_invalid_entries = true; 
       }
-      if (entry->HasPadding()) has_padding_in_values = true;
-      offset += sizeof(struct Entry) + entry->size_key + entry->size_value_offset();
-      LOG_TRACE("Logmanager::RecoverFile", "Recovered hash [%llu], next offset [%llu]", entry->hash, offset);
+      if (entry.HasPadding()) has_padding_in_values = true;
+      offset += size_header + entry.size_key + entry.size_value_offset();
+      LOG_TRACE("Logmanager::RecoverFile", "Recovered hash [%llu], next offset [%llu]", entry.hash, offset);
     }
 
     if (offset > SIZE_LOGFILE_HEADER) {
@@ -845,7 +877,11 @@ class LogfileManager {
   // originated an order, so that if two writers simultaneously write entries
   // with the same key, they will be properly stored into separate locations.
   // NOTE: if a thread crashes or terminates, its data will *not* be cleaned up.
+  // NOTE: is it possible for a chunk to arrive when the file is not yet
+  // created, and have it's WriteChunk() fail because of that? If so, need to
+  // write in buffer_raw_ instead
   std::map< std::thread::id, std::map<std::string, uint64_t> > key_to_location;
+  std::map< std::thread::id, std::map<std::string, uint32_t> > key_to_headersize;
 };
 
 
@@ -983,7 +1019,7 @@ class StorageEngine {
 
     mutex_read_.lock();
     num_readers_ -= 1;
-    LOG_TRACE("GetEntry()", "num_readers_: %d", num_readers_);
+    LOG_TRACE("Get()", "num_readers_: %d", num_readers_);
     mutex_read_.unlock();
     cv_read_.notify_one();
 
@@ -999,7 +1035,7 @@ class StorageEngine {
     // and location from the index and release the lock right away -- should not
     // be locking while calling GetEntry()
     
-    LOG_TRACE("StorageEngine::Get()", "%s", key->ToString().c_str());
+    LOG_TRACE("StorageEngine::GetWithIndex()", "%s", key->ToString().c_str());
 
     // NOTE: Since C++11, the relative ordering of elements with equivalent keys
     //       in a multimap is preserved.
@@ -1010,7 +1046,9 @@ class StorageEngine {
     for (auto it = rbegin; it != rend; --it) {
       ByteArray *key_temp;
       Status s = GetEntry(it->second, &key_temp, value_out); 
-      LOG_TRACE("StorageEngine::Get()", "key:[%s] key_temp:[%s] hashed_key:[%llu] hashed_key_temp:[%llu] size_key:[%llu] size_key_temp:[%llu]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
+      LOG_TRACE("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[%llu] hashed_key_temp:[%llu] size_key:[%llu] size_key_temp:[%llu]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
+      std::string temp(key_temp->data(), key_temp->size());
+      LOG_TRACE("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
       if (*key_temp == *key) {
         delete key_temp;
         if (s.IsRemoveOrder()) {
@@ -1021,7 +1059,7 @@ class StorageEngine {
       delete key_temp;
       delete *value_out;
     }
-    LOG_TRACE("StorageEngine::Get()", "%s - not found!", key->ToString().c_str());
+    LOG_TRACE("StorageEngine::GetWithIndex()", "%s - not found!", key->ToString().c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
   }
 
@@ -1046,25 +1084,33 @@ class StorageEngine {
 
     auto value_temp = new SharedMmappedByteArray();
     *value_temp = *key_temp;
+    // NOTE: verify that value_temp.size() is indeed filesize -- verified and
+    // the size was 0: should the size of an mmapped byte array be the size of
+    // the file by default?
 
-    struct Entry* entry = reinterpret_cast<struct Entry*>(value_temp->datafile() + offset_file);
-    key_temp->SetOffset(offset_file + sizeof(struct Entry), entry->size_key);
-    value_temp->SetOffset(offset_file + sizeof(struct Entry) + entry->size_key, entry->size_value);
-    value_temp->SetSizeCompressed(entry->size_value_compressed);
-    value_temp->SetCRC32(entry->crc32);
+    struct Entry entry;// = reinterpret_cast<struct Entry*>(value_temp->datafile() + offset_file);
+    uint32_t size_header;
+    s = Entry::DecodeFrom(db_options_, value_temp->datafile() + offset_file, filesize - offset_file, &entry, &size_header);
+    if (!s.IsOK()) return s;
 
-    if (!entry->IsEntryFull()) {
+    key_temp->SetOffset(offset_file + size_header, entry.size_key);
+    value_temp->SetOffset(offset_file + size_header + entry.size_key, entry.size_value);
+    value_temp->SetSizeCompressed(entry.size_value_compressed);
+    value_temp->SetCRC32(entry.crc32);
+
+    if (!entry.IsEntryFull()) {
       LOG_EMERG("StorageEngine::GetEntry()", "Entry is not of type FULL, which is not supported");
-      s = Status::IOError("Entries of type not FULL are not supported");
+      return Status::IOError("Entries of type not FULL are not supported");
     }
 
-    if (entry->IsTypeRemove()) {
+    if (entry.IsTypeRemove()) {
       s = Status::RemoveOrder();
       delete value_temp;
       value_temp = nullptr;
     }
 
-    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry->IsTypeRemove());
+    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry.IsTypeRemove());
+    LOG_TRACE("StorageEngine::GetEntry()", "Sizes: key_temp:%llu value_temp:%llu filesize:%llu", key_temp->size(), value_temp->size(), filesize);
 
     *key_out = key_temp;
     *value_out = value_temp;
@@ -1281,14 +1327,19 @@ class StorageEngine {
       uint64_t offset_end = mmap->filesize() - rewind;
       while (offset < offset_end) {
         LOG_TRACE("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
-        struct Entry* entry = reinterpret_cast<struct Entry*>(mmap->datafile() + offset);
-        if (   offset + sizeof(struct Entry) >= mmap->filesize()
-            || entry->size_key == 0
-            || offset + sizeof(struct Entry) + entry->size_key > mmap->filesize()
-            || offset + sizeof(struct Entry) + entry->size_key + entry->size_value_offset() > mmap->filesize()) {
+        struct Entry entry;// = reinterpret_cast<struct Entry*>(mmap->datafile() + offset);
+        uint32_t size_header;
+        Status s = Entry::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry, &size_header);
+        // NOTE: the uses of sizeof(struct Entry) here make not sense, since this
+        // size is variable based on the local architecture
+        if (   !s.IsOK()
+            || offset + sizeof(struct Entry) >= mmap->filesize()
+            || entry.size_key == 0
+            || offset + sizeof(struct Entry) + entry.size_key > mmap->filesize()
+            || offset + sizeof(struct Entry) + entry.size_key + entry.size_value_offset() > mmap->filesize()) {
           // TODO: handle error
           fprintf(stderr, "Compaction - unexpected end of file - mmap->filesize():%d\n", mmap->filesize());
-          entry->print();
+          entry.print();
           break;
         }
 
@@ -1299,7 +1350,7 @@ class StorageEngine {
         LOG_TRACE("Compaction()", "order list loop - check if we should keep it - fileid:%u offset:%u", fileid, offset);
         if (   locations_delete.find(location) != locations_delete.end()
             || locations_secondary.find(location) != locations_secondary.end()) {
-          offset += sizeof(struct Entry) + entry->size_key + entry->size_value_offset();
+          offset += size_header + entry.size_key + entry.size_value_offset();
           continue;
         }
 
@@ -1323,22 +1374,24 @@ class StorageEngine {
           uint32_t offset_file = location & 0x00000000FFFFFFFF;
           LOG_TRACE("Compaction()", "order list loop - location fileid:%u offset:%u", fileid_location, offset_file);
           Mmap *mmap_location = mmaps[fileid_location];
-          struct Entry* entry = reinterpret_cast<struct Entry*>(mmap_location->datafile() + offset_file);
+          struct Entry entry;// = reinterpret_cast<struct Entry*>(mmap_location->datafile() + offset_file);
+          uint32_t size_header;
+          Status s = Entry::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry, &size_header);
 
           LOG_TRACE("Compaction()", "order list loop - create byte arrays");
-          ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + sizeof(struct Entry), entry->size_key);
-          ByteArray *chunk = new SimpleByteArray(mmap_location->datafile() + offset_file + sizeof(struct Entry) + entry->size_key, entry->size_value_used());
+          ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header, entry.size_key);
+          ByteArray *chunk = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header + entry.size_key, entry.size_value_used());
           LOG_TRACE("Compaction()", "order list loop - push_back() orders");
           orders.push_back(Order{std::this_thread::get_id(),
                                  OrderType::Put,
                                  key,
                                  chunk,
                                  0,
-                                 entry->size_value,
-                                 entry->size_value_compressed,
-                                 entry->crc32});
+                                 entry.size_value,
+                                 entry.size_value_compressed,
+                                 entry.crc32});
         }
-        offset += sizeof(struct Entry) + entry->size_key + entry->size_value_offset();
+        offset += size_header + entry.size_key + entry.size_value_offset();
       }
     }
 

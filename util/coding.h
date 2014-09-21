@@ -52,6 +52,9 @@ extern int VarintLength(uint64_t v);
 extern void EncodeFixed32(char* dst, uint32_t value);
 extern void EncodeFixed64(char* dst, uint64_t value);
 
+extern void GetFixed32(char* src, uint32_t* value);
+extern void GetFixed64(char* src, uint64_t* value);
+
 // Lower-level versions of Put... that write directly into a character buffer
 // and return a pointer just past the last byte written.
 // REQUIRES: dst has enough space for the value being written

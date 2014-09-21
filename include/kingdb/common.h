@@ -16,7 +16,10 @@
 
 #include "util/logger.h"
 #include "util/status.h"
+#include "util/coding.h"
 #include "kingdb/byte_array_base.h"
+#include "kingdb/byte_array.h"
+#include "kingdb/options.h"
 
 namespace kdb {
 
@@ -63,8 +66,8 @@ enum EntryFlag {
 
 struct Entry {
   Entry() { flags = 0; }
-  uint32_t flags;
   uint32_t crc32;
+  uint32_t flags;
   uint64_t size_key;
   uint64_t size_value;
   uint64_t size_value_compressed;
@@ -130,6 +133,79 @@ struct Entry {
       return size_value_compressed;
     }
   }
+
+
+  static Status DecodeFrom(const DatabaseOptions& db_options, const char* buffer_in, uint64_t num_bytes_max, struct Entry *output, uint32_t *num_bytes_read) {
+    /*
+    LOG_TRACE("Entry::DecodeFrom", "start num_bytes_max:%llu - sizeof(Entry):%d", num_bytes_max, sizeof(struct Entry));
+    char *buffer = const_cast<char*>(buffer_in);
+    struct Entry* entry = reinterpret_cast<struct Entry*>(buffer);
+    *output = *entry;
+    *num_bytes_read = sizeof(struct Entry);
+    return Status::OK();
+    */
+
+    int length;
+    char *buffer = const_cast<char*>(buffer_in);
+    SimpleByteArray array(buffer, num_bytes_max);
+
+    GetFixed32(array.data(), &(output->crc32));
+    array.AddOffset(4);
+
+    length = GetVarint32(&array, &(output->flags));
+    if (length == -1) return Status::IOError("Decoding error");
+    array.AddOffset(length);
+
+    length = GetVarint64(&array, &(output->size_key));
+    if (length == -1) return Status::IOError("Decoding error");
+    array.AddOffset(length);
+
+    int length_value = GetVarint64(&array, &(output->size_value));
+    if (length_value == -1) return Status::IOError("Decoding error");
+    array.AddOffset(length_value);
+
+    if (db_options.compression.type != kNoCompression) {
+      int length = GetVarint64(&array, &(output->size_value_compressed));
+      if (length == -1) return Status::IOError("Decoding error");
+      array.AddOffset(length_value); // size_value_compressed is using length_value
+    }
+
+    if (array.size() < 8) return Status::IOError("Decoding error");
+    GetFixed64(array.data(), &(output->hash));
+
+    *num_bytes_read = num_bytes_max - array.size() + 8;
+    //LOG_TRACE("Entry::DecodeFrom", "size:%u", *num_bytes_read);
+    return Status::OK();
+  }
+
+  static uint32_t EncodeTo(const DatabaseOptions& db_options, const struct Entry *input, char* buffer) {
+    /*
+    struct Entry *input_noncast = const_cast<struct Entry*>(input);
+    memcpy(buffer, reinterpret_cast<char*>(input_noncast), sizeof(struct Entry));
+    //struct Entry *entry = reinterpret_cast<struct Entry*>(buffer);
+    //*entry = *input;
+    return sizeof(struct Entry);
+    */
+
+    EncodeFixed32(buffer, input->crc32);
+    char *ptr;
+    ptr = EncodeVarint32(buffer + 4, input->flags);
+    ptr = EncodeVarint64(ptr, input->size_key);
+    char *ptr_value = EncodeVarint64(ptr, input->size_value);
+    int length_value = ptr_value - ptr;
+    ptr = ptr_value;
+    if (db_options.compression.type != kNoCompression) {
+      // size_value_compressed is stored only if the database is using compression
+      if (input->size_value_compressed != 0) {
+        EncodeVarint64(ptr, input->size_value_compressed);
+      }
+      ptr += length_value;
+    }
+    EncodeFixed64(ptr, input->hash);
+    //LOG_TRACE("Entry::EncodeTo", "size:%u", ptr - buffer + 8);
+    return (ptr - buffer + 8);
+  }
+
 };
 
 struct EntryFooter {

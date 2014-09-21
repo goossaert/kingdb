@@ -5,6 +5,7 @@
 #ifndef KINGDB_INTERFACE_MAIN_H_
 #define KINGDB_INTERFACE_MAIN_H_
 
+#include <assert.h>
 #include <thread>
 #include <string>
 #include <memory>
@@ -19,6 +20,7 @@
 
 #include "util/compressor.h"
 #include "util/crc32c.h"
+#include "util/endian.h"
 
 namespace kdb {
 
@@ -32,6 +34,9 @@ class KingDB: public Interface {
   {
     self_ = this;
     signal(SIGINT, SigIntHandlerStatic);
+
+    // Word-swapped endianness is not supported
+    assert(getEndianness() == kBytesLittleEndian || getEndianness() == kBytesBigEndian);
   }
   virtual ~KingDB() {}
 
@@ -40,6 +45,7 @@ class KingDB: public Interface {
   }
 
   void SigIntHandler(int signal) {
+    // TODO: this should be handled in the user program, not here.
     se_.Close();
     exit(0);
   }

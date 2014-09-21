@@ -202,16 +202,16 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
 
             if (!s.IsOK() && !s.IsDone()) {
               LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
-              break;
+              //break;
             }
           }
 
-          if (s.IsOK() || s.IsDone()) {
+          //if (s.IsOK() || s.IsDone()) {
             if (send(sockfd_, "\r\nEND\r\n", 7, 0) == -1) {
               LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
               break;
             }
-          }
+          //}
 
           /*
           if (send(sockfd_, value->data(), value->size(), 0) == -1) {

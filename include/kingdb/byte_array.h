@@ -56,7 +56,7 @@ class ByteArrayCommon: public ByteArray {
   */
 
   virtual std::string ToString() {
-    return std::string(data_, size_);
+    return std::string(data(), size());
   }
 
   virtual void SetSizeCompressed(uint64_t s) { size_compressed_ = s; }
@@ -81,6 +81,11 @@ class SimpleByteArray: public ByteArrayCommon {
   SimpleByteArray(const char* data_in, uint64_t size_in) {
     data_ = const_cast<char*>(data_in);
     size_ = size_in;
+  }
+
+  void AddOffset(int offset) {
+    data_ += offset;
+    size_ -= offset;
   }
 
   virtual ~SimpleByteArray() {
@@ -173,7 +178,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     if (size_compressed_ == 0) { // if no compression
       crc32_.stream(data_, size_);
       if (crc32_.get() != crc32_value_) {
-        fprintf(stderr, "Bad CRC32 - stored:%u computed:%u\n", crc32_value_, crc32_.get());
+        fprintf(stderr, "Bad CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
         return Status::IOError("Bad CRC32");
       }
       *data_out = data_;
@@ -196,7 +201,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
                                       &size_frame);
 
     if (s.IsDone() && crc32_.get() != crc32_value_) {
-      fprintf(stderr, "Bad CRC32 - stored:%u computed:%u\n", crc32_value_, crc32_.get());
+      fprintf(stderr, "Bad CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
       return Status::IOError("Bad CRC32");
     } else if (!s.IsOK()) {
       return s;

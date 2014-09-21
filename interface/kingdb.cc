@@ -93,7 +93,7 @@ Status KingDB::PutChunk(WriteOptions& write_options,
   crc32_.stream(chunk_final->data(), chunk_final->size());
   if (is_last_chunk) crc32 = crc32_.get();
 
-  LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu crc32:%u END", key->ToString().c_str(), size_value_compressed, crc32);
+  LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu crc32:0x%llx END", key->ToString().c_str(), size_value_compressed, crc32);
 
   return bm_.PutChunk(write_options,
                       key,

@@ -24,6 +24,8 @@ class BufferManager {
       : db_options_(db_options){
     im_live_ = 0;
     im_copy_ = 1;
+    sizes_[im_live_] = 0;
+    sizes_[im_copy_] = 0;
     num_readers_ = 0;
     can_swap_ = true;    // prevents the double-swapping
     force_swap_ = false; // forces swapping

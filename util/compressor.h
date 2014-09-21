@@ -10,7 +10,6 @@
 
 #include "util/lz4.h"
 
-#include "kingdb/common.h"
 #include "util/logger.h"
 #include "util/status.h"
 #include "thread/threadstorage.h"

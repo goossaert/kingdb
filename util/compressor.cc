@@ -76,7 +76,7 @@ Status CompressorLZ4::Uncompress(char *source,
 
   *frame_out = source + offset_uncompress;
   *size_frame_out = size_compressed + 8;
-  LOG_TRACE("data_chunk()", "crc32: %u %p %llu", crc32_.get(), *frame_out, *size_frame_out);
+  LOG_TRACE("data_chunk()", "crc32:0x%llx frame_ptr:%p frame_size:%llu", crc32_.get(), *frame_out, *size_frame_out);
 
   offset_uncompress += size_compressed + 8;
   ts_uncompress_.put(offset_uncompress);
