@@ -32,8 +32,13 @@ Status CompressorLZ4::Compress(char *source,
   }
   uint32_t size_compressed = ret + 8;
   uint32_t size_source_32 = size_source; // TODO: careful here, storing 64 bits into 32.
-  memcpy((*dest),     &size_compressed, sizeof(size_compressed));
-  memcpy((*dest) + 4, &size_source_32,  sizeof(size_source_32));
+  EncodeFixed32((*dest),     size_compressed);
+  EncodeFixed32((*dest) + 4, size_source_32);
+  // NOTE: small entries don't need to have the compressed and source sizes in
+  // front of the frame, this is just a waste of storage space. Maybe have a
+  // special type of entry, like 'small' or 'self-contained', which would
+  // indicate that the frame doesn't have the sizes
+
   LOG_TRACE("CompressorLZ4::Compress()", "size_compressed:%u size_source:%u", size_compressed, size_source_32);
   uint64_t size_compressed_total = ts_compress_.get() + size_compressed;
   ts_compress_.put(size_compressed_total);
@@ -54,8 +59,8 @@ Status CompressorLZ4::Uncompress(char *source,
   if (offset_uncompress == size_source_total) return Status::Done();
 
   uint32_t size_source, size_compressed;
-  memcpy(&size_compressed, source + offset_uncompress,     sizeof(size_compressed));
-  memcpy(&size_source,     source + 4 + offset_uncompress, sizeof(size_source));
+  GetFixed32(source + offset_uncompress,     &size_compressed);
+  GetFixed32(source + offset_uncompress + 4, &size_source);
   size_compressed -= 8;
 
   *size_dest = 0;

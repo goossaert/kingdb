@@ -2,8 +2,12 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
-// The code below was copied from LevelDB. A few changes were applied to make it
-// self-sufficient and part of KingDB.
+// The code below was copied from zlib and LevelDB. A few changes were
+// applied to make it self-sufficient and part of KingDB.
+
+// zlib.h -- interface of the 'zlib' general purpose compression library
+// version 1.2.8, April 28th, 2013
+// Copyright (C) 1995-2013 Jean-loup Gailly and Mark Adler
 
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -334,5 +338,86 @@ uint32_t Extend(uint32_t crc, const char* buf, size_t size) {
   return l ^ 0xffffffffu;
 }
 
+
+
+// For crc32_combine
+ulong gf2_matrix_times (ulong *mat, ulong vec)
+{
+    ulong sum = 0;
+    while (vec) {
+        if (vec & 1)
+            sum ^= *mat;
+        vec >>= 1;
+        mat++;
+    }
+    return sum;
+}
+
+void gf2_matrix_square (ulong *square, ulong *mat)
+{
+    int n;
+    for (n = 0; n < GF2_DIM; n++)
+        square[n] = gf2_matrix_times(mat, mat[n]);
+}
+
+ulong Combine(ulong crc1, ulong crc2, ulong len2)
+{
+    // NOTE: The original zlib code had a polynomial 'odd[0]' equal to
+    // 0xedb88320L, which is the value for the CRC32 checksum.
+    // I changed it for 0x82f63b78, which is the reversed polynomial for
+    // the CRC32C (Castagnoli) checksum, which is the one used in the
+    // code that I copied from LevelDB. The polynomial was found in:
+    // http://en.wikipedia.org/wiki/Cyclic_redundancy_check
+  
+    int n;
+    ulong row;
+    ulong even[GF2_DIM];    /* even-power-of-two zeros operator */
+    ulong odd[GF2_DIM];     /* odd-power-of-two zeros operator */
+
+    /* degenerate case */
+    if (len2 == 0)
+        return crc1;
+
+    /* put operator for one zero bit in odd */
+    odd[0] = 0x82f63b78;           /* CRC-32 polynomial */
+    row = 1;
+    for (n = 1; n < GF2_DIM; n++) {
+        odd[n] = row;
+        row <<= 1;
+    }
+
+    /* put operator for two zero bits in even */
+    gf2_matrix_square(even, odd);
+
+    /* put operator for four zero bits in odd */
+    gf2_matrix_square(odd, even);
+
+    /* apply len2 zeros to crc1 (first square will put the operator for one
+       zero byte, eight zero bits, in even) */
+    do {
+        /* apply zeros operator for this bit of len2 */
+        gf2_matrix_square(even, odd);
+        if (len2 & 1)
+            crc1 = gf2_matrix_times(even, crc1);
+        len2 >>= 1;
+
+        /* if no more bits set, then done */
+        if (len2 == 0)
+            break;
+
+        /* another iteration of the loop with odd and even swapped */
+        gf2_matrix_square(odd, even);
+        if (len2 & 1)
+            crc1 = gf2_matrix_times(odd, crc1);
+        len2 >>= 1;
+
+        /* if no more bits set, then done */
+    } while (len2 != 0);
+
+    /* return combined crc */
+    crc1 ^= crc2;
+    return crc1;
+}
+
 }  // namespace crc32c
-}  // namespace kdb 
+}  // namespace kdb

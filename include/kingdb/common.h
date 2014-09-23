@@ -17,6 +17,7 @@
 #include "util/logger.h"
 #include "util/status.h"
 #include "util/coding.h"
+#include "util/crc32c.h"
 #include "kingdb/byte_array_base.h"
 #include "kingdb/byte_array.h"
 #include "kingdb/options.h"
@@ -230,6 +231,7 @@ enum FileType {
 };
 
 struct LogFileHeader {
+  uint32_t crc32;
   uint32_t version_data_format_major;
   uint32_t version_data_format_minor;
   uint32_t filetype;
@@ -260,24 +262,29 @@ struct LogFileHeader {
 
   static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct LogFileHeader *output) {
     if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
-    GetFixed32(buffer_in,      &(output->version_data_format_major));
-    GetFixed32(buffer_in +  4, &(output->version_data_format_minor));
-    GetFixed32(buffer_in +  8, &(output->filetype));
-    GetFixed64(buffer_in + 12, &(output->timestamp));
+    GetFixed32(buffer_in     , &(output->crc32));
+    GetFixed32(buffer_in +  4, &(output->version_data_format_major));
+    GetFixed32(buffer_in +  8, &(output->version_data_format_minor));
+    GetFixed32(buffer_in + 12, &(output->filetype));
+    GetFixed64(buffer_in + 16, &(output->timestamp));
+    uint32_t crc32_computed = crc32c::Value(buffer_in + 4, 20);
     if (!output->IsFileVersionSupported()) return Status::IOError("Data format version not supported");
+    if (crc32_computed != output->crc32)   return Status::IOError("Invalid checksum");
     return Status::OK();
   }
 
   static uint32_t EncodeTo(const struct LogFileHeader *input, char* buffer) {
-    EncodeFixed32(buffer,      kVersionDataFormatMajor);
-    EncodeFixed32(buffer +  4, kVersionDataFormatMinor);
-    EncodeFixed32(buffer +  8, input->filetype);
-    EncodeFixed64(buffer + 12, input->timestamp);
+    EncodeFixed32(buffer +  4, kVersionDataFormatMajor);
+    EncodeFixed32(buffer +  8, kVersionDataFormatMinor);
+    EncodeFixed32(buffer + 12, input->filetype);
+    EncodeFixed64(buffer + 16, input->timestamp);
+    uint32_t crc32 = crc32c::Value(buffer + 4, 20);
+    EncodeFixed32(buffer, crc32);
     return GetFixedSize();
   }
 
   static uint32_t GetFixedSize() {
-    return 20; // in bytes
+    return 24; // in bytes
   }
 };
 
@@ -292,6 +299,7 @@ struct LogFileFooter {
   uint64_t offset_indexes;
   uint64_t num_entries;
   uint64_t magic_number;
+  uint32_t crc32;
 
   LogFileFooter() { flags = 0; }
 
@@ -310,6 +318,7 @@ struct LogFileFooter {
     GetFixed64(buffer_in +  8, &(output->offset_indexes));
     GetFixed64(buffer_in + 16, &(output->num_entries));
     GetFixed64(buffer_in + 24, &(output->magic_number));
+    GetFixed32(buffer_in + 32, &(output->crc32));
     return Status::OK();
   }
 
@@ -319,11 +328,12 @@ struct LogFileFooter {
     EncodeFixed64(buffer +  8, input->offset_indexes);
     EncodeFixed64(buffer + 16, input->num_entries);
     EncodeFixed64(buffer + 24, input->magic_number);
+    // the checksum is computed in the method that writes the footer
     return GetFixedSize();
   }
 
   static uint32_t GetFixedSize() {
-    return 32; // in bytes
+    return 36; // in bytes
   }
 };
 

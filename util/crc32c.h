@@ -2,8 +2,12 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
-// The code below was copied from LevelDB. A few changes were applied to make it
-// self-sufficient and part of KingDB.
+// The code below was copied from zlib and LevelDB. A few changes were
+// applied to make it self-sufficient and part of KingDB.
+
+// zlib.h -- interface of the 'zlib' general purpose compression library
+// version 1.2.8, April 28th, 2013
+// Copyright (C) 1995-2013 Jean-loup Gailly and Mark Adler
 
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -52,6 +56,15 @@ inline uint32_t Unmask(uint32_t masked_crc) {
   return ((rot >> 17) | (rot << 15));
 }
 
+
+// For crc32_combine
+typedef uint32_t ulong;
+typedef int64_t I64;
+ulong Combine(ulong crc1, ulong crc2, ulong len2);
+#define GF2_DIM 32
+
+
+
 }  // namespace crc32c
 
 
@@ -77,6 +90,7 @@ class CRC32 {
   }
 
   uint32_t get() { return ts_.get(); }
+  void put(uint32_t c32) { ts_.put(c32); }
   void ResetThreadLocalStorage() { ts_.reset(); }
    
  private:

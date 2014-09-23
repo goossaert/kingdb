@@ -42,3 +42,4 @@ location of their respective LICENSE files.
 - LZ4, under BSD 2-Clause License: /3rdparty/lz4/
 - Murmurhash3, public domain: /3rdparty/murmurhash3/
 - xxHash, under BSD 2-Clause License: /3rdparty/xxhash/
+- zlib, under zlib/libpng License: /3rdparty/zlib/

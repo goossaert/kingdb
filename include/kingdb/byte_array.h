@@ -174,6 +174,10 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     size_ += add; 
   }
 
+  void SetInitialCRC32(uint32_t c32) {
+    crc32_.put(c32); 
+  }
+
   virtual Status data_chunk(char **data_out, uint64_t *size_out) {
     if (size_compressed_ == 0) { // if no compression
       crc32_.stream(data_, size_);
@@ -204,6 +208,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
       fprintf(stderr, "Bad CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
       return Status::IOError("Bad CRC32");
     } else if (!s.IsOK()) {
+      fprintf(stderr, "Good CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
       return s;
     }
 

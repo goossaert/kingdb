@@ -36,12 +36,6 @@ namespace kdb {
 
 // TODO: split the classes into their own respective files
 
-// TODO-21: Due to padding/alignment, the structs that are used to store data in
-//          files will see their size influenced by the architecture on which
-//          the database is running (i.e. 32 bits or 64 bits), and thus the actual
-//          storage will need serialization (along with proper endian-ness
-//          handling)
-
 class FileResourceManager {
  public:
   FileResourceManager() {
@@ -311,7 +305,7 @@ class LogfileManager {
       lffi.offset_entry = p.second;
       uint32_t length = LogFileFooterIndex::EncodeTo(&lffi, buffer_index_ + offset);
       offset += length;
-      LOG_TRACE("StorageEngine::WriteLogIndex()", "hashed_key:[%llu] offset:[%u] offset_hex:[%s]", p.first, p.second, num_to_hex(p.second).c_str());
+      LOG_TRACE("StorageEngine::WriteLogIndex()", "hashed_key:[%llu] offset:[%08x]", p.first, p.second);
     }
 
     uint64_t position = lseek(fd, 0, SEEK_END);
@@ -326,6 +320,10 @@ class LogfileManager {
     if (has_invalid_entries) footer.SetFlagHasInvalidEntries();
     uint32_t length = LogFileFooter::EncodeTo(&footer, buffer_index_ + offset);
     offset += length;
+
+    uint32_t crc32 = crc32c::Value(buffer_index_, offset - 4);
+    EncodeFixed32(buffer_index_ + offset - 4, crc32);
+
     if (write(fd, buffer_index_, offset) < 0) {
       LOG_TRACE("StorageEngine::WriteLogIndex()", "Error write(): %s", strerror(errno));
     }
@@ -440,10 +438,16 @@ class LogfileManager {
         file_resource_manager.SetHasPaddingInValues(fileid_, true);
       }
       entry.hash = hashed_key;
-      entry.crc32 = order.crc32;
 
+      // Compute the header a first time to get the data serialized
       char buffer[sizeof(struct Entry)*2];
       uint32_t size_header_new = Entry::EncodeTo(db_options_, &entry, buffer);
+
+      // Compute the checksum for the header and combine it with the one for the
+      // key and value, then recompute the header to save the checksum
+      uint32_t crc32_header = crc32c::Value(buffer + 4, size_header_new - 4);
+      entry.crc32 = crc32c::Combine(crc32_header, order.crc32, entry.size_key + entry.size_value_used());
+      size_header_new = Entry::EncodeTo(db_options_, &entry, buffer);
       if (size_header_new != size_header) {
         LOG_EMERG("LogfileManager::WriteChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
       }
@@ -693,9 +697,7 @@ class LogfileManager {
         fprintf(stderr, "file: [%s] has an invalid header, skipping\n", entry->d_name);
         continue;
       }
-      // TODO: need CRC32 on the header
 
-      //std::string key = std::to_string(lfh->timestamp) + "-" + std::to_string(fileid);
       sprintf(buffer_key, "%016llX-%016X", lfh.timestamp, fileid);
       std::string key(buffer_key);
       timestamp_fileid_to_fileid[key] = fileid;
@@ -703,11 +705,7 @@ class LogfileManager {
       timestamp_max = std::max(timestamp_max, lfh.timestamp);
     }
 
-    //while ((entry = readdir(directory)) != NULL) {
     for (auto& p: timestamp_fileid_to_fileid) {
-      //sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
-      //if (strncmp(entry->d_name, "compaction", 10) == 0) continue;
-      //fileid = LogfileManager::hex_to_num(entry->d_name);
       uint32_t fileid = p.second;
       std::string filepath = GetFilepath(fileid);
       LOG_TRACE("LogfileManager::LoadDatabase()", "Loading file:[%s] with key:[%s]", filepath.c_str(), p.first.c_str());
@@ -720,6 +718,10 @@ class LogfileManager {
       }
       if (!s.IsOK()) {
         LOG_WARN("LogfileManager::LoadDatabase()", "Recovery failed for file [%s]", filepath.c_str());
+        mmap.Close();
+        if (std::remove(filepath.c_str()) != 0) {
+          LOG_EMERG("LogfileManager::LoadDatabase()", "Could not remove file [%s]", filepath.c_str());
+        }
       }
     }
     SetSequenceFileId(fileid_max + 1);
@@ -731,14 +733,18 @@ class LogfileManager {
   Status LoadFile(Mmap& mmap,
                   uint32_t fileid,
                   std::multimap<uint64_t, uint64_t>& index_se) {
-    // TODO-17: need to check CRC32 for the footer and the footer indexes.
-    // TODO-15: handle large file (with very large, unique entry)
-
     struct LogFileFooter footer;
     Status s = LogFileFooter::DecodeFrom(mmap.datafile() + mmap.filesize() - LogFileFooter::GetFixedSize(), LogFileFooter::GetFixedSize(), &footer);
-    if (   s.IsOK()
-        && footer.magic_number == LogfileManager::get_magic_number()
-        && footer.offset_indexes < mmap.filesize()) {
+    uint32_t crc32_computed = crc32c::Value(mmap.datafile() + footer.offset_indexes, mmap.filesize() - footer.offset_indexes - 4);
+
+    if (   !s.IsOK()
+        || footer.magic_number != LogfileManager::get_magic_number()) {
+      LOG_TRACE("LoadFile()", "Skipping [%s] - magic_number:[%llu/%llu]", mmap.filepath(), footer.magic_number, get_magic_number());
+      return Status::IOError("Invalid footer");
+    } else if (crc32_computed != footer.crc32) {
+      LOG_TRACE("LoadFile()", "Skipping [%s] - Invalid CRC32:[%08x/%08x]", mmap.filepath(), footer.crc32, crc32_computed);
+      return Status::IOError("Invalid footer");
+    } else {
       // The file has a clean footer, load all the offsets in the index
       uint64_t offset_index = footer.offset_indexes;
       struct LogFileFooterIndex lffi;
@@ -748,7 +754,9 @@ class LogfileManager {
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
         index_se.insert(std::pair<uint64_t, uint64_t>(lffi.hashed_key, fileid_shifted | lffi.offset_entry));
-        LOG_TRACE("LoadFile()", "Add item to index -- hashed_key:[%llu] offset:[%u] -- offset_index:[%llu] -- sizeof(struct):[%d]", lffi.hashed_key, lffi.offset_entry, offset_index, sizeof(struct LogFileFooterIndex));
+        LOG_TRACE("LoadFile()",
+                  "Add item to index -- hashed_key:[%llu] offset:[%u] -- offset_index:[%llu]",
+                  lffi.hashed_key, lffi.offset_entry, offset_index);
         offset_index += length_lffi;
       }
       file_resource_manager.SetFileSize(fileid, mmap.filesize());
@@ -756,15 +764,8 @@ class LogfileManager {
         file_resource_manager.SetFileLarge(fileid);
       }
       LOG_TRACE("LoadFile()", "Loaded [%s] num_entries:[%llu]", mmap.filepath(), footer.num_entries);
-    } else {
-      // The footer is corrupted: go through every item and verify it
-      LOG_TRACE("LoadFile()", "Skipping [%s] - magic_number:[%llu/%llu]", mmap.filepath(), footer.magic_number, get_magic_number());
-      return Status::IOError("Invalid footer");
     }
 
-    //LOG_TRACE("LoadFile()", "Invalid magic number for file [%s]", filename);
-    //return Status::IOError("Invalid magic number");
-    // TODO-15: add the recovery code here
     return Status::OK();
   }
 
@@ -778,13 +779,12 @@ class LogfileManager {
 
     struct LogFileHeader lfh;
     Status s = LogFileHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
+    // 1. If the file is a large file, just discard it
     if (!s.IsOK() || lfh.filetype == kLargeType) {
-      // TODO: what to do with this file? remove it? quarantine it? Let the user
-      // choose based on options?
-      LOG_TRACE("Logmanager::RecoverFile", "Could not recover file [%s]\n", mmap.filepath());
-      return Status::OK();
+      return Status::IOError("Could not recover file");
     }
 
+    // 2. If the file is a logfile, go over all its entries and verify each one of them
     while (true) {
       struct Entry entry;
       uint32_t size_header;
@@ -796,58 +796,48 @@ class LogfileManager {
           || entry.size_key == 0
           || offset + sizeof(struct Entry) + entry.size_key > mmap.filesize()
           || offset + sizeof(struct Entry) + entry.size_key + entry.size_value_offset() > mmap.filesize()) {
-        // end of file
-        LOG_TRACE("Logmanager::RecoverFile", "end of file [%llu] [%llu] [%llu] [%llu] - filesize:[%llu]", 
-          (uint64_t)offset + sizeof(struct Entry),
-          entry.size_key,
-          (uint64_t)offset + sizeof(struct Entry) + entry.size_key,
-          (uint64_t)offset + sizeof(struct Entry) + entry.size_key + entry.size_value_offset(),
-          (uint64_t)mmap.filesize());
+        // End of file during recovery, thus breaking out of the while-loop
         break;
       }
+
       crc32_.ResetThreadLocalStorage();
-      // TODO-17: need a way to check the crc32 for the entry header and the key
-      //          maybe the CRC32 could be computed on the final frames, and not
-      //          the data inside of the frames -- need to check if the CRC32
-      //          values are the same in both cases though:
-      //          We compress data and create frames with it. Are the CRC32 the
-      //          sames if:
-      //             1. it is computed over the sequence of frames,
-      //             2. it is computed over each frame separately then added.
-      crc32_.stream(mmap.datafile() + size_header + entry.size_key, entry.size_value_used());
-      if (true || entry.crc32 == crc32_.get()) { // TODO-17: fix CRC32 check
+      crc32_.stream(mmap.datafile() + offset + 4, size_header + entry.size_key + entry.size_value_used() - 4);
+      bool is_crc32_valid = (entry.crc32 == crc32_.get());
+      if (is_crc32_valid) {
         // Valid content, add to index
-        // TODO-18: make sure invalid entries get marked as invalid so that the
-        //          compaction process can clean them up
         logindex_current.push_back(std::pair<uint64_t, uint32_t>(entry.hash, offset));
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
         index_se.insert(std::pair<uint64_t, uint64_t>(entry.hash, fileid_shifted | offset));
       } else {
+        is_crc32_valid = false;
         has_invalid_entries = true; 
       }
+
       if (entry.HasPadding()) has_padding_in_values = true;
       offset += size_header + entry.size_key + entry.size_value_offset();
-      LOG_TRACE("Logmanager::RecoverFile", "Recovered hash [%llu], next offset [%llu]", entry.hash, offset);
+      LOG_TRACE("LogManager::RecoverFile",
+                "Scanned hash [%llu], next offset [%llu] - CRC32:%s stored=0x%08x computed=0x%08x",
+                entry.hash, offset, is_crc32_valid?"OK":"ERROR", entry.crc32, crc32_.get());
     }
 
+    // 3. Write a new index at the end of the file with whatever entries could be save
     if (offset > SIZE_LOGFILE_HEADER) {
       mmap.Close();
       int fd;
       if ((fd = open(mmap.filepath(), O_WRONLY, 0644)) < 0) {
-        LOG_EMERG("Logmanager::RecoverFile()", "Could not open file [%s]: %s", mmap.filepath(), strerror(errno));
+        LOG_EMERG("LogManager::RecoverFile()", "Could not open file [%s]: %s", mmap.filepath(), strerror(errno));
         return Status::IOError("Could not open file for recovery", mmap.filepath());
       }
       ftruncate(fd, offset);
       lseek(fd, 0, SEEK_END);
       uint64_t size_logindex;
-      // NOTE: fine to use kLogType as kLargeType files will not be recovered anyway
+      // Fine to use kLogType directly as kLargeType files will not be recovered anyway
       WriteLogIndex(fd, logindex_current, &size_logindex, kLogType, has_padding_in_values, has_invalid_entries);
       file_resource_manager.SetFileSize(fileid, mmap.filesize() + size_logindex);
       close(fd);
     } else {
-      // TODO: were not able to recover anything in the file
-      LOG_EMERG("Logmanager::RecoverFile()", "Was not able to recover anything from file [%s]", mmap.filepath());
+      return Status::IOError("Could not recover file");
     }
 
     return Status::OK();
@@ -930,6 +920,7 @@ class StorageEngine {
   }
 
   void ProcessingLoopCompaction() {
+    // TODO: have the compaction loop actually do the right thing
     std::chrono::milliseconds duration(10000);
     std::chrono::milliseconds forever(100000000000000000);
     while(true) {
@@ -947,11 +938,7 @@ class StorageEngine {
     while(true) {
       // Wait for orders to process
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "start");
-      //std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
       std::vector<Order> orders = EventManager::flush_buffer.Wait();
-      //std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
-      //uint64_t duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
-      //std::cout << "buffer read from storage engine in " << duration << " ms" << std::endl;
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "got %d orders", orders.size());
 
       // Process orders, and create update map for the index
@@ -1039,7 +1026,7 @@ class StorageEngine {
     return s;
   }
 
-  // NOTE: value_out must be deleled by the caller
+  // IMPORTANT: value_out must be deleled by the caller
   Status GetWithIndex(std::multimap<uint64_t, uint64_t>& index,
                       ByteArray* key,
                       ByteArray** value_out) {
@@ -1076,11 +1063,15 @@ class StorageEngine {
     return Status::NotFound("Unable to find the entry in the storage engine");
   }
 
-
-  // NOTE: key_out and value_out must be deleted by the caller
+  // IMPORTANT: key_out and value_out must be deleted by the caller
   Status GetEntry(uint64_t location, ByteArray **key_out, ByteArray **value_out) {
     LOG_TRACE("StorageEngine::GetEntry()", "start");
     Status s = Status::OK();
+    // TODO: check that the offset falls into the
+    // size of the file, just in case a file was truncated but the index
+    // still had a pointer to an entry in at an invalid location --
+    // alternatively, we could just let the host program crash, to force a restart
+    // which would rebuild the index properly
 
     uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
     uint32_t offset_file = location & 0x00000000FFFFFFFF;
@@ -1110,6 +1101,9 @@ class StorageEngine {
     value_temp->SetOffset(offset_file + size_header + entry.size_key, entry.size_value);
     value_temp->SetSizeCompressed(entry.size_value_compressed);
     value_temp->SetCRC32(entry.crc32);
+
+    uint32_t crc32_headerkey = crc32c::Value(value_temp->datafile() + offset_file + 4, size_header + entry.size_key - 4);
+    value_temp->SetInitialCRC32(crc32_headerkey);
 
     if (!entry.IsEntryFull()) {
       LOG_EMERG("StorageEngine::GetEntry()", "Entry is not of type FULL, which is not supported");
@@ -1321,30 +1315,39 @@ class StorageEngine {
       if (IsFileLarge(fileid)) continue;
       Mmap* mmap = mmaps[fileid];
 
-      // Check the footer
-      struct LogFileFooter footer;
-      Status s = LogFileFooter::DecodeFrom(mmap->datafile() + mmap->filesize() - LogFileFooter::GetFixedSize(), LogFileFooter::GetFixedSize(), &footer);
-      if (   !s.IsOK()
-          || footer.magic_number != LogfileManager::get_magic_number()
-          || footer.offset_indexes > mmap->filesize()) {
-        // TODO: handle error
-        fprintf(stderr, "Compaction - invalid footer\n");
-      }
-
-      // Update the maximimum timestamp
+      // Read the header to update the maximimum timestamp
       struct LogFileHeader lfh;
       s = LogFileHeader::DecodeFrom(mmap->datafile(), mmap->filesize(), &lfh);
-      if (!s.IsOK()) return Status::IOError("Could not read file header during compaction");
+      if (!s.IsOK()) return Status::IOError("Could not read file header during compaction"); // TODO: skip file instead of returning an error 
       timestamp_max = std::max(timestamp_max, lfh.timestamp);
+
+      // Read the footer to get the offset where entries stop
+      struct LogFileFooter footer;
+      Status s = LogFileFooter::DecodeFrom(mmap->datafile() + mmap->filesize() - LogFileFooter::GetFixedSize(), LogFileFooter::GetFixedSize(), &footer);
+      uint32_t crc32_computed = crc32c::Value(mmap->datafile() + footer.offset_indexes, mmap->filesize() - footer.offset_indexes - 4);
+      uint64_t offset_end;
+      if (   !s.IsOK()
+          || footer.magic_number != LogfileManager::get_magic_number()
+          || footer.crc32 != crc32_computed) {
+        // TODO: handle error
+        offset_end = mmap->filesize();
+        LOG_TRACE("Compaction()", "Compaction - invalid footer");
+      } else {
+        offset_end = footer.offset_indexes;
+      }
 
       // Process entries in the file
       uint32_t offset = SIZE_LOGFILE_HEADER;
-      uint64_t offset_end = footer.offset_indexes;
       while (offset < offset_end) {
         LOG_TRACE("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
         struct Entry entry;
         uint32_t size_header;
         Status s = Entry::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry, &size_header);
+        // NOTE: The checksum is not verified because during the compaction it
+        // doesn't matter whether or not the entry is valid. The user will know
+        // that an entry is invalid after doing a Get(), and that his choice to
+        // emit a 'delete' command if he wants to delete the entry.
+        
         // NOTE: the uses of sizeof(struct Entry) here make not sense, since this
         // size is variable based on the local architecture
         if (   !s.IsOK()
@@ -1352,12 +1355,13 @@ class StorageEngine {
             || entry.size_key == 0
             || offset + sizeof(struct Entry) + entry.size_key > mmap->filesize()
             || offset + sizeof(struct Entry) + entry.size_key + entry.size_value_offset() > mmap->filesize()) {
-          // TODO: handle error
-          fprintf(stderr, "Compaction - unexpected end of file - mmap->filesize():%d\n", mmap->filesize());
+          LOG_TRACE("Compaction()", "Unexpected end of file - mmap->filesize():%d\n", mmap->filesize());
           entry.print();
           break;
         }
 
+        // TODO-19: make function to get location from fileid and offset, and the
+        //          fileid and offset from location
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
         uint64_t location = fileid_shifted | offset;
@@ -1368,11 +1372,7 @@ class StorageEngine {
           offset += size_header + entry.size_key + entry.size_value_offset();
           continue;
         }
-
-        // TODO-17: do CRC32 check
  
-        // TODO-19: make function to get location from fileid and offset, and the
-        //          fileid and offset from location
         std::vector<uint64_t> locations;
         if (hashedkeys_clusters.find(location) == hashedkeys_clusters.end()) {
           LOG_TRACE("Compaction()", "order list loop - does not have cluster");
@@ -1529,7 +1529,7 @@ class StorageEngine {
       if (fileids_largefiles_keep.find(fileid) != fileids_largefiles_keep.end()) continue;
       LOG_TRACE("Compaction()", "Removing [%s]", logfile_manager_.GetFilepath(fileid).c_str());
       if (std::remove(logfile_manager_.GetFilepath(fileid).c_str()) != 0) {
-        LOG_EMERG("Compaction()", "Could not remove file");
+        LOG_EMERG("Compaction()", "Could not remove file [%s]", logfile_manager_.GetFilepath(fileid).c_str());
       }
     }
 
