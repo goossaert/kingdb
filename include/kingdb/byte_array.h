@@ -117,7 +117,8 @@ class Mmap {
                                        0));
     if (datafile_ == MAP_FAILED) {
       // TODO-3: fix how errors are managed here
-      LOG_EMERG("Could not mmap() file: %s", strerror(errno));
+      std::string message("Could not mmap() file: " + filepath);
+      LOG_EMERG(message.c_str(), strerror(errno));
       exit(-1);
     }
   }

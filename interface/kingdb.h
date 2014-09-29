@@ -17,6 +17,8 @@
 #include "kingdb/common.h"
 #include "kingdb/byte_array.h"
 #include "kingdb/options.h"
+#include "interface/iterator.h"
+#include "interface/snapshot.h"
 
 #include "util/compressor.h"
 #include "util/crc32c.h"
@@ -58,6 +60,8 @@ class KingDB: public Interface {
                           uint64_t offset_chunk,
                           uint64_t size_value) override;
   virtual Status Remove(WriteOptions& write_options, ByteArray *key) override;
+  virtual Interface* NewSnapshot() override;
+  virtual Iterator* NewIterator(ReadOptions& read_options) override { return nullptr; };
 
  private:
   // TODO-6: Make sure that if multiple threads are creating KingDB objects with

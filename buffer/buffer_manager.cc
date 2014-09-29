@@ -6,6 +6,19 @@
 
 namespace kdb {
 
+void BufferManager::Flush() {
+  LOG_DEBUG("LOCK", "2 lock");
+  std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
+  // NOTE: Doing the flushing and waiting twice, in case the two buffers,
+  // 'live' and 'copy', have items. This is a quick hack and a better
+  // solution should be investigated.
+  for (auto i = 0; i < 2; i++) {
+    cv_flush_.notify_one();
+    cv_flush_done_.wait_for(lock_flush, std::chrono::milliseconds(5000));
+  }
+  LOG_TRACE("BufferManager::Flush()", "end");
+}
+
 Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
   // TODO: need to fix the way the value is returned here: to create a new
   //       memory space and then return.
@@ -313,6 +326,7 @@ void BufferManager::ProcessingLoop() {
     mutex_copy_write_level4_.unlock();
     LOG_DEBUG("LOCK", "4 unlock");
     LOG_DEBUG("LOCK", "2 unlock");
+    cv_flush_done_.notify_all();
   }
 }
 

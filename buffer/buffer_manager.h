@@ -45,6 +45,7 @@ class BufferManager {
                   uint64_t size_value_compressed,
                   uint32_t crc32);
   Status Remove(WriteOptions& write_options, ByteArray* key);
+  void Flush();
 
 
  private:
@@ -74,6 +75,7 @@ class BufferManager {
   std::mutex mutex_copy_write_level4_;
   std::mutex mutex_copy_read_level5_;
   std::condition_variable cv_flush_;
+  std::condition_variable cv_flush_done_;
   std::condition_variable cv_read_;
 
   // buffer handler

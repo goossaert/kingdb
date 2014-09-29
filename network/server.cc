@@ -166,6 +166,8 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
           }
 
           if (!value->is_compressed()) {
+            // is this condition really necessary? can't the 'compressed' code
+            // block also handle this as well?
             char *chunk;
             uint64_t size_chunk;
             s = value->data_chunk(&chunk, &size_chunk);

@@ -9,6 +9,7 @@
 #include "util/status.h"
 #include "kingdb/common.h"
 #include "kingdb/byte_array.h"
+#include "interface/iterator.h"
 
 namespace kdb {
 
@@ -22,6 +23,8 @@ class Interface {
                           uint64_t offset_chunk,
                           uint64_t size_value) = 0;
   virtual Status Remove(WriteOptions& write_options, ByteArray *key) = 0;
+  virtual Interface* NewSnapshot() = 0;
+  virtual Iterator* NewIterator(ReadOptions& read_options) = 0;
 
 };
 

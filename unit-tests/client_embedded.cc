@@ -22,10 +22,14 @@
 #include "kingdb/common.h"
 #include "kingdb/byte_array.h"
 
+#include "interface/snapshot.h"
+#include "interface/iterator.h"
+
 
 
 int main() {
   ProfilerStart("/tmp/kingdb.prof");
+  kdb::Logger::set_current_level("trace");
 
   kdb::DatabaseOptions options;
   kdb::KingDB db(options, "mydb");
@@ -40,7 +44,7 @@ int main() {
   }
   buffer_large[size] = '\0';
 
-  int num_items = 1000000;
+  int num_items = 1000;
   std::vector<std::string> items;
   int size_key = 16;
   
@@ -66,6 +70,36 @@ int main() {
   std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
   uint64_t duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
   std::cout << "done in " << duration << " ms" << std::endl;
+
+  kdb::Interface *snapshot = db.NewSnapshot();
+  kdb::Iterator *iterator = snapshot->NewIterator(read_options);
+
+  auto count_items = 0;
+  for (iterator->Begin(); iterator->IsValid(); iterator->Next()) {
+    std::cout << "key: " << iterator->GetKey()->ToString() << std::endl;
+    std::cout << "value: ";
+
+    kdb::ByteArray *value = iterator->GetValue();
+    char *chunk;
+    uint64_t size_chunk;
+    kdb::Status s;
+    while (true) {
+      s = value->data_chunk(&chunk, &size_chunk);
+      if (s.IsDone()) break;
+      if (!s.IsOK()) {
+        delete[] chunk;
+        fprintf(stderr, "ClientEmbedded - Error - data_chunk(): %s", s.ToString().c_str());
+        break;
+      }
+      std::cout << std::string(chunk, size_chunk);
+      delete[] chunk;
+    }
+    std::cout << std::endl;
+    std::cout << std::endl;
+    count_items += 1;
+  }
+
+  std::cout << "count items: " << count_items << std::endl;
   delete[] buffer_large;
   ProfilerStop();
   ProfilerFlush();
