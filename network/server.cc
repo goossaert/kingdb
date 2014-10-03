@@ -33,7 +33,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   ReadOptions read_options;
   WriteOptions write_options;
 
-  while(true) {
+  while (!IsStopRequested()) {
         
     // Receive the data
     LOG_TRACE("NetworkTask", "looping...");
@@ -344,6 +344,22 @@ Status Server::Start(DatabaseOptions& options,
                      int port,
                      int backlog,
                      int num_threads) {
+  options_ = options;
+  dbname_ = dbname;
+  port_ = port;
+  backlog_ = backlog;
+  num_threads_ = num_threads;
+  thread_network_ = std::thread(&Server::AcceptNetworkTraffic, this);
+  return Status::OK();
+}
+
+void Server::AcceptNetworkTraffic() {
+
+  // Create the database object and the thread pool
+  db_ = new kdb::KingDB(options_, dbname_);
+  tp_ = new ThreadPool(num_threads_);
+  tp_->Start();
+  LOG_TRACE("Server", "waiting for connections...");
 
   // Ignoring SIGPIPE, which would crash the program when writing to
   // a broken socket -- doing this because MSG_NOSIGNAL doesn't work on Mac OS X
@@ -354,10 +370,10 @@ Status Server::Start(DatabaseOptions& options,
   ai_hints.ai_family = AF_UNSPEC;
   ai_hints.ai_socktype = SOCK_STREAM;
   ai_hints.ai_flags = AI_PASSIVE;
-  std::string str_port = std::to_string(port);
+  std::string str_port = std::to_string(port_);
   int ret;
   if ((ret = getaddrinfo(NULL, str_port.c_str(), &ai_hints, &ai_server)) != 0) {
-    return Status::IOError("Server - getaddrinfo", gai_strerror(ret));
+    return;// Status::IOError("Server - getaddrinfo", gai_strerror(ret));
   }
 
   // Bind to the first result
@@ -370,7 +386,7 @@ Status Server::Start(DatabaseOptions& options,
     int setsockopt_yes=1;
     if (setsockopt(sockfd_listen, SOL_SOCKET, SO_REUSEADDR, &setsockopt_yes, sizeof(setsockopt_yes)) == -1) {
       close(sockfd_listen);
-      return Status::IOError("Server - setsockopt", strerror(errno));
+      return;// Status::IOError("Server - setsockopt", strerror(errno));
     }
 
     if (bind(sockfd_listen, ai_ptr->ai_addr, ai_ptr->ai_addrlen) == -1) {
@@ -381,25 +397,21 @@ Status Server::Start(DatabaseOptions& options,
     break;
   }
 
-  if (ai_ptr == NULL) return Status::IOError("Server - Failed to bind");
+  if (ai_ptr == NULL) return;// Status::IOError("Server - Failed to bind");
   freeaddrinfo(ai_server);
 
-  if (listen(sockfd_listen, backlog) == -1) {
-    return Status::IOError("Server - listen", strerror(errno));
+  if (listen(sockfd_listen, backlog_) == -1) {
+    return;// Status::IOError("Server - listen", strerror(errno));
   }
 
-  // Create the database object and the thread pool
-  kdb::KingDB db(options, dbname);
-  ThreadPool tp(num_threads);
-  tp.Start();
-  LOG_TRACE("Server", "waiting for connections...");
+  sockfd_listen_ = sockfd_listen;
 
   // Start accepting connections
   int sockfd_accept;
   struct sockaddr_storage sockaddr_client;
   socklen_t size_sa;
   char address[INET6_ADDRSTRLEN];
-  while(1) {
+  while (!IsStopRequested()) {
     size_sa = sizeof(sockaddr_client);
     sockfd_accept = accept(sockfd_listen, (struct sockaddr *)&sockaddr_client, &size_sa);
     if (sockfd_accept == -1) continue;
@@ -410,10 +422,8 @@ Status Server::Start(DatabaseOptions& options,
               sizeof(address));
     LOG_TRACE("Server", "got connection from %s\n", address);
 
-    tp.AddTask(new NetworkTask(sockfd_accept, &db));
+    tp_->AddTask(new NetworkTask(sockfd_accept, db_));
   }
-
-  return Status::OK();
 }
 
-}
+} // end of namespace kdb

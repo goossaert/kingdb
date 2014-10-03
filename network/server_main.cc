@@ -21,7 +21,11 @@ void increase_limit_open_files() {
   }
 }
 
+bool stop_requested = false;
 
+void sigint_handler(int signal) {
+  stop_requested = true; 
+}
 
 int main(int argc, char** argv) {
   if (argc == 1) {
@@ -83,7 +87,13 @@ int main(int argc, char** argv) {
   kdb::DatabaseOptions options;
   options.compression = ctype;
 
+  signal(SIGINT, sigint_handler);
   kdb::Server server;
   server.Start(options, dbname, port, backlog, num_threads);
+  while (!stop_requested) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000*1000));
+  }
+  fprintf(stderr, "SIGINT received...\n");
+  server.Stop();
   return 0;
 }

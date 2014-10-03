@@ -4,8 +4,8 @@ INCLUDES=-I/opt/local/include/ -I. -I./include/
 LDFLAGS=-g -lprofiler
 LDFLAGS_CLIENT=-g -L/opt/local/lib/ -lmemcached -lprofiler -fPIC 
 SOURCES=interface/kingdb.cc util/logger.cc util/status.cc network/server.cc buffer/buffer_manager.cc thread/event_manager.cc util/compressor.cc util/murmurhash3.cc util/xxhash.cc util/crc32c.cc util/lz4.cc util/hash.cc util/coding.cc
-SOURCES_MAIN=network/main.cc
-SOURCES_CLIENT=network/client.cc
+SOURCES_MAIN=network/server_main.cc
+SOURCES_CLIENT=network/client_main.cc
 SOURCES_CLIENT_EMB=unit-tests/client_embedded.cc
 SOURCES_TEST_COMPRESSION=unit-tests/test_compression.cc
 OBJECTS=$(SOURCES:.cc=.o)

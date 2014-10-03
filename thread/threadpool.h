@@ -16,10 +16,13 @@ namespace kdb {
 
 class Task {
  public:
-  Task() {}
+  Task():stop_requested_(false) {}
   virtual ~Task() {}
   virtual void RunInLock(std::thread::id tid) = 0;
   virtual void Run(std::thread::id tid, uint64_t id) = 0;
+  bool IsStopRequested() { return stop_requested_; }
+  void Stop() { stop_requested_ = true; }
+  bool stop_requested_;
 };
 
 
@@ -29,43 +32,46 @@ class ThreadPool {
  // TODO: What if a run() method throws an exception? => force it to be noexcept?
  // TODO: Impose limit on number of items in queue -- for thread pool over
  //       sockets, the queue should be of size 0
- // TODO: Implement the stop method and make the worker listen to it and force
- //       them to stop when required.
- // TODO: Make sure all variables and methods follow the naming convention
+ // TODO: Verify that the Stop() method on the tasks makes the workers stop as
+ //       expected.
+ // TODO: Protect accesses to tid_to_id_ and tid_to_task_ with mutexes
  public:
   int num_threads_; 
   std::queue<Task*> queue_;
   std::condition_variable cv_;
   std::mutex mutex_;
   std::vector<std::thread> threads_;
-  std::map<std::thread::id, uint64_t> tid_to_id;
+  std::map<std::thread::id, uint64_t> tid_to_id_;
+  std::map<std::thread::id, Task*> tid_to_task_;
   uint64_t seq_id;
+  bool stop_requested_;
 
   ThreadPool(int num_threads) {
     num_threads_ = num_threads;
     seq_id = 0;
+    stop_requested_ = false;
   }
 
   ~ThreadPool() {
-    for (auto& t: threads_) {
-      t.join();
-    }
   }
 
   void ProcessingLoop() {
-    while (true) {
+    while (!IsStopRequested()) {
       std::unique_lock<std::mutex> lock(mutex_);
       if (queue_.size() == 0) {
         cv_.wait(lock);
+        if (IsStopRequested()) break;
       }
       auto task = queue_.front();
       queue_.pop();
       auto tid = std::this_thread::get_id();
-      auto it_find = tid_to_id.find(tid);
-      if (it_find == tid_to_id.end()) tid_to_id[tid] = seq_id++;
+      auto it_find = tid_to_id_.find(tid);
+      if (it_find == tid_to_id_.end()) tid_to_id_[tid] = seq_id++;
+      tid_to_task_[tid] = task;
       task->RunInLock(tid);
       lock.unlock();
-      task->Run(tid, tid_to_id[tid]);
+      task->Run(tid, tid_to_id_[tid]);
+      tid_to_task_.erase(tid);
       delete task;
     }
   }
@@ -76,19 +82,38 @@ class ThreadPool {
       cv_.notify_one();
   }
 
-  int Start() {
+  void Start() {
     // NOTE: Should each thread run the loop, or should the loop be running in a
     //       main thread that is then dispatching work by notifying other
     //       threads?
     for (auto i = 0; i < num_threads_; i++) {
       threads_.push_back(std::thread(&ThreadPool::ProcessingLoop, this));
     }
-    return 0;
   }
 
-  int Stop() {
-    return 0;
+  void Stop() {
+    stop_requested_ = true;
+    for (auto& tid_task: tid_to_task_) {
+      Task* task = tid_task.second;
+      task->Stop();
+    }
+    cv_.notify_all();
+    for (auto& t: threads_) {
+      t.join();
+    }
   }
+
+  void BlockUntilAllTasksHaveCompleted() {
+    while (queue_.size() > 0) { // TODO: protect accesses to queue_ with a mutex
+      std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+    Stop();
+  }
+
+  bool IsStopRequested() {
+    return stop_requested_;
+  }
+
 
 };
 

@@ -34,22 +34,13 @@ class KingDB: public Interface {
         bm_(db_options),
         se_(db_options, dbname)
   {
-    self_ = this;
-    signal(SIGINT, SigIntHandlerStatic);
-
     // Word-swapped endianness is not supported
     assert(getEndianness() == kBytesLittleEndian || getEndianness() == kBytesBigEndian);
   }
   virtual ~KingDB() {}
 
-  static void SigIntHandlerStatic(int signal) {
-    KingDB::self_->SigIntHandler(signal);
-  }
-
-  void SigIntHandler(int signal) {
-    // TODO: this should be handled in the user program, not here.
+  void Close() {
     se_.Close();
-    exit(0);
   }
 
   virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override;

@@ -57,15 +57,42 @@ class NetworkTask: public Task {
 
 class Server {
  public:
+  Server()
+      : stop_requested_(false),
+        tp_(nullptr),
+        db_(nullptr)
+  {}
+
   Status Start(DatabaseOptions& options,
                std::string& dbname,
                int port,
                int backlog,
                int num_threads);
+  void AcceptNetworkTraffic();
+  bool IsStopRequested() { return stop_requested_; }
+  void Stop() {
+    stop_requested_ = true;
+    tp_->Stop();
+    db_->Close();
+  }
+
+
  private:
   void* GetSockaddrIn(struct sockaddr *sa);
+  bool stop_requested_;
+  std::thread thread_network_;
+  int sockfd_listen_;
+
+  DatabaseOptions options_;
+  std::string dbname_;
+  int port_;
+  int backlog_;
+  int num_threads_;
+
+  kdb::KingDB* db_;
+  ThreadPool *tp_;
 };
 
-}
+} // end of namespace kdb
 
 #endif // KINGDB_SERVER_H_
