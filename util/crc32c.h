@@ -71,7 +71,8 @@ ulong Combine(ulong crc1, ulong crc2, ulong len2);
 class CRC32 {
  public:
   CRC32() {}
-  ~CRC32() {}
+  ~CRC32() {
+  }
 
   // Added an empty copy assignment operator to avoid error messages of the type:
   // "object of type '...' cannot be assigned because its copy assignment
@@ -82,7 +83,7 @@ class CRC32 {
   }
 
   void stream(const char* data, size_t n) {
-    LOG_TRACE("CRC32", "size: %zu", n);
+    //LOG_TRACE("CRC32", "size: %zu", n);
     uint64_t c = ts_.get();
     uint32_t c32 = c;
     uint32_t c_new = crc32c::Extend(c32, data, n);

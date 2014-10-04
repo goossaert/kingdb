@@ -23,11 +23,17 @@ class Iterator {
       : se_readonly_(se_readonly),
         read_options_(read_options),
         fileids_iterator_(fileids_iterator) {
-    LOG_TRACE("KingDB::NewIterator()", "start");
-    //Begin();
+    LOG_TRACE("Iterator::ctor()", "start");
   }
 
   ~Iterator() {
+    LOG_EMERG("Iterator::dtor()", "call");
+    if (key_ != nullptr) {
+      delete key_;
+      delete value_;
+      key_ = nullptr;
+      value_ = nullptr;
+    }
   }
 
   void Begin() {
@@ -57,7 +63,7 @@ class Iterator {
     if (!is_valid_) return false;
     Status s;
 
-    while (1) { 
+    while (true) { 
       if (key_ != nullptr) {
         delete key_;
         delete value_;

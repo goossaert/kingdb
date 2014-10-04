@@ -7,6 +7,7 @@
 namespace kdb {
 
 void BufferManager::Flush() {
+  if (IsStopRequested()) return;
   LOG_DEBUG("LOCK", "2 lock");
   std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
   // NOTE: Doing the flushing and waiting twice, in case the two buffers,
@@ -29,6 +30,7 @@ Status BufferManager::Get(ReadOptions& read_options, ByteArray* key, ByteArray**
   //       be found in the buffers -- should the kv-store return "not found"
   //       or should it try to send the data from the disk and the partially
   //       available chunks in the buffer?
+  if (IsStopRequested()) return Status::IOError("Cannot handle request: BufferManager is closing");
 
   // read the "live" buffer
   mutex_live_write_level1_.lock();
@@ -154,12 +156,15 @@ Status BufferManager::WriteChunk(const OrderType& op,
                                  uint64_t size_value,
                                  uint64_t size_value_compressed,
                                  uint32_t crc32) {
+  if (IsStopRequested()) return Status::IOError("Cannot handle request: BufferManager is closing");
   LOG_DEBUG("LOCK", "1 lock");
   std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
   //if (key.size() + value.size() > buffer_size_) {
   //  return Status::InvalidArgument("Entry is too large.");
   //}
-  LOG_TRACE("BufferManager", "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d", key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
+  LOG_TRACE("BufferManager::WriteChunk()",
+            "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d",
+            key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
 
   // not sure if I should add the item then test, or test then add the item
   buffers_[im_live_].push_back(Order{std::this_thread::get_id(),
@@ -177,10 +182,12 @@ Status BufferManager::WriteChunk(const OrderType& op,
 
   if (buffers_[im_live_].size()) {
     for(auto &p: buffers_[im_live_]) {   
-      LOG_TRACE("BufferManager", "Write() ITEM key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
+      LOG_TRACE("BufferManager::WriteChunk()",
+                "Write() ITEM key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d",
+                p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
     }
   } else {
-    LOG_TRACE("BufferManager", "Write() ITEM no buffers_[im_live_]");
+    LOG_TRACE("BufferManager::WriteChunk()", "Write() ITEM no buffers_[im_live_]");
   }
   /*
   */
@@ -216,27 +223,27 @@ Status BufferManager::WriteChunk(const OrderType& op,
   */
 
   if (sizes_[im_live_] > buffer_size_ || force_swap_) {
-    LOG_TRACE("BufferManager", "trying to swap");
+    LOG_TRACE("BufferManager::WriteChunk()", "trying to swap");
     // TODO: play with the mutex_flush_, try to keep it before the
     // if(can_swap_) or inside the if(can_swap_)
     LOG_DEBUG("LOCK", "2 lock");
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
     if (can_swap_) {
-      LOG_TRACE("BufferManager", "can_swap_ == true");
+      LOG_TRACE("BufferManager::WriteChunk()", "can_swap_ == true");
       LOG_DEBUG("LOCK", "3 lock");
       std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
-      LOG_TRACE("BufferManager", "Swap buffers");
+      LOG_TRACE("BufferManager::WriteChunk()", "Swap buffers");
       can_swap_ = false;
       force_swap_ = false;
       std::swap(im_live_, im_copy_);
       cv_flush_.notify_one();
       LOG_DEBUG("LOCK", "3 unlock");
     } else {
-      LOG_TRACE("BufferManager", "can_swap_ == false");
+      LOG_TRACE("BufferManager::WriteChunk()", "can_swap_ == false");
     }
     LOG_DEBUG("LOCK", "2 unlock");
   } else {
-    LOG_TRACE("BufferManager", "will not swap");
+    LOG_TRACE("BufferManager::WriteChunk()", "will not swap");
   }
 
   LOG_DEBUG("LOCK", "1 unlock");
@@ -270,6 +277,8 @@ void BufferManager::ProcessingLoop() {
         force_swap_ = false;
         std::swap(im_live_, im_copy_);
         break;
+      } else if (IsStopRequested()) {
+        return;
       }
     }
 

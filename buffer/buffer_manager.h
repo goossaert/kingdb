@@ -21,7 +21,8 @@ namespace kdb {
 class BufferManager {
  public:
   BufferManager(const DatabaseOptions& db_options)
-      : db_options_(db_options){
+      : db_options_(db_options) {
+    stop_requested_ = false;
     im_live_ = 0;
     im_copy_ = 1;
     sizes_[im_live_] = 0;
@@ -31,10 +32,9 @@ class BufferManager {
     force_swap_ = false; // forces swapping
     buffer_size_ = SIZE_BUFFER_WRITE;
     thread_buffer_handler_ = std::thread(&BufferManager::ProcessingLoop, this);
+    is_closed_ = false;
   }
-  ~BufferManager() {}
-
-
+  ~BufferManager() { Close(); }
   Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out);
   Status Put(WriteOptions& write_options, ByteArray* key, ByteArray* chunk);
   Status PutChunk(WriteOptions& write_options,
@@ -47,6 +47,17 @@ class BufferManager {
   Status Remove(WriteOptions& write_options, ByteArray* key);
   void Flush();
 
+  void Close () {
+    std::unique_lock<std::mutex> lock(mutex_close_);
+    if (is_closed_) return;
+    is_closed_ = true;
+    Stop();
+    thread_buffer_handler_.join();
+  }
+
+  bool IsStopRequested() { return stop_requested_; }
+  void Stop() { stop_requested_ = true; }
+  bool stop_requested_;
 
  private:
   Status WriteChunk(const OrderType& op,
@@ -67,6 +78,8 @@ class BufferManager {
   bool force_swap_;
   std::array<std::vector<Order>, 2> buffers_;
   std::array<int, 2> sizes_;
+  bool is_closed_;
+  std::mutex mutex_close_;
 
   // Using a lock hierarchy to avoid deadlock
   std::mutex mutex_live_write_level1_;

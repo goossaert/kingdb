@@ -56,6 +56,7 @@ Status CompressorLZ4::Uncompress(char *source,
                                  ) {
   uint64_t offset_uncompress = ts_uncompress_.get();
   LOG_TRACE("CompressorLZ4::Uncompress()", "in %llu %llu", offset_uncompress, size_source_total);
+  *dest = nullptr;
   if (offset_uncompress == size_source_total) return Status::Done();
 
   uint32_t size_source, size_compressed;
@@ -74,6 +75,7 @@ Status CompressorLZ4::Uncompress(char *source,
                                         size_source);
   if (ret <= 0) {
     delete[] (*dest);
+    *dest = nullptr;
     return Status::IOError("LZ4_decompress_safe_partial() failed");
   }
 
@@ -81,7 +83,7 @@ Status CompressorLZ4::Uncompress(char *source,
 
   *frame_out = source + offset_uncompress;
   *size_frame_out = size_compressed + 8;
-  LOG_TRACE("data_chunk()", "crc32:0x%llx frame_ptr:%p frame_size:%llu", crc32_.get(), *frame_out, *size_frame_out);
+  LOG_TRACE("CompressorLZ4::Uncompress()", "crc32:0x%llx frame_ptr:%p frame_size:%llu", crc32_.get(), *frame_out, *size_frame_out);
 
   offset_uncompress += size_compressed + 8;
   ts_uncompress_.put(offset_uncompress);

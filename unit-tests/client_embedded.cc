@@ -11,6 +11,7 @@
 #include <string>
 #include <cstdio>
 #include <string.h>
+#include <execinfo.h>
 #include <chrono>
 #include <sstream>
 
@@ -26,9 +27,23 @@
 #include "interface/iterator.h"
 
 
+void handler(int sig) {
+  int depth_max = 20;
+  void *array[depth_max];
+  size_t depth;
+
+  depth = backtrace(array, depth_max);
+  fprintf(stderr, "Error: signal %d:\n", sig);
+  backtrace_symbols_fd(array, depth, STDERR_FILENO);
+  exit(1);
+}
 
 int main() {
   ProfilerStart("/tmp/kingdb.prof");
+
+  signal(SIGSEGV, handler);
+  signal(SIGABRT, handler);
+
   kdb::Logger::set_current_level("trace");
 
   kdb::DatabaseOptions options;
@@ -44,7 +59,7 @@ int main() {
   }
   buffer_large[size] = '\0';
 
-  int num_items = 1000;
+  int num_items = 10;
   std::vector<std::string> items;
   int size_key = 16;
   
@@ -76,8 +91,8 @@ int main() {
 
   auto count_items = 0;
   for (iterator->Begin(); iterator->IsValid(); iterator->Next()) {
-    std::cout << "key: " << iterator->GetKey()->ToString() << std::endl;
-    std::cout << "value: ";
+    //std::cout << "key: " << iterator->GetKey()->ToString() << std::endl;
+    //std::cout << "value: ";
 
     kdb::ByteArray *value = iterator->GetValue();
     char *chunk;
@@ -91,13 +106,16 @@ int main() {
         fprintf(stderr, "ClientEmbedded - Error - data_chunk(): %s", s.ToString().c_str());
         break;
       }
-      std::cout << std::string(chunk, size_chunk);
+      //std::cout << std::string(chunk, size_chunk);
       delete[] chunk;
     }
-    std::cout << std::endl;
-    std::cout << std::endl;
+    //std::cout << std::endl;
+    //std::cout << std::endl;
     count_items += 1;
   }
+
+  delete iterator;
+  delete snapshot;
 
   std::cout << "count items: " << count_items << std::endl;
   delete[] buffer_large;

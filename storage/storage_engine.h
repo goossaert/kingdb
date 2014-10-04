@@ -156,13 +156,13 @@ class LogfileManager {
   }
 
   void Close() {
-    if (is_read_only_ == false && !is_closed_) {
-      is_closed_ = true;
-      FlushCurrentFile();
-      CloseCurrentFile();
-      delete[] buffer_raw_;
-      delete[] buffer_index_;
-    }
+    std::unique_lock<std::mutex> lock(mutex_close_);
+    if (is_read_only_ || is_closed_) return;
+    is_closed_ = true;
+    FlushCurrentFile();
+    CloseCurrentFile();
+    delete[] buffer_raw_;
+    delete[] buffer_index_;
   }
 
   std::string GetPrefix() {
@@ -231,7 +231,7 @@ class LogfileManager {
   void OpenNewFile() {
     filepath_ = GetFilepath(GetSequenceFileId());
     if ((fd_ = open(filepath_.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-      LOG_EMERG("StorageEngine::ProcessingLoopData()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
+      LOG_EMERG("StorageEngine::OpenNewFile()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
       exit(-1); // TODO-3: gracefully handle open() errors
     }
     has_file_ = true;
@@ -250,22 +250,25 @@ class LogfileManager {
   }
 
   void CloseCurrentFile() {
-    LOG_TRACE("LogfileManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
-    FlushLogIndex();
-    close(fd_);
-    IncrementSequenceFileId(1);
-    IncrementSequenceTimestamp(1);
-    buffer_has_items_ = false;
-    has_file_ = false;
+    if (has_file_) {
+      LOG_TRACE("LogfileManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
+      FlushLogIndex();
+      close(fd_);
+      IncrementSequenceFileId(1);
+      IncrementSequenceTimestamp(1);
+      buffer_has_items_ = false;
+      has_file_ = false;
+    }
   }
 
   uint32_t FlushCurrentFile(int force_new_file=0, uint64_t padding=0) {
+    if (!has_file_) return 0;
     uint32_t fileid_out = fileid_;
     LOG_TRACE("LogfileManager::FlushCurrentFile()", "ENTER - fileid_:%d, has_file_:%d, buffer_has_items_:%d", fileid_, has_file_, buffer_has_items_);
     if (has_file_ && buffer_has_items_) {
       LOG_TRACE("LogfileManager::FlushCurrentFile()", "has_files && buffer_has_items_ - fileid_:%d", fileid_);
       if (write(fd_, buffer_raw_ + offset_start_, offset_end_ - offset_start_) < 0) {
-        LOG_TRACE("StorageEngine::ProcessingLoopData()", "Error write(): %s", strerror(errno));
+        LOG_TRACE("StorageEngine::FlushCurrentFile()", "Error write(): %s", strerror(errno));
       }
       file_resource_manager.SetFileSize(fileid_, offset_end_);
       offset_start_ = offset_end_;
@@ -539,7 +542,7 @@ class LogfileManager {
 
       if (!order.IsSelfContained()) {
         key_to_headersize[order.tid][order.key->ToString()] = size_header;
-        LOG_TRACE("StorageEngine::ProcessingLoopData()", "BEFORE fileid_ %u", fileid_);
+        LOG_TRACE("StorageEngine::WriteFirstChunkOrSmallOrder()", "BEFORE fileid_ %u", fileid_);
         file_resource_manager.SetNumWritesInProgress(fileid_, 1);
         FlushCurrentFile(0, order.size_value - order.chunk->size());
         // NOTE: A better way to do it would be to copy things into the buffer, and
@@ -553,11 +556,11 @@ class LogfileManager {
         //FlushCurrentFile();
         //ftruncate(fd_, offset_end_);
         //lseek(fd_, 0, SEEK_END);
-        LOG_TRACE("StorageEngine::ProcessingLoopData()", "AFTER fileid_ %u", fileid_);
+        LOG_TRACE("StorageEngine::WriteFirstChunkOrSmallOrder()", "AFTER fileid_ %u", fileid_);
       }
-      LOG_TRACE("StorageEngine::ProcessingLoopData()", "Put [%s]", order.key->ToString().c_str());
+      LOG_TRACE("StorageEngine::WriteFirstChunkOrSmallOrder()", "Put [%s]", order.key->ToString().c_str());
     } else { // order.type == OrderType::Remove
-      LOG_TRACE("StorageEngine::ProcessingLoopData()", "Remove [%s]", order.key->ToString().c_str());
+      LOG_TRACE("StorageEngine::WriteFirstChunkOrSmallOrder()", "Remove [%s]", order.key->ToString().c_str());
       entry.SetTypeRemove();
       entry.SetEntryFull();
       entry.size_key = order.key->size();
@@ -671,7 +674,7 @@ class LogfileManager {
     struct stat info;
     if (   stat(dbname.c_str(), &info) != 0
         && db_options_.create_if_missing
-        && mkdir(dbname.c_str(), 0644) < 0) {
+        && mkdir(dbname.c_str(), 0755) < 0) {
       return Status::IOError("Could not create directory", strerror(errno));
     }
     
@@ -715,16 +718,16 @@ class LogfileManager {
       fileid = LogfileManager::hex_to_num(entry->d_name);
       if (   fileids_ignore != nullptr
           && fileids_ignore->find(fileid) != fileids_ignore->end()) {
-        LOG_TRACE("LoadDatabase()", "Skipping file in fileids_ignore:: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
+        LOG_TRACE("LogfileManager::LoadDatabase()", "Skipping file in fileids_ignore:: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
         continue;
       }
       if (fileid_end != 0 && fileid > fileid_end) {
-        LOG_TRACE("LoadDatabase()", "Skipping file with id larger than fileid_end (%u): [%s] [%lld] [%u]\n", fileid, entry->d_name, info.st_size, fileid);
+        LOG_TRACE("LogfileManager::LoadDatabase()", "Skipping file with id larger than fileid_end (%u): [%s] [%lld] [%u]\n", fileid, entry->d_name, info.st_size, fileid);
         continue;
       }
-      fprintf(stderr, "file: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
+      LOG_TRACE("LogfileManager::LoadDatabase()", "file: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
       if (info.st_size <= SIZE_LOGFILE_HEADER) {
-        fprintf(stderr, "file: [%s] only has a header or less, skipping\n", entry->d_name);
+        LOG_TRACE("LogfileManager::LoadDatabase()", "file: [%s] only has a header or less, skipping\n", entry->d_name);
         continue;
       }
 
@@ -732,7 +735,7 @@ class LogfileManager {
       struct LogFileHeader lfh;
       Status s = LogFileHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
       if (!s.IsOK()) {
-        fprintf(stderr, "file: [%s] has an invalid header, skipping\n", entry->d_name);
+        LOG_TRACE("LogfileManager::LoadDatabase()", "file: [%s] has an invalid header, skipping\n", entry->d_name);
         continue;
       }
 
@@ -893,8 +896,9 @@ class LogfileManager {
   // Options
   DatabaseOptions db_options_;
   Hash *hash_;
-  bool is_closed_;
   bool is_read_only_;
+  bool is_closed_;
+  std::mutex mutex_close_;
 
   uint32_t fileid_;
   uint32_t sequence_fileid_;
@@ -937,7 +941,7 @@ class StorageEngine {
  public:
   StorageEngine(DatabaseOptions db_options,
                 std::string dbname,
-                bool read_only=false, // TODO: this should be part of db_options
+                bool read_only=false, // TODO: this should be part of db_options -- sure about that? what options are stored on disk?
                 std::set<uint32_t>* fileids_ignore=nullptr,
                 uint32_t fileid_end=0)
       : db_options_(db_options),
@@ -950,6 +954,8 @@ class StorageEngine {
     num_readers_ = 0;
     is_compaction_in_progress_ = false;
     sequence_snapshot_ = 0;
+    stop_requested_ = false;
+    is_closed_ = false;
     if (!is_read_only_) {
       thread_index_ = std::thread(&StorageEngine::ProcessingLoopIndex, this);
       thread_data_ = std::thread(&StorageEngine::ProcessingLoopData, this);
@@ -964,31 +970,51 @@ class StorageEngine {
     logfile_manager_.LoadDatabase(dbname, index_, fileids_ignore_, fileid_end, fileids_iterator_);
   }
 
-  ~StorageEngine() {
-    if (!is_read_only_) {
-      thread_index_.join();
-      thread_data_.join();
-      thread_compaction_.join();
-    }
-    if (fileids_ignore_ == nullptr) {
-      delete fileids_ignore_; 
-    }
-    if (fileids_iterator_ == nullptr) {
-      delete fileids_iterator_; 
-    }
-  }
+  ~StorageEngine() {}
 
   void Close() {
+    std::unique_lock<std::mutex> lock(mutex_close_);
+    if (is_closed_) return;
+    is_closed_ = true;
+
+    // TODO: force all Snapshots to release the files they are blocking, and
+    //       delete all files that were compacted and no longer used
+
     // Wait for readers to exit
     AcquireWriteLock();
     logfile_manager_.Close();
+    Stop();
     ReleaseWriteLock();
+
+    if (!is_read_only_) {
+      LOG_TRACE("StorageEngine::Close()", "join start");
+      EventManager::update_index.NotifyWait();
+      EventManager::flush_buffer.NotifyWait();
+      thread_index_.join();
+      thread_data_.join();
+      thread_compaction_.join();
+      LOG_TRACE("StorageEngine::Close()", "join end");
+    }
+
+    if (fileids_ignore_ != nullptr) {
+      delete fileids_ignore_; 
+    }
+
+    if (fileids_iterator_ != nullptr) {
+      delete fileids_iterator_; 
+    }
+
+
     LOG_TRACE("StorageEngine::Close()", "done");
   }
 
+  bool IsStopRequested() { return stop_requested_; }
+  void Stop() { stop_requested_ = true; }
+
+
   void ProcessingLoopCompaction() {
     // TODO: have the compaction loop actually do the right thing
-    std::chrono::milliseconds duration(10000);
+    std::chrono::milliseconds duration(200);
     std::chrono::milliseconds forever(100000000000000000);
     while(true) {
       struct stat info;
@@ -997,6 +1023,7 @@ class StorageEngine {
         Compaction(dbname_, 1, seq+1); 
         std::this_thread::sleep_for(forever);
       }
+      if (IsStopRequested()) return;
       std::this_thread::sleep_for(duration);
     }
   }
@@ -1006,6 +1033,7 @@ class StorageEngine {
       // Wait for orders to process
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "start");
       std::vector<Order> orders = EventManager::flush_buffer.Wait();
+      if (IsStopRequested()) return;
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "got %d orders", orders.size());
 
       // Process orders, and create update map for the index
@@ -1023,6 +1051,7 @@ class StorageEngine {
     while(true) {
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "start");
       std::multimap<uint64_t, uint64_t> index_updates = EventManager::update_index.Wait();
+      if (IsStopRequested()) return;
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "got index_updates");
       mutex_index_.lock();
 
@@ -1367,7 +1396,7 @@ class StorageEngine {
       struct stat info;
       std::string filepath = logfile_manager_.GetFilepath(fileid);
       if (stat(filepath.c_str(), &info) != 0 || !(info.st_mode & S_IFREG)) {
-        fprintf(stderr, "Error during compaction with file [%s]", filepath.c_str());
+        LOG_EMERG("Compaction()", "Error during compaction with file [%s]", filepath.c_str());
       }
       Mmap *mmap = new Mmap(filepath.c_str(), info.st_size);
       mmaps[fileid] = mmap;
@@ -1632,6 +1661,7 @@ class StorageEngine {
   }
 
   // START: Helpers for Snapshots
+  // Caller must delete fileids_ignore
   Status GetNewSnapshotData(uint32_t *snapshot_id, std::set<uint32_t> **fileids_ignore) {
     std::unique_lock<std::mutex> lock(mutex_snapshot_);
     *snapshot_id = IncrementSequenceSnapshot(1);
@@ -1741,6 +1771,11 @@ class StorageEngine {
   std::mutex mutex_sequence_snapshot_;
   uint32_t sequence_snapshot_;
   std::vector<uint32_t> *fileids_iterator_;
+
+  // Stopping and closing
+  bool stop_requested_;
+  bool is_closed_;
+  std::mutex mutex_close_;
 };
 
 };

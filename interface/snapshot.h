@@ -29,25 +29,35 @@ class Snapshot: public Interface {
         se_live_(se_live),
         se_readonly_(se_readonly),
         snapshot_id_(snapshot_id),
-        fileids_iterator_(fileids_iterator)
+        fileids_iterator_(fileids_iterator),
+        is_closed_(false)
   {
   }
 
-  ~Snapshot() {
+  virtual ~Snapshot() {
+    LOG_EMERG("Snapshot::dtor()", "call");
+    Close();
+  }
+
+  virtual void Close() override {
+    std::unique_lock<std::mutex> lock(mutex_close_);
+    if (is_closed_) return;
+    is_closed_ = true;
+    delete fileids_iterator_;
     se_live_->ReleaseSnapshot(snapshot_id_);
     delete se_readonly_;
   }
 
-  virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override{
+  virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override {
     Status s = se_readonly_->Get(key, value_out);
     if (s.IsNotFound()) {
-      LOG_TRACE("KingDB Get()", "not found in storage engine");
+      LOG_TRACE("Snapshot::Get()", "not found in storage engine");
       return s;
     } else if (s.IsOK()) {
-      LOG_TRACE("KingDB Get()", "found in storage engine");
+      LOG_TRACE("Snapshot::Get()", "found in storage engine");
       return s;
     } else {
-      LOG_TRACE("KingDB Get()", "unidentified error");
+      LOG_TRACE("Snapshot::Get()", "unidentified error");
       return s;
     }
 
@@ -86,6 +96,8 @@ class Snapshot: public Interface {
   kdb::StorageEngine* se_readonly_;
   uint32_t snapshot_id_;
   std::vector<uint32_t>* fileids_iterator_;
+  bool is_closed_;
+  std::mutex mutex_close_;
 };
 
 } // end namespace kdb

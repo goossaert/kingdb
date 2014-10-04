@@ -26,20 +26,30 @@
 
 namespace kdb {
 
+// TODO: Add Flush() method?
+
 class KingDB: public Interface {
  public:
   KingDB(const DatabaseOptions& db_options, const std::string dbname)
       : db_options_(db_options),
         dbname_(dbname),
         bm_(db_options),
-        se_(db_options, dbname)
+        se_(db_options, dbname),
+        is_closed_(false)
   {
     // Word-swapped endianness is not supported
     assert(getEndianness() == kBytesLittleEndian || getEndianness() == kBytesBigEndian);
   }
-  virtual ~KingDB() {}
 
-  void Close() {
+  virtual ~KingDB() {
+    Close();
+  }
+
+  virtual void Close() override {
+    std::unique_lock<std::mutex> lock(mutex_close_);
+    if (is_closed_) return;
+    is_closed_ = true;
+    bm_.Close();
     se_.Close();
   }
 
@@ -60,12 +70,12 @@ class KingDB: public Interface {
   //         manager and storage engine.
   kdb::DatabaseOptions db_options_;
   std::string dbname_;
-  std::mutex mutex_;
   kdb::BufferManager bm_;
   kdb::StorageEngine se_;
   kdb::CompressorLZ4 compressor_;
   kdb::CRC32 crc32_;
-  static KingDB* self_;
+  bool is_closed_;
+  std::mutex mutex_close_;
 };
 
 };

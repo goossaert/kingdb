@@ -15,6 +15,7 @@ namespace kdb {
 
 class Interface {
  public:
+  virtual ~Interface() {};
   virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) = 0;
   virtual Status Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk) = 0;
   virtual Status PutChunk(WriteOptions& write_options,
@@ -25,7 +26,7 @@ class Interface {
   virtual Status Remove(WriteOptions& write_options, ByteArray *key) = 0;
   virtual Interface* NewSnapshot() = 0;
   virtual Iterator* NewIterator(ReadOptions& read_options) = 0;
-
+  virtual void Close() = 0;
 };
 
 };
