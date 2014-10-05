@@ -137,8 +137,8 @@ class LogfileManager {
         prefix_(prefix) {
     LOG_TRACE("LogfileManager::LogfileManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
     dbname_ = dbname;
-    sequence_fileid_ = 1;
-    sequence_timestamp_ = 1;
+    sequence_fileid_ = 0;
+    sequence_timestamp_ = 0;
     size_block_ = SIZE_LOGFILE_TOTAL;
     has_file_ = false;
     buffer_has_items_ = false;
@@ -178,6 +178,7 @@ class LogfileManager {
   void SetSequenceFileId(uint32_t seq) {
     std::unique_lock<std::mutex> lock(mutex_sequence_fileid_);
     sequence_fileid_ = seq;
+    LOG_TRACE("LogfileManager::SetSequenceFileId", "seq:%u", seq);
   }
 
   uint32_t GetSequenceFileId() {
@@ -187,6 +188,7 @@ class LogfileManager {
 
   uint32_t IncrementSequenceFileId(uint32_t inc) {
     std::unique_lock<std::mutex> lock(mutex_sequence_fileid_);
+    LOG_TRACE("LogfileManager::IncrementSequenceFileId", "sequence_fileid_:%u, inc:%u", sequence_fileid_, inc);
     sequence_fileid_ += inc;
     return sequence_fileid_;
   }
@@ -229,7 +231,11 @@ class LogfileManager {
   }
 
   void OpenNewFile() {
+    LOG_EMERG("StorageEngine::OpenNewFile()", "Opening file [%s]: %u", filepath_.c_str(), GetSequenceFileId());
+    IncrementSequenceFileId(1);
+    IncrementSequenceTimestamp(1);
     filepath_ = GetFilepath(GetSequenceFileId());
+    LOG_EMERG("StorageEngine::OpenNewFile()", "Opening file [%s]: %u", filepath_.c_str(), GetSequenceFileId());
     if ((fd_ = open(filepath_.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
       LOG_EMERG("StorageEngine::OpenNewFile()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
       exit(-1); // TODO-3: gracefully handle open() errors
@@ -250,15 +256,14 @@ class LogfileManager {
   }
 
   void CloseCurrentFile() {
-    if (has_file_) {
-      LOG_TRACE("LogfileManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
-      FlushLogIndex();
-      close(fd_);
-      IncrementSequenceFileId(1);
-      IncrementSequenceTimestamp(1);
-      buffer_has_items_ = false;
-      has_file_ = false;
-    }
+    if (!has_file_) return;
+    LOG_TRACE("LogfileManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
+    FlushLogIndex();
+    close(fd_);
+    //IncrementSequenceFileId(1);
+    //IncrementSequenceTimestamp(1);
+    buffer_has_items_ = false;
+    has_file_ = false;
   }
 
   uint32_t FlushCurrentFile(int force_new_file=0, uint64_t padding=0) {
@@ -288,7 +293,7 @@ class LogfileManager {
       LOG_TRACE("LogfileManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
       file_resource_manager.SetFileSize(fileid_, offset_end_);
       CloseCurrentFile();
-      OpenNewFile();
+      //OpenNewFile();
     } else {
       //fileid_out = fileid_out - 1;
     }
@@ -298,6 +303,7 @@ class LogfileManager {
 
 
   Status FlushLogIndex() {
+    if (!has_file_) return Status::OK();
     uint64_t num = file_resource_manager.GetNumWritesInProgress(fileid_);
     LOG_TRACE("LogfileManager::FlushLogIndex()", "ENTER - fileid_:%d - num_writes_in_progress:%llu", fileid_, num);
     if (file_resource_manager.GetNumWritesInProgress(fileid_) == 0) {
@@ -771,8 +777,10 @@ class LogfileManager {
         }
       }
     }
-    SetSequenceFileId(fileid_max + 1);
-    SetSequenceTimestamp(timestamp_max + 1);
+    if (fileid_max > 0) {
+      SetSequenceFileId(fileid_max);
+      SetSequenceTimestamp(timestamp_max);
+    }
     closedir(directory);
     return Status::OK();
   }
@@ -782,36 +790,39 @@ class LogfileManager {
                   std::multimap<uint64_t, uint64_t>& index_se,
                   uint64_t *filesize_out=nullptr,
                   bool *is_file_large_out=nullptr) {
+    LOG_TRACE("LoadFile()", "Loading [%s] of size:%u, sizeof(LogFileFooter):%u", mmap.filepath(), mmap.filesize(), LogFileFooter::GetFixedSize());
+
     struct LogFileFooter footer;
     Status s = LogFileFooter::DecodeFrom(mmap.datafile() + mmap.filesize() - LogFileFooter::GetFixedSize(), LogFileFooter::GetFixedSize(), &footer);
-    uint32_t crc32_computed = crc32c::Value(mmap.datafile() + footer.offset_indexes, mmap.filesize() - footer.offset_indexes - 4);
-
-    if (   !s.IsOK()
-        || footer.magic_number != LogfileManager::get_magic_number()) {
+    if (!s.IsOK() || footer.magic_number != LogfileManager::get_magic_number()) {
       LOG_TRACE("LoadFile()", "Skipping [%s] - magic_number:[%llu/%llu]", mmap.filepath(), footer.magic_number, get_magic_number());
       return Status::IOError("Invalid footer");
-    } else if (crc32_computed != footer.crc32) {
+    }
+    
+    uint32_t crc32_computed = crc32c::Value(mmap.datafile() + footer.offset_indexes, mmap.filesize() - footer.offset_indexes - 4);
+    if (crc32_computed != footer.crc32) {
       LOG_TRACE("LoadFile()", "Skipping [%s] - Invalid CRC32:[%08x/%08x]", mmap.filepath(), footer.crc32, crc32_computed);
       return Status::IOError("Invalid footer");
-    } else {
-      // The file has a clean footer, load all the offsets in the index
-      uint64_t offset_index = footer.offset_indexes;
-      struct LogFileFooterIndex lffi;
-      for (auto i = 0; i < footer.num_entries; i++) {
-        uint32_t length_lffi;
-        LogFileFooterIndex::DecodeFrom(mmap.datafile() + offset_index, mmap.filesize() - offset_index, &lffi, &length_lffi);
-        uint64_t fileid_shifted = fileid;
-        fileid_shifted <<= 32;
-        index_se.insert(std::pair<uint64_t, uint64_t>(lffi.hashed_key, fileid_shifted | lffi.offset_entry));
-        LOG_TRACE("LoadFile()",
-                  "Add item to index -- hashed_key:[%llu] offset:[%u] -- offset_index:[%llu]",
-                  lffi.hashed_key, lffi.offset_entry, offset_index);
-        offset_index += length_lffi;
-      }
-      if (filesize_out) *filesize_out = mmap.filesize();
-      if (is_file_large_out) *is_file_large_out = (footer.filetype == kLargeType) ? true : false;
-      LOG_TRACE("LoadFile()", "Loaded [%s] num_entries:[%llu]", mmap.filepath(), footer.num_entries);
     }
+    
+    LOG_TRACE("LoadFile()", "Footer OK");
+    // The file has a clean footer, load all the offsets in the index
+    uint64_t offset_index = footer.offset_indexes;
+    struct LogFileFooterIndex lffi;
+    for (auto i = 0; i < footer.num_entries; i++) {
+      uint32_t length_lffi;
+      LogFileFooterIndex::DecodeFrom(mmap.datafile() + offset_index, mmap.filesize() - offset_index, &lffi, &length_lffi);
+      uint64_t fileid_shifted = fileid;
+      fileid_shifted <<= 32;
+      index_se.insert(std::pair<uint64_t, uint64_t>(lffi.hashed_key, fileid_shifted | lffi.offset_entry));
+      LOG_TRACE("LoadFile()",
+                "Add item to index -- hashed_key:[%llu] offset:[%u] -- offset_index:[%llu]",
+                lffi.hashed_key, lffi.offset_entry, offset_index);
+      offset_index += length_lffi;
+    }
+    if (filesize_out) *filesize_out = mmap.filesize();
+    if (is_file_large_out) *is_file_large_out = (footer.filetype == kLargeType) ? true : false;
+    LOG_TRACE("LoadFile()", "Loaded [%s] num_entries:[%llu]", mmap.filepath(), footer.num_entries);
 
     return Status::OK();
   }
