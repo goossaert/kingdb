@@ -74,6 +74,9 @@ class Server {
     stop_requested_ = true;
     tp_->Stop();
     db_->Close();
+    delete tp_;
+    delete db_;
+    //thread_network_.join();
   }
 
 

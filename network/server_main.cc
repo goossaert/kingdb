@@ -23,7 +23,8 @@ void increase_limit_open_files() {
 
 bool stop_requested = false;
 
-void sigint_handler(int signal) {
+void termination_signal_handler(int signal) {
+  fprintf(stderr, "Received signal [%d]\n", signal);
   stop_requested = true; 
 }
 
@@ -87,13 +88,13 @@ int main(int argc, char** argv) {
   kdb::DatabaseOptions options;
   options.compression = ctype;
 
-  signal(SIGINT, sigint_handler);
+  signal(SIGINT, termination_signal_handler);
+  signal(SIGTERM, termination_signal_handler);
   kdb::Server server;
   server.Start(options, dbname, port, backlog, num_threads);
   while (!stop_requested) {
     std::this_thread::sleep_for(std::chrono::milliseconds(1000*1000));
   }
-  fprintf(stderr, "SIGINT received...\n");
   server.Stop();
   return 0;
 }

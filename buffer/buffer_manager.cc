@@ -216,7 +216,11 @@ Status BufferManager::WriteChunk(const OrderType& op,
   // test on size for debugging remove()
   if (buffers_[im_live_].size() > 256) {
     // TODO-2: make this value optional -- a good default value would be the
-    //         number of client threads
+    //         number of client threads.
+    // NOTE: this is only here for when the database is used through a
+    //       networking interface, in which case a better solution would be to not
+    //       force a swap when the buffer reach a certain size, but just throttle the
+    //       incoming requests.
     force_swap_ = true;
   }
   /*

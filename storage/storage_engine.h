@@ -1242,6 +1242,10 @@ class StorageEngine {
                     uint32_t fileid_end) {
     // TODO: make sure that all sets, maps and multimaps are cleared whenever
     // they are no longer needed
+    
+    // TODO: when compaction starts, open() a file and lseek() to reserve disk
+    //       space -- or write a bunch of files with the "compaction_" prefix
+    //       that will be overwritten when the compacted files are written.
 
     // TODO-23: replace the change on is_compaction_in_progress_ by a RAII
     //          WARNING: this is not the only part of the code with this issue,
@@ -1254,7 +1258,7 @@ class StorageEngine {
     // TODO: This is a quick hack to get the files for compaction, by going
     //       through all the files. Fix that to be only the latest non-handled
     //       log files
-    LOG_TRACE("Compaction()", "Get files");
+    LOG_TRACE("Compaction()", "Step 1: Get files between fileids %u and %u", fileid_start, fileid_end);
     std::multimap<uint64_t, uint64_t> index_compaction;
     DIR *directory;
     struct dirent *entry;
@@ -1268,7 +1272,7 @@ class StorageEngine {
     while ((entry = readdir(directory)) != NULL) {
       sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
       fileid = LogfileManager::hex_to_num(entry->d_name);
-      if (   strncmp(entry->d_name, "compaction", 10) == 0
+      if (   strncmp(entry->d_name, "compaction", 10) == 0 // TODO: remove, not needed as those files should be removed at startup
           || stat(filepath, &info) != 0
           || !(info.st_mode & S_IFREG) 
           || fileid < fileid_start
@@ -1295,7 +1299,7 @@ class StorageEngine {
 
     // 2. Iterating over all unique hashed keys of index_compaction, and determine which
     // locations of the storage engine index 'index_' with similar hashes will need to be compacted.
-    LOG_TRACE("Compaction()", "Get unique hashed keys");
+    LOG_TRACE("Compaction()", "Step 2: Get unique hashed keys");
     std::vector<std::pair<uint64_t, uint64_t>> index_compaction_se;
     for (auto it = index_compaction.begin(); it != index_compaction.end(); it = index_compaction.upper_bound(it->first)) {
       auto range = index_.equal_range(it->first);
@@ -1308,7 +1312,7 @@ class StorageEngine {
 
     // 3. For each entry, determine which location has to be kept, which has to be deleted,
     // and the overall set of file ids that needs to be compacted
-    LOG_TRACE("Compaction()", "Determine locations");
+    LOG_TRACE("Compaction()", "Step 3: Determine locations");
     std::set<uint64_t> locations_delete;
     std::set<uint32_t> fileids_compaction;
     std::set<uint32_t> fileids_largefiles_keep;
@@ -1358,7 +1362,7 @@ class StorageEngine {
     // per cluster. All the non-smallest locations are stored as secondary
     // locations. Only regular entries are used: it would not make sense
     // to compact large entries anyway.
-    LOG_TRACE("Compaction()", "Building clusters");
+    LOG_TRACE("Compaction()", "Step 4: Building clusters");
     std::map<uint64_t, std::vector<uint64_t>> hashedkeys_clusters;
     std::set<uint64_t> locations_secondary;
     for (auto it = hashedkeys_to_locations_regular_keep.begin(); it != hashedkeys_to_locations_regular_keep.end(); it = hashedkeys_to_locations_regular_keep.upper_bound(it->first)) {
@@ -1399,7 +1403,7 @@ class StorageEngine {
      */
 
     // 5. Mmapping all the files involved in the compaction
-    LOG_TRACE("Compaction()", "Mmap() all the files! ALL THE FILES!");
+    LOG_TRACE("Compaction()", "Step 5: Mmap() all the files! ALL THE FILES!");
     std::map<uint32_t, Mmap*> mmaps;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
       uint32_t fileid = *it;
@@ -1416,7 +1420,7 @@ class StorageEngine {
 
     // 6. Now building a vector of orders, that will be passed to the
     //    logmanager_compaction_ object to persist them on disk
-    LOG_TRACE("Compaction()", "Build order list");
+    LOG_TRACE("Compaction()", "Step 6: Build order list");
     std::vector<Order> orders;
     uint64_t timestamp_max = 0;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
@@ -1521,7 +1525,7 @@ class StorageEngine {
 
 
     // 7. Write compacted orders on secondary storage
-    LOG_TRACE("Compaction()", "Write compacted files");
+    LOG_TRACE("Compaction()", "Step 7: Write compacted files");
     std::multimap<uint64_t, uint64_t> map_index;
     // All the resulting files will have the same timestamp, which is the
     // maximum of all the timestamps in the set of files that have been
@@ -1535,24 +1539,28 @@ class StorageEngine {
 
 
     // 8. Get fileid range from logfile_manager_
-    uint32_t num_files_compacted = logfile_manager_compaction_.GetSequenceFileId() - 1;
+    uint32_t num_files_compacted = logfile_manager_compaction_.GetSequenceFileId();
     uint32_t offset_fileid = logfile_manager_.IncrementSequenceFileId(num_files_compacted) - num_files_compacted;
-    LOG_TRACE("Compaction()", "num_files_compacted:%u offset:%u", num_files_compacted, offset_fileid);
+    LOG_TRACE("Compaction()", "Step 8: num_files_compacted:%u offset_fileid:%u", num_files_compacted, offset_fileid);
 
 
     // 9. Rename files
     for (auto fileid = 1; fileid <= num_files_compacted; fileid++) {
+      uint32_t fileid_new = fileid + offset_fileid;
       LOG_TRACE("Compaction()", "Renaming [%s] into [%s]", logfile_manager_compaction_.GetFilepath(fileid).c_str(),
-                                                           logfile_manager_.GetFilepath(fileid + offset_fileid).c_str());
+                                                           logfile_manager_.GetFilepath(fileid_new).c_str());
       if (std::rename(logfile_manager_compaction_.GetFilepath(fileid).c_str(),
-                      logfile_manager_.GetFilepath(fileid + offset_fileid).c_str()) != 0) {
+                      logfile_manager_.GetFilepath(fileid_new).c_str()) != 0) {
         LOG_EMERG("Compaction()", "Could not rename file");
+        // TODO: crash here
       }
+      uint64_t filesize = logfile_manager_compaction_.file_resource_manager.GetFileSize(fileid);
+      logfile_manager_.file_resource_manager.SetFileSize(fileid_new, filesize);
     }
 
     
     // 10. Shift returned locations to match renamed files
-    LOG_TRACE("Compaction()", "Shifting locations");
+    LOG_TRACE("Compaction()", "Step 10: Shifting locations");
     std::multimap<uint64_t, uint64_t> map_index_shifted;
     for (auto &p: map_index) {
       const uint64_t& hashedkey = p.first;
@@ -1578,6 +1586,7 @@ class StorageEngine {
     // 12. Update the storage engine index_, by removing the locations that have
     //     been compacted, while making sure that the locations that have been
     //     added as the compaction are not removed
+    LOG_TRACE("Compaction()", "Step 12: Update the storage engine index_");
     int num_iterations_per_lock = 10;
     int counter_iterations = 0;
     for (auto it = map_index_shifted.begin(); it != map_index_shifted.end(); it = map_index_shifted.upper_bound(it->first)) {
@@ -1623,7 +1632,8 @@ class StorageEngine {
 
 
     // 13. Put all the locations inserted after the compaction started
-    //     stored in 'index_compactions_' into the main index 'index_'
+    //     stored in 'index_compaction_' into the main index 'index_'
+    LOG_TRACE("Compaction()", "Step 13: Transfer index_compaction_ into index_");
     AcquireWriteLock();
     index_.insert(index_compaction_.begin(), index_compaction_.end()); 
     index_compaction_.clear();
@@ -1634,12 +1644,14 @@ class StorageEngine {
 
 
     // 14. Remove compacted files
+    LOG_TRACE("Compaction()", "Step 14: Remove compacted files");
     mutex_snapshot_.lock();
     if (snapshotids_to_fileids_.size() == 0) {
       // No snapshots are in progress, remove the files on the spot
       for (auto& fileid: fileids_compaction) {
         if (fileids_largefiles_keep.find(fileid) != fileids_largefiles_keep.end()) continue;
         LOG_TRACE("Compaction()", "Removing [%s]", logfile_manager_.GetFilepath(fileid).c_str());
+        // TODO: free memory associated with the removed file in the file resource manager
         if (std::remove(logfile_manager_.GetFilepath(fileid).c_str()) != 0) {
           LOG_EMERG("Compaction()", "Could not remove file [%s]", logfile_manager_.GetFilepath(fileid).c_str());
         }
