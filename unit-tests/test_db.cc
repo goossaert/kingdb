@@ -20,6 +20,7 @@
 #include "util/status.h"
 #include "kingdb/common.h"
 #include "kingdb/byte_array.h"
+#include "util/file.h"
 
 #include "interface/snapshot.h"
 #include "interface/iterator.h"
@@ -148,6 +149,25 @@ TEST(DBTest, SingleThreadSmallItems) {
 
 }
 
+
+TEST(DBTest, FileUtil) {
+  int fd = open("/tmp/allocate", O_WRONLY|O_CREAT, 0644);
+  auto start = std::chrono::high_resolution_clock::now();
+  size_t mysize = 1024*1024 * (int64_t)1000;
+  fprintf(stderr, "mysize: %zu\n", mysize);
+  Status s = FileUtil::fallocate(fd, mysize);
+  std::cout << s.ToString() << std::endl;
+  close(fd);
+  auto end = std::chrono::high_resolution_clock::now();
+  std::chrono::duration<float> duration = end - start;
+  std::chrono::milliseconds d = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
+  std::cout << d.count() << " ms" << std::endl;
+
+  fprintf(stderr, "Free size: %llu GB\n", FileUtil::fs_free_space("/tmp/") / (1024*1024*1000));
+}
+
+
+
 } // end namespace kdb
 
 void handler(int sig) {
@@ -160,8 +180,6 @@ void handler(int sig) {
   backtrace_symbols_fd(array, depth, STDERR_FILENO);
   exit(1);
 }
-
-
 
 
 int main() {

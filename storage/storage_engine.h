@@ -28,6 +28,7 @@
 #include "kingdb/common.h"
 #include "kingdb/byte_array.h"
 #include "util/crc32c.h"
+#include "util/file.h"
 
 
 namespace kdb {
@@ -1246,6 +1247,10 @@ class StorageEngine {
     // TODO: when compaction starts, open() a file and lseek() to reserve disk
     //       space -- or write a bunch of files with the "compaction_" prefix
     //       that will be overwritten when the compacted files are written.
+
+    // TODO: add a new flag in files that says "compacted" or "log", and before
+    //       starting any compaction process, select only log files, ignore
+    //       compacted ones. (large files are 'compacted' by default).
 
     // TODO-23: replace the change on is_compaction_in_progress_ by a RAII
     //          WARNING: this is not the only part of the code with this issue,
