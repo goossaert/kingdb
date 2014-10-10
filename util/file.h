@@ -36,9 +36,7 @@ class FileUtil {
     */
     struct stat buf;
     if (fstat(fd, &buf) != 0) return Status::IOError("kingdb_fallocate()", "fstat() error");
-    std::string error("buf.st_size >= length: ");
-    error += std::to_string(buf.st_size) + " " + std::to_string(length);
-    if (buf.st_size >= length) return Status::IOError("kingdb_fallocate()", error);
+    if (buf.st_size >= length) return Status::IOError("kingdb_fallocate()", "buf.st_size >= length");
 
     const int blocksize = buf.st_blksize;
     if (!blocksize) return Status::IOError("kingdb_fallocate()", "Invalid block size");
@@ -70,6 +68,30 @@ class FileUtil {
     } else {
       return stat.f_bsize * stat.f_bavail; 
     }
+  }
+
+  static Status remove_files_with_prefix(const char *dirpath, const std::string prefix) {
+    DIR *directory;
+    struct dirent *entry;
+    if ((directory = opendir(dirpath)) == NULL) {
+      return Status::IOError("Could not open directory", dirpath);
+    }
+    char filepath[2048];
+    Status s;
+    struct stat info;
+    while ((entry = readdir(directory)) != NULL) {
+      sprintf(filepath, "%s/%s", dirpath, entry->d_name);
+      if (   strncmp(entry->d_name, prefix.c_str(), prefix.size()) != 0
+          || stat(filepath, &info) != 0
+          || !(info.st_mode & S_IFREG)) {
+        continue;
+      }
+      if (std::remove(filepath)) {
+        LOG_WARN("remove_files_with_prefix()", "Could not remove file [%s]", filepath);
+      }
+    }
+    closedir(directory);
+    return Status::OK();
   }
 };
 

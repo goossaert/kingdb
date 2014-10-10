@@ -140,20 +140,21 @@ TEST(DBTest, SingleThreadSmallItems) {
     count_items_end += 1;
   }
 
+  std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
   delete iterator;
   delete snapshot;
   
   delete[] buffer_large;
   ASSERT_EQ(count_items_end, num_items);
   Close();
-
 }
 
 
 TEST(DBTest, FileUtil) {
   int fd = open("/tmp/allocate", O_WRONLY|O_CREAT, 0644);
   auto start = std::chrono::high_resolution_clock::now();
-  size_t mysize = 1024*1024 * (int64_t)1000;
+  size_t mysize = 1024*1024 * (int64_t)256;
   fprintf(stderr, "mysize: %zu\n", mysize);
   Status s = FileUtil::fallocate(fd, mysize);
   std::cout << s.ToString() << std::endl;
@@ -163,7 +164,7 @@ TEST(DBTest, FileUtil) {
   std::chrono::milliseconds d = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
   std::cout << d.count() << " ms" << std::endl;
 
-  fprintf(stderr, "Free size: %llu GB\n", FileUtil::fs_free_space("/tmp/") / (1024*1024*1000));
+  fprintf(stderr, "Free size: %llu GB\n", FileUtil::fs_free_space("/tmp/") / (1024*1024*256));
 }
 
 

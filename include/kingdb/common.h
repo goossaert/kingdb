@@ -5,6 +5,8 @@
 #ifndef KINGDB_COMMON_H_
 #define KINGDB_COMMON_H_
 
+#include <set>
+
 #include <thread>
 #include <unistd.h>
 #include <sys/types.h>
@@ -226,8 +228,10 @@ struct EntryFooter {
 };
 
 enum FileType {
-  kLogType   = 0x0,
-  kLargeType = 0x1
+  kUnknownType        = 0x0,
+  kUncompactedLogType = 0x1,
+  kCompactedLogType   = 0x2,
+  kCompactedLargeType = 0x4,
 };
 
 struct LogFileHeader {
@@ -237,12 +241,28 @@ struct LogFileHeader {
   uint32_t filetype;
   uint64_t timestamp;
 
-  bool IsTypeLog() {
-    return !(filetype & kLargeType);
+  LogFileHeader() {
+    filetype = 0;
+  }
+
+  FileType GetFileType() {
+    if (filetype & kCompactedLargeType) {
+      return kCompactedLargeType;
+    } else if (filetype & kCompactedLogType) {
+      return kCompactedLogType;
+    } else if (filetype & kUncompactedLogType) {
+      return kUncompactedLogType;
+    }
+    return kUnknownType;
   }
 
   bool IsTypeLarge() {
-    return (filetype & kLargeType);
+    return (filetype & kCompactedLargeType);
+  }
+
+  bool IsTypeCompacted() {
+    return (   filetype & kCompactedLogType
+            || filetype & kCompactedLargeType);
   }
 
   bool IsFileVersionSupported() {
@@ -301,8 +321,20 @@ struct LogFileFooter {
   uint64_t magic_number;
   uint32_t crc32;
 
-  LogFileFooter() { flags = 0; }
+  LogFileFooter() {
+    flags = 0;
+    filetype = 0;
+  }
 
+  bool IsTypeLarge() {
+    return (filetype & kCompactedLargeType);
+  }
+
+  bool IsTypeCompacted() {
+    return (   filetype & kCompactedLogType
+            || filetype & kCompactedLargeType);
+  }
+  
   void SetFlagHasPaddingInValues() {
     flags |= kHasPaddingInValues; 
   }
@@ -365,8 +397,6 @@ struct LogFileFooterIndex {
     return (ptr - buffer);
   }
 };
-
-
 
 }
 

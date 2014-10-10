@@ -59,12 +59,22 @@ class FileResourceManager {
 
   bool IsFileLarge(uint32_t fileid) {
     std::unique_lock<std::mutex> lock(mutex_);
-    return (largesfiles_.find(fileid) != largesfiles_.end());
+    return (largefiles_.find(fileid) != largefiles_.end());
   }
 
   void SetFileLarge(uint32_t fileid) {
     std::unique_lock<std::mutex> lock(mutex_);
-    largesfiles_.insert(fileid);
+    largefiles_.insert(fileid);
+  }
+
+  bool IsFileCompacted(uint32_t fileid) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return (compactedfiles_.find(fileid) != compactedfiles_.end());
+  }
+
+  void SetFileCompacted(uint32_t fileid) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    compactedfiles_.insert(fileid);
   }
 
   uint32_t GetNumWritesInProgress(uint32_t fileid) {
@@ -113,7 +123,8 @@ class FileResourceManager {
  private:
   std::mutex mutex_;
   std::map<uint32_t, uint64_t> filesizes_;
-  std::set<uint32_t> largesfiles_;
+  std::set<uint32_t> largefiles_;
+  std::set<uint32_t> compactedfiles_;
   std::map<uint32_t, uint64_t> num_writes_in_progress_;
   std::map<uint32_t, std::vector< std::pair<uint64_t, uint32_t> > > logindexes_;
   std::set<uint32_t> has_padding_in_values_;
@@ -132,10 +143,16 @@ class LogfileManager {
   LogfileManager(DatabaseOptions& db_options,
                  std::string dbname,
                  std::string prefix,
+                 std::string prefix_compaction,
+                 std::string dirpath_locks,
+                 FileType filetype_default,
                  bool read_only=false)
       : db_options_(db_options),
+        filetype_default_(filetype_default),
         is_read_only_(read_only),
-        prefix_(prefix) {
+        prefix_(prefix),
+        prefix_compaction_(prefix_compaction),
+        dirpath_locks_(dirpath_locks) {
     LOG_TRACE("LogfileManager::LogfileManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
     dbname_ = dbname;
     sequence_fileid_ = 0;
@@ -171,8 +188,11 @@ class LogfileManager {
   }
 
   std::string GetFilepath(uint32_t fileid) {
-    //filepath_ = dbname_ + "/" + std::to_string(sequence_fileid_); // TODO: optimize here
     return dbname_ + "/" + prefix_ + LogfileManager::num_to_hex(fileid); // TODO: optimize here
+  }
+
+  std::string GetLockFilepath(uint32_t fileid) {
+    return dirpath_locks_ + "/" + LogfileManager::num_to_hex(fileid); // TODO: optimize here
   }
 
   // File id sequence helpers
@@ -251,7 +271,7 @@ class LogfileManager {
 
     // Filling in default header
     struct LogFileHeader lfh;
-    lfh.filetype  = kLogType;
+    lfh.filetype  = filetype_default_;
     lfh.timestamp = timestamp_;
     LogFileHeader::EncodeTo(&lfh, buffer_raw_);
   }
@@ -309,7 +329,7 @@ class LogfileManager {
     LOG_TRACE("LogfileManager::FlushLogIndex()", "ENTER - fileid_:%d - num_writes_in_progress:%llu", fileid_, num);
     if (file_resource_manager.GetNumWritesInProgress(fileid_) == 0) {
       uint64_t size_logindex;
-      Status s = WriteLogIndex(fd_, file_resource_manager.GetLogIndex(fileid_), &size_logindex, kLogType, file_resource_manager.HasPaddingInValues(fileid_), false);
+      Status s = WriteLogIndex(fd_, file_resource_manager.GetLogIndex(fileid_), &size_logindex, filetype_default_, file_resource_manager.HasPaddingInValues(fileid_), false);
       uint64_t filesize = file_resource_manager.GetFileSize(fileid_);
       file_resource_manager.SetFileSize(fileid_, filesize + size_logindex);
       return s;
@@ -376,7 +396,7 @@ class LogfileManager {
     // Write header
     char buffer[SIZE_LOGFILE_HEADER];
     struct LogFileHeader lfh;
-    lfh.filetype  = kLargeType;
+    lfh.filetype  = kCompactedLargeType;
     lfh.timestamp = timestamp_largefile;
     LogFileHeader::EncodeTo(&lfh, buffer);
     if(write(fd, buffer, SIZE_LOGFILE_HEADER) < 0) {
@@ -492,7 +512,7 @@ class LogfileManager {
       if (fileid != fileid_ && num_writes == 0) {
         lseek(fd, 0, SEEK_END);
         uint64_t size_logindex;
-        FileType filetype = is_large_order ? kLargeType : kLogType;
+        FileType filetype = is_large_order ? kCompactedLargeType : filetype_default_;
         WriteLogIndex(fd, file_resource_manager.GetLogIndex(fileid), &size_logindex, filetype, file_resource_manager.HasPaddingInValues(fileid), false);
         uint64_t filesize = file_resource_manager.GetFileSize(fileid);
         filesize += size_logindex;
@@ -678,15 +698,27 @@ class LogfileManager {
                       std::set<uint32_t>* fileids_ignore=nullptr,
                       uint32_t fileid_end=0,
                       std::vector<uint32_t>* fileids_iterator=nullptr) {
+    Status s;
     struct stat info;
+
     if (   stat(dbname.c_str(), &info) != 0
         && db_options_.create_if_missing
-        && mkdir(dbname.c_str(), 0755) < 0) {
+        && (   mkdir(dbname.c_str(), 0755) < 0
+            || mkdir(dirpath_locks_.c_str(), 0755) < 0)) {
       return Status::IOError("Could not create directory", strerror(errno));
     }
-    
+
     if(!(info.st_mode & S_IFDIR)) {
       return Status::IOError("A file with same name as the database already exists and is not a directory. Remove or rename this file to continue.", dbname.c_str());
+    }
+
+    if (!is_read_only_) {
+      s = FileUtil::remove_files_with_prefix(dbname_.c_str(), prefix_compaction_);
+      if (!s.IsOK()) return Status::IOError("Could not clean up previous compaction");
+      s = RemoveAllLockedFiles(dbname_);
+      if (!s.IsOK()) return Status::IOError("Could not clean up snapshots");
+      s = FileUtil::remove_files_with_prefix(dirpath_locks_.c_str(), "");
+      if (!s.IsOK()) return Status::IOError("Could not clean up locks");
     }
 
     DIR *directory;
@@ -717,10 +749,9 @@ class LogfileManager {
     uint32_t fileid_max = 0;
     uint64_t timestamp_max = 0;
     uint32_t fileid = 0;
-    Status s;
     while ((entry = readdir(directory)) != NULL) {
       sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
-      if (strncmp(entry->d_name, "compaction", 10) == 0) continue;
+      if (strncmp(entry->d_name, prefix_compaction_.c_str(), prefix_compaction_.size()) == 0) continue;
       if (stat(filepath, &info) != 0 || !(info.st_mode & S_IFREG)) continue;
       fileid = LogfileManager::hex_to_num(entry->d_name);
       if (   fileids_ignore != nullptr
@@ -761,11 +792,12 @@ class LogfileManager {
       if (stat(filepath.c_str(), &info) != 0) continue;
       Mmap mmap(filepath.c_str(), info.st_size);
       uint64_t filesize;
-      bool is_file_large;
-      s = LoadFile(mmap, fileid, index_se, &filesize, &is_file_large);
+      bool is_file_large, is_file_compacted;
+      s = LoadFile(mmap, fileid, index_se, &filesize, &is_file_large, &is_file_compacted);
       if (s.IsOK()) { 
         file_resource_manager.SetFileSize(fileid, filesize);
         if (is_file_large) file_resource_manager.SetFileLarge(fileid);
+        if (is_file_compacted) file_resource_manager.SetFileCompacted(fileid);
       } else if (!s.IsOK() && !is_read_only_) {
         LOG_WARN("LogfileManager::LoadDatabase()", "Could not load index in file [%s], entering recovery mode", filepath.c_str());
         s = RecoverFile(mmap, fileid, index_se);
@@ -790,7 +822,8 @@ class LogfileManager {
                   uint32_t fileid,
                   std::multimap<uint64_t, uint64_t>& index_se,
                   uint64_t *filesize_out=nullptr,
-                  bool *is_file_large_out=nullptr) {
+                  bool *is_file_large_out=nullptr,
+                  bool *is_file_compacted_out=nullptr) {
     LOG_TRACE("LoadFile()", "Loading [%s] of size:%u, sizeof(LogFileFooter):%u", mmap.filepath(), mmap.filesize(), LogFileFooter::GetFixedSize());
 
     struct LogFileFooter footer;
@@ -822,7 +855,8 @@ class LogfileManager {
       offset_index += length_lffi;
     }
     if (filesize_out) *filesize_out = mmap.filesize();
-    if (is_file_large_out) *is_file_large_out = (footer.filetype == kLargeType) ? true : false;
+    if (is_file_large_out) *is_file_large_out = footer.IsTypeLarge() ? true : false;
+    if (is_file_compacted_out) *is_file_compacted_out = footer.IsTypeCompacted() ? true : false;
     LOG_TRACE("LoadFile()", "Loaded [%s] num_entries:[%llu]", mmap.filepath(), footer.num_entries);
 
     return Status::OK();
@@ -839,7 +873,7 @@ class LogfileManager {
     struct LogFileHeader lfh;
     Status s = LogFileHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
     // 1. If the file is a large file, just discard it
-    if (!s.IsOK() || lfh.filetype == kLargeType) {
+    if (!s.IsOK() || lfh.IsTypeLarge()) {
       return Status::IOError("Could not recover file");
     }
 
@@ -891,8 +925,7 @@ class LogfileManager {
       ftruncate(fd, offset);
       lseek(fd, 0, SEEK_END);
       uint64_t size_logindex;
-      // Fine to use kLogType directly as kLargeType files will not be recovered anyway
-      WriteLogIndex(fd, logindex_current, &size_logindex, kLogType, has_padding_in_values, has_invalid_entries);
+      WriteLogIndex(fd, logindex_current, &size_logindex, lfh.GetFileType(), has_padding_in_values, has_invalid_entries);
       file_resource_manager.SetFileSize(fileid, mmap.filesize() + size_logindex);
       close(fd);
     } else {
@@ -902,6 +935,36 @@ class LogfileManager {
     return Status::OK();
   }
 
+
+  Status RemoveAllLockedFiles(std::string& dbname) {
+    std::set<uint32_t> fileids;
+    DIR *directory;
+    struct dirent *entry;
+    if ((directory = opendir(dirpath_locks_.c_str())) == NULL) {
+      return Status::IOError("Could not open lock directory", dirpath_locks_.c_str());
+    }
+
+    char filepath[2048];
+    uint32_t fileid = 0;
+    struct stat info;
+    while ((entry = readdir(directory)) != NULL) {
+      if (strncmp(entry->d_name, ".", 1) == 0) continue;
+      fileid = LogfileManager::hex_to_num(entry->d_name);
+      fileids.insert(fileid);
+    }
+
+    closedir(directory);
+
+    for (auto& fileid: fileids) {
+      if (std::remove(GetFilepath(fileid).c_str()) != 0) {
+        LOG_EMERG("RemoveAllLockedFiles()", "Could not remove data file [%s]", GetFilepath(fileid).c_str());
+      }
+    }
+
+    return Status::OK();
+  }
+
+
   uint64_t static get_magic_number() { return 0x4d454f57; }
 
  private:
@@ -910,6 +973,7 @@ class LogfileManager {
   Hash *hash_;
   bool is_read_only_;
   bool is_closed_;
+  FileType filetype_default_;
   std::mutex mutex_close_;
 
   uint32_t fileid_;
@@ -933,6 +997,8 @@ class LogfileManager {
   bool buffer_has_items_;
   kdb::CRC32 crc32_;
   std::string prefix_;
+  std::string prefix_compaction_;
+  std::string dirpath_locks_;
 
  public:
   FileResourceManager file_resource_manager;
@@ -958,8 +1024,10 @@ class StorageEngine {
                 uint32_t fileid_end=0)
       : db_options_(db_options),
         is_read_only_(read_only),
-        logfile_manager_(db_options, dbname, "", read_only),
-        logfile_manager_compaction_(db_options, dbname, "compaction_", read_only) {
+        prefix_compaction_("compaction_"),
+        dirpath_locks_(dbname + "/locks"),
+        logfile_manager_(db_options, dbname, "", prefix_compaction_, dirpath_locks_, kUncompactedLogType, read_only),
+        logfile_manager_compaction_(db_options, dbname, prefix_compaction_, prefix_compaction_, dirpath_locks_, kCompactedLogType, read_only) {
     LOG_TRACE("StorageEngine:StorageEngine()", "dbname: %s", dbname.c_str());
     dbname_ = dbname;
     fileids_ignore_ = fileids_ignore;
@@ -979,7 +1047,10 @@ class StorageEngine {
     } else {
       fileids_iterator_ = new std::vector<uint32_t>();
     }
-    logfile_manager_.LoadDatabase(dbname, index_, fileids_ignore_, fileid_end, fileids_iterator_);
+    Status s = logfile_manager_.LoadDatabase(dbname, index_, fileids_ignore_, fileid_end, fileids_iterator_);
+    if (!s.IsOK()) {
+      LOG_EMERG("StorageEngine", "Could not load database");
+    }
   }
 
   ~StorageEngine() {}
@@ -988,9 +1059,6 @@ class StorageEngine {
     std::unique_lock<std::mutex> lock(mutex_close_);
     if (is_closed_) return;
     is_closed_ = true;
-
-    // TODO: force all Snapshots to release the files they are blocking, and
-    //       delete all files that were compacted and no longer used
 
     // Wait for readers to exit
     AcquireWriteLock();
@@ -1005,6 +1073,7 @@ class StorageEngine {
       thread_index_.join();
       thread_data_.join();
       thread_compaction_.join();
+      ReleaseAllSnapshots();
       LOG_TRACE("StorageEngine::Close()", "join end");
     }
 
@@ -1259,6 +1328,12 @@ class StorageEngine {
     is_compaction_in_progress_ = true;
     mutex_compaction_.unlock();
 
+    // Before the compaction starts, make sure all compaction-related files are removed
+    Status s;
+    s = FileUtil::remove_files_with_prefix(dbname.c_str(), prefix_compaction_);
+    if (!s.IsOK()) return Status::IOError("Could not clean up previous compaction", dbname.c_str());
+
+
     // 1. Get the files needed for compaction
     // TODO: This is a quick hack to get the files for compaction, by going
     //       through all the files. Fix that to be only the latest non-handled
@@ -1272,12 +1347,11 @@ class StorageEngine {
     }
     char filepath[2048];
     uint32_t fileid = 0;
-    Status s;
     struct stat info;
     while ((entry = readdir(directory)) != NULL) {
       sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
       fileid = LogfileManager::hex_to_num(entry->d_name);
-      if (   strncmp(entry->d_name, "compaction", 10) == 0 // TODO: remove, not needed as those files should be removed at startup
+      if (   logfile_manager_.file_resource_manager.IsFileCompacted(fileid)
           || stat(filepath, &info) != 0
           || !(info.st_mode & S_IFREG) 
           || fileid < fileid_start
@@ -1561,6 +1635,7 @@ class StorageEngine {
       }
       uint64_t filesize = logfile_manager_compaction_.file_resource_manager.GetFileSize(fileid);
       logfile_manager_.file_resource_manager.SetFileSize(fileid_new, filesize);
+      logfile_manager_.file_resource_manager.SetFileCompacted(fileid_new);
     }
 
     
@@ -1664,20 +1739,23 @@ class StorageEngine {
     } else {
       // Snapshots are in progress, therefore mark the files and they will be removed when the snapshots are released
       int num_snapshots = snapshotids_to_fileids_.size();
-      std::set<uint32_t> snapshot_ids;
-      for (auto& p: snapshotids_to_fileids_) {
-        snapshot_ids.insert(p.first);
-      }
-
       for (auto& fileid: fileids_compaction) {
         if (fileids_largefiles_keep.find(fileid) != fileids_largefiles_keep.end()) continue;
-        for (auto& snapshot_id: snapshot_ids) {
-          snapshotids_to_fileids_[snapshot_id].insert(fileid);
+        for (auto& p: snapshotids_to_fileids_) {
+          snapshotids_to_fileids_[p.first].insert(fileid);
         }
         if (num_references_to_unused_files_.find(fileid) == num_references_to_unused_files_.end()) {
           num_references_to_unused_files_[fileid] = 0;
         }
         num_references_to_unused_files_[fileid] += num_snapshots;
+
+        // Create lock file
+        std::string filepath_lock = logfile_manager_.GetLockFilepath(fileid);
+        int fd;
+        if ((fd = open(filepath_lock.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
+          LOG_EMERG("StorageEngine::Compaction()", "Could not open file [%s]: %s", filepath_lock.c_str(), strerror(errno));
+        }
+        close(fd);
       }
     }
     mutex_snapshot_.unlock();
@@ -1712,12 +1790,22 @@ class StorageEngine {
         if (std::remove(logfile_manager_.GetFilepath(fileid).c_str()) != 0) {
           LOG_EMERG("ReleaseSnapshot()", "Could not remove file [%s]", logfile_manager_.GetFilepath(fileid).c_str());
         }
+        if (std::remove(logfile_manager_.GetLockFilepath(fileid).c_str()) != 0) {
+          LOG_EMERG("ReleaseSnapshot()", "Could not lock file [%s]", logfile_manager_.GetLockFilepath(fileid).c_str());
+        }
       } else {
         num_references_to_unused_files_[fileid] -= 1;
       }
     }
+
     snapshotids_to_fileids_.erase(snapshot_id);
     return Status::OK();
+  }
+
+  Status ReleaseAllSnapshots() {
+    for (auto& p: snapshotids_to_fileids_) {
+      ReleaseSnapshot(p.first);
+    }
   }
 
   uint64_t GetSequenceSnapshot() {
@@ -1767,6 +1855,8 @@ class StorageEngine {
   Hash *hash_;
   bool is_read_only_;
   std::set<uint32_t>* fileids_ignore_;
+  std::string prefix_compaction_;
+  std::string dirpath_locks_;
 
   // Data
   std::string dbname_;
