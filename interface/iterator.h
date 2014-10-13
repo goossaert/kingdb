@@ -8,9 +8,9 @@
 #include <string>
 
 #include "util/status.h"
-#include "kingdb/common.h"
-#include "kingdb/byte_array.h"
-#include "kingdb/options.h"
+#include "util/order.h"
+#include "util/byte_array.h"
+#include "util/options.h"
 #include "storage/storage_engine.h"
 
 namespace kdb {

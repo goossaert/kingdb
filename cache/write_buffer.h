@@ -2,8 +2,8 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
-#ifndef KINGDB_BUFFER_MANAGER_H_
-#define KINGDB_BUFFER_MANAGER_H_
+#ifndef KINGDB_WRITE_BUFFER_H_
+#define KINGDB_WRITE_BUFFER_H_
 
 #include <thread>
 #include <map>
@@ -12,15 +12,15 @@
 #include <vector>
 #include <chrono>
 #include "kingdb/kdb.h"
-#include "kingdb/common.h"
-#include "kingdb/byte_array.h"
-#include "kingdb/options.h"
+#include "util/order.h"
+#include "util/byte_array.h"
+#include "util/options.h"
 
 namespace kdb {
 
-class BufferManager {
+class WriteBuffer {
  public:
-  BufferManager(const DatabaseOptions& db_options)
+  WriteBuffer(const DatabaseOptions& db_options)
       : db_options_(db_options) {
     stop_requested_ = false;
     im_live_ = 0;
@@ -31,10 +31,10 @@ class BufferManager {
     can_swap_ = true;    // prevents the double-swapping
     force_swap_ = false; // forces swapping
     buffer_size_ = SIZE_BUFFER_WRITE;
-    thread_buffer_handler_ = std::thread(&BufferManager::ProcessingLoop, this);
+    thread_buffer_handler_ = std::thread(&WriteBuffer::ProcessingLoop, this);
     is_closed_ = false;
   }
-  ~BufferManager() { Close(); }
+  ~WriteBuffer() { Close(); }
   Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out);
   Status Put(WriteOptions& write_options, ByteArray* key, ByteArray* chunk);
   Status PutChunk(WriteOptions& write_options,
@@ -97,4 +97,4 @@ class BufferManager {
 
 };
 
-#endif // KINGDB_BUFFER_MANAGER_H_
+#endif // KINGDB_WRITE_BUFFER_H_

@@ -5,10 +5,10 @@
 #ifndef KINGDB_INTERFACE_H_
 #define KINGDB_INTERFACE_H_
 
-#include "kingdb/options.h"
+#include "util/options.h"
 #include "util/status.h"
-#include "kingdb/common.h"
-#include "kingdb/byte_array.h"
+#include "util/order.h"
+#include "util/byte_array.h"
 #include "interface/iterator.h"
 
 namespace kdb {

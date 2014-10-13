@@ -18,8 +18,8 @@
 #include "interface/kingdb.h"
 #include "kingdb/kdb.h"
 #include "util/status.h"
-#include "kingdb/common.h"
-#include "kingdb/byte_array.h"
+#include "util/order.h"
+#include "util/byte_array.h"
 #include "util/file.h"
 
 #include "interface/snapshot.h"

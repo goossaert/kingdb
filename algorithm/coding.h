@@ -22,7 +22,7 @@
 #include <string>
 #include "algorithm/endian.h"
 #include "util/status.h"
-#include "kingdb/byte_array_base.h"
+#include "util/byte_array_base.h"
 
 namespace kdb {
 

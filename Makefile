@@ -3,7 +3,7 @@ CFLAGS=-O3 -g -Wall -std=c++11 -stdlib=libc++ -Wc++11-extensions -Wc++1y-extensi
 INCLUDES=-I/opt/local/include/ -I. -I./include/
 LDFLAGS=-g -lprofiler
 LDFLAGS_CLIENT=-g -L/opt/local/lib/ -lmemcached -lprofiler -fPIC
-SOURCES=interface/kingdb.cc util/logger.cc util/status.cc network/server.cc buffer/buffer_manager.cc thread/event_manager.cc algorithm/compressor.cc algorithm/murmurhash3.cc algorithm/xxhash.cc algorithm/crc32c.cc algorithm/lz4.cc algorithm/hash.cc algorithm/coding.cc unit-tests/testharness.cc
+SOURCES=interface/kingdb.cc util/logger.cc util/status.cc network/server.cc cache/write_buffer.cc thread/event_manager.cc algorithm/compressor.cc algorithm/murmurhash3.cc algorithm/xxhash.cc algorithm/crc32c.cc algorithm/lz4.cc algorithm/hash.cc algorithm/coding.cc unit-tests/testharness.cc
 SOURCES_MAIN=network/server_main.cc
 SOURCES_CLIENT=network/client_main.cc
 SOURCES_CLIENT_EMB=unit-tests/client_embedded.cc
@@ -48,7 +48,7 @@ $(LIBRARY): $(OBJECTS)
 	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@
 
 clean:
-	rm -f *~ .*~ *.o $(EXECUTABLE) $(CLIENT) $(CLIENT_EMB) $(TEST_COMPRESSION) $(LIBRARY)
-	rm -f buffer/*.o include/*.o interface/*.o network/*.o storage_engine/*.o thread/*.o unit-tests/*.o util/*.o algorithm/*.o
-	rm -f buffer/*~ include/*~ interface/*~ network/*~ storage_engine/*~ thread/*~ unit-tests/*~ util/*~ algorithm/*~
+	rm -f *~ .*~ *.o $(EXECUTABLE) $(CLIENT) $(CLIENT_EMB) $(TEST_COMPRESSION) $(TEST_DB) $(LIBRARY)
+	rm -f cache/*.o include/*.o interface/*.o network/*.o storage_engine/*.o thread/*.o unit-tests/*.o util/*.o algorithm/*.o
+	rm -f cache/*~ include/*~ interface/*~ network/*~ storage_engine/*~ thread/*~ unit-tests/*~ util/*~ algorithm/*~
 

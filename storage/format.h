@@ -2,10 +2,8 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
-#ifndef KINGDB_COMMON_H_
-#define KINGDB_COMMON_H_
-
-#include <set>
+#ifndef KINGDB_FORMAT_H_
+#define KINGDB_FORMAT_H_
 
 #include <thread>
 #include <unistd.h>
@@ -20,43 +18,15 @@
 #include "util/status.h"
 #include "algorithm/coding.h"
 #include "algorithm/crc32c.h"
-#include "kingdb/byte_array_base.h"
-#include "kingdb/byte_array.h"
-#include "kingdb/options.h"
+#include "util/byte_array_base.h"
+#include "util/byte_array.h"
+#include "util/options.h"
 
 namespace kdb {
 
 // Data format is version 1.0
 static const uint32_t kVersionDataFormatMajor = 1;
 static const uint32_t kVersionDataFormatMinor = 0;
-
-enum class OrderType { Put, Remove };
-
-//class ByteArray;
-
-struct Order {
-  std::thread::id tid;
-  OrderType type;
-  ByteArray* key;
-  ByteArray* chunk;
-  uint64_t offset_chunk;
-  uint64_t size_value;
-  uint64_t size_value_compressed;
-  uint32_t crc32;
-
-  bool IsFirstChunk() {
-    return (offset_chunk == 0);
-  }
-
-  bool IsLastChunk() {
-    return (   (size_value_compressed == 0 && chunk->size() + offset_chunk == size_value)
-            || (size_value_compressed != 0 && chunk->size() + offset_chunk == size_value_compressed));
-  }
-
-  bool IsSelfContained() {
-    return IsFirstChunk() && IsLastChunk();
-  }
-};
 
 // 32-bit flags
 // NOTE: kEntryFirst, kEntryMiddle and kEntryLast are not used yet,
@@ -398,6 +368,6 @@ struct LogFileFooterIndex {
   }
 };
 
-}
+} // namespace kdb
 
-#endif // KINGDB_COMMON_H_
+#endif // KINGDB_FORMAT_H_

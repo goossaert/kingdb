@@ -8,7 +8,7 @@
 #include <thread>
 #include <string>
 
-#include "kingdb/interface.h"
+#include "interface/interface.h"
 #include "util/status.h"
 #include "util/logger.h"
 

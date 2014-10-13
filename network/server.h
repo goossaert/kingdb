@@ -26,12 +26,12 @@
 #include <string>
 #include <chrono>
 
-#include "kingdb/options.h"
+#include "util/options.h"
 #include "util/logger.h"
 #include "kingdb/kdb.h"
 #include "thread/threadpool.h"
 #include "interface/kingdb.h"
-#include "kingdb/byte_array.h"
+#include "util/byte_array.h"
 
 
 namespace kdb {

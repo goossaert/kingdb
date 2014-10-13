@@ -8,7 +8,7 @@
 #include <string>
 
 #include "util/logger.h"
-#include "kingdb/options.h"
+#include "util/options.h"
 #include "algorithm/murmurhash3.h"
 #include "algorithm/xxhash.h"
 

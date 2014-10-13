@@ -10,13 +10,13 @@
 #include <string>
 #include <memory>
 
-#include "kingdb/interface.h"
-#include "buffer/buffer_manager.h"
+#include "interface/interface.h"
+#include "cache/write_buffer.h"
 #include "storage/storage_engine.h"
 #include "util/status.h"
-#include "kingdb/common.h"
-#include "kingdb/byte_array.h"
-#include "kingdb/options.h"
+#include "util/order.h"
+#include "util/byte_array.h"
+#include "util/options.h"
 #include "interface/iterator.h"
 #include "interface/snapshot.h"
 
@@ -70,7 +70,7 @@ class KingDB: public Interface {
   //         manager and storage engine.
   kdb::DatabaseOptions db_options_;
   std::string dbname_;
-  kdb::BufferManager bm_;
+  kdb::WriteBuffer bm_;
   kdb::StorageEngine se_;
   kdb::CompressorLZ4 compressor_;
   kdb::CRC32 crc32_;

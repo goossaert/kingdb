@@ -20,7 +20,7 @@
 #include "algorithm/compressor.h"
 #include "algorithm/crc32c.h"
 
-#include "kingdb/byte_array_base.h"
+#include "util/byte_array_base.h"
 
 namespace kdb {
 

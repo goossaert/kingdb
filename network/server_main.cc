@@ -5,7 +5,7 @@
 #include <sys/resource.h>
 #include "network/server.h"
 #include "thread/threadpool.h"
-#include "kingdb/options.h"
+#include "util/options.h"
 
 void show_usage(char *program_name) {
   printf("Example: %s --db-name mydb --port 3490 --backlog 150 --num-threads 150\n", program_name);
