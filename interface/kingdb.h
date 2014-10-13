@@ -20,9 +20,9 @@
 #include "interface/iterator.h"
 #include "interface/snapshot.h"
 
-#include "util/compressor.h"
-#include "util/crc32c.h"
-#include "util/endian.h"
+#include "algorithm/compressor.h"
+#include "algorithm/crc32c.h"
+#include "algorithm/endian.h"
 
 namespace kdb {
 

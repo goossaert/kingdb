@@ -9,8 +9,8 @@
 
 #include "util/logger.h"
 #include "kingdb/options.h"
-#include "util/murmurhash3.h"
-#include "util/xxhash.h"
+#include "algorithm/murmurhash3.h"
+#include "algorithm/xxhash.h"
 
 namespace kdb {
 

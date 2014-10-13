@@ -1,5 +1,5 @@
-#include "util/compressor.h"
-#include "util/lz4.h"
+#include "algorithm/compressor.h"
+#include "algorithm/lz4.h"
 
 
 char* MakeValue(const std::string& key, int size_value) {

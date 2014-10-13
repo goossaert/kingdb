@@ -2,7 +2,7 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
-#include "util/hash.h"
+#include "algorithm/hash.h"
 
 namespace kdb {
 

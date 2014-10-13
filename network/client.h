@@ -13,7 +13,7 @@
 #include <random>
 #include <chrono>
 #include <libmemcached/memcached.hpp>
-#include "util/murmurhash3.h"
+#include "algorithm/murmurhash3.h"
 
 #include "util/status.h"
 #include "util/logger.h"

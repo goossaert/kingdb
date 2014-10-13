@@ -20,7 +20,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <string>
-#include "util/endian.h"
+#include "algorithm/endian.h"
 #include "util/status.h"
 #include "kingdb/byte_array_base.h"
 

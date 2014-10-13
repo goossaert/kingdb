@@ -8,12 +8,12 @@
 #include <algorithm>
 #include <map>
 
-#include "util/lz4.h"
+#include "algorithm/lz4.h"
 
 #include "util/logger.h"
 #include "util/status.h"
 #include "thread/threadstorage.h"
-#include "util/crc32c.h"
+#include "algorithm/crc32c.h"
 
 namespace kdb {
 

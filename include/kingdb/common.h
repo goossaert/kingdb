@@ -18,8 +18,8 @@
 
 #include "util/logger.h"
 #include "util/status.h"
-#include "util/coding.h"
-#include "util/crc32c.h"
+#include "algorithm/coding.h"
+#include "algorithm/crc32c.h"
 #include "kingdb/byte_array_base.h"
 #include "kingdb/byte_array.h"
 #include "kingdb/options.h"

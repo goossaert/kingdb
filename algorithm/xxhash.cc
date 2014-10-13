@@ -79,7 +79,7 @@ You can contact the author at :
 //**************************************
 // Includes & Memory related functions
 //**************************************
-#include "util/xxhash.h"
+#include "algorithm/xxhash.h"
 // Modify the local functions below should you wish to use some other memory related routines
 // for malloc(), free()
 #include <stdlib.h>

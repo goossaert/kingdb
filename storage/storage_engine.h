@@ -24,10 +24,10 @@
 
 #include "kingdb/kdb.h"
 #include "kingdb/options.h"
-#include "util/hash.h"
+#include "algorithm/hash.h"
 #include "kingdb/common.h"
 #include "kingdb/byte_array.h"
-#include "util/crc32c.h"
+#include "algorithm/crc32c.h"
 #include "util/file.h"
 #include "storage/resource_manager.h"
 #include "storage/logfile_manager.h"

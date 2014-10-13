@@ -21,8 +21,8 @@
 #include <string.h>
 
 #include "util/logger.h"
-#include "util/endian.h"
-#include "util/coding.h"
+#include "algorithm/endian.h"
+#include "algorithm/coding.h"
 #include "thread/threadstorage.h"
 
 namespace kdb {

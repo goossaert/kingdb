@@ -17,8 +17,8 @@
 #include <string.h>
 
 #include "util/logger.h"
-#include "util/compressor.h"
-#include "util/crc32c.h"
+#include "algorithm/compressor.h"
+#include "algorithm/crc32c.h"
 
 #include "kingdb/byte_array_base.h"
 
