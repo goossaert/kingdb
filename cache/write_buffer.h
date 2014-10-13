@@ -81,7 +81,7 @@ class WriteBuffer {
   bool is_closed_;
   std::mutex mutex_close_;
 
-  // Using a lock hierarchy to avoid deadlock
+  // Using a lock hierarchy to avoid deadlocks
   std::mutex mutex_live_write_level1_;
   std::mutex mutex_flush_level2_;
   std::mutex mutex_indices_level3_;
@@ -95,6 +95,6 @@ class WriteBuffer {
   std::thread thread_buffer_handler_;
 };
 
-};
+} // namespace kdb
 
 #endif // KINGDB_WRITE_BUFFER_H_

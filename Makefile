@@ -49,6 +49,6 @@ $(LIBRARY): $(OBJECTS)
 
 clean:
 	rm -f *~ .*~ *.o $(EXECUTABLE) $(CLIENT) $(CLIENT_EMB) $(TEST_COMPRESSION) $(TEST_DB) $(LIBRARY)
-	rm -f cache/*.o include/*.o interface/*.o network/*.o storage_engine/*.o thread/*.o unit-tests/*.o util/*.o algorithm/*.o
-	rm -f cache/*~ include/*~ interface/*~ network/*~ storage_engine/*~ thread/*~ unit-tests/*~ util/*~ algorithm/*~
+	rm -f cache/*.o include/*.o interface/*.o network/*.o storage/*.o thread/*.o unit-tests/*.o util/*.o algorithm/*.o
+	rm -f cache/*~ include/*~ interface/*~ network/*~ storage/*~ thread/*~ unit-tests/*~ util/*~ algorithm/*~
 

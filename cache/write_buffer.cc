@@ -343,4 +343,4 @@ void WriteBuffer::ProcessingLoop() {
   }
 }
 
-};
+} // namespace kdb

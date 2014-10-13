@@ -339,6 +339,7 @@ struct LogFileFooter {
   }
 };
 
+
 struct LogFileFooterIndex {
   uint64_t hashed_key;
   uint32_t offset_entry;
@@ -367,6 +368,70 @@ struct LogFileFooterIndex {
     return (ptr - buffer);
   }
 };
+
+
+struct DatabaseOptionEncoder {
+  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct DatabaseOptions *output) {
+    if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
+
+    uint32_t crc32_computed = crc32c::Value(buffer_in + 4, 28);
+    uint32_t crc32_stored; 
+    GetFixed32(buffer_in, &crc32_stored);
+    if (crc32_computed != crc32_stored) return Status::IOError("Invalid checksum");
+
+    uint32_t version_data_format_major, version_data_format_minor;
+    GetFixed32(buffer_in +  4, &version_data_format_major);
+    GetFixed32(buffer_in +  8, &version_data_format_minor);
+    if (   version_data_format_major != kVersionDataFormatMajor
+        || version_data_format_minor != kVersionDataFormatMinor) {
+      return Status::IOError("Data format version not supported");
+    }
+
+    uint32_t create_if_missing, error_if_exists, hash, compression_type;
+    GetFixed32(buffer_in + 12, &(output->max_open_files));
+    GetFixed32(buffer_in + 16, &create_if_missing);
+    GetFixed32(buffer_in + 20, &error_if_exists);
+    GetFixed32(buffer_in + 24, &hash);
+    GetFixed32(buffer_in + 28, &compression_type);
+    output->create_if_missing = create_if_missing ? true : false;
+    output->error_if_exists = error_if_exists ? true : false;
+    if (hash == 0x0) {
+      output->hash = kMurmurHash3_64;
+    } else if (hash == 0x1) {
+      output->hash = kxxHash_64;
+    } else {
+      return Status::IOError("Unknown hash type");
+    }
+
+    if (compression_type == 0x0) {
+      output->compression.type = kNoCompression;
+    } else if (compression_type == 0x1) {
+      output->compression.type = kLZ4Compression;
+    } else {
+      return Status::IOError("Unknown compression type");
+    }
+    return Status::OK();
+  }
+
+  static uint32_t EncodeTo(const struct DatabaseOptions *input, char* buffer) {
+    EncodeFixed32(buffer +  4, kVersionDataFormatMajor);
+    EncodeFixed32(buffer +  8, kVersionDataFormatMinor);
+    EncodeFixed32(buffer + 12, input->max_open_files);
+    EncodeFixed32(buffer + 16, (uint32_t)input->create_if_missing);
+    EncodeFixed32(buffer + 20, (uint32_t)input->error_if_exists);
+    EncodeFixed32(buffer + 24, (uint32_t)input->hash);
+    EncodeFixed32(buffer + 28, (uint32_t)input->compression.type);
+    uint32_t crc32 = crc32c::Value(buffer + 4, 28);
+    EncodeFixed32(buffer, crc32);
+    return GetFixedSize();
+  }
+
+  static uint32_t GetFixedSize() {
+    return 32; // in bytes
+  }
+
+};
+
 
 } // namespace kdb
 
