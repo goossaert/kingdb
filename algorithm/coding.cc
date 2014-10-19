@@ -43,7 +43,7 @@ void GetFixed32(const char* buf, uint32_t* value) {
   if (kdb::kLittleEndian) {
     memcpy(value, buf, sizeof(*value));
   } else {
-    // TODO: this code has not been tested yet
+    // NOTE: this code has not been tested yet
     *value = buf[0] | buf[1] << 8 | buf[2] << 16 | buf[3] << 24;
   }
 }
@@ -52,7 +52,7 @@ void GetFixed64(const char* buf, uint64_t* value) {
   if (kdb::kLittleEndian) {
     memcpy(value, buf, sizeof(*value));
   } else {
-    // TODO: this code has not been tested yet
+    // NOTE: this code has not been tested yet
     *value =   buf[0]       | buf[1] <<  8 | buf[2] << 16 | buf[3] << 24
              | buf[4] << 32 | buf[5] << 40 | buf[6] << 48 | buf[7] << 56;
   }

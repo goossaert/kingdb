@@ -39,6 +39,14 @@ struct DatabaseOptions {
   bool error_if_exists;
   HashType hash;
   CompressionOptions compression;
+
+  static std::string GetPath(const std::string &dirpath) {
+    return dirpath + "/db_options";
+  }
+
+  static std::string GetFilename() {
+    return "db_options";
+  }
 };
 
 struct ReadOptions {

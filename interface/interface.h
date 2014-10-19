@@ -26,9 +26,10 @@ class Interface {
   virtual Status Remove(WriteOptions& write_options, ByteArray *key) = 0;
   virtual Interface* NewSnapshot() = 0;
   virtual Iterator* NewIterator(ReadOptions& read_options) = 0;
+  virtual Status Open() = 0;
   virtual void Close() = 0;
 };
 
-};
+} // namespace kdb
 
 #endif // KINGDB_INTERFACE_H_

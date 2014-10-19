@@ -370,6 +370,7 @@ class StorageEngine {
     uint32_t fileid = 0;
     struct stat info;
     while ((entry = readdir(directory)) != NULL) {
+      if (strcmp(entry->d_name, DatabaseOptions::GetFilename().c_str()) == 0) continue;
       sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
       fileid = LogfileManager::hex_to_num(entry->d_name);
       if (   logfile_manager_.file_resource_manager.IsFileCompacted(fileid)

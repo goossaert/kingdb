@@ -5,6 +5,7 @@
 #ifndef KINGDB_FILE_H_
 #define KINGDB_FILE_H_
 
+#include <sys/resource.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
 #include "util/status.h"
@@ -13,6 +14,17 @@ namespace kdb {
 
 class FileUtil {
  public:
+
+  static void increase_limit_open_files() {
+    struct rlimit rl;
+    if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
+      rl.rlim_cur = OPEN_MAX;
+      if (setrlimit(RLIMIT_NOFILE, &rl) != 0) {
+        fprintf(stderr, "Could not increase the limit on open files for this process");
+      }
+    }
+  }
+
   // NOTE: Pre-allocating disk space is very tricky: fallocate() and
   //       posix_fallocate() are not supported on all platforms, glibc sometimes
   //       overrides posix_fallocate() with no warnings at all, and for some

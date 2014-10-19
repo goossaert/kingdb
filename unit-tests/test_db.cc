@@ -40,6 +40,11 @@ class DBTest {
   void Open() {
     EraseDB();
     db_ = new kdb::KingDB(db_options_, dbname_);
+    Status s = db_->Open();
+    if (!s.IsOK()) {
+      delete db_;
+      LOG_EMERG("Server", s.ToString().c_str()); 
+    }
   }
 
   void Close() {

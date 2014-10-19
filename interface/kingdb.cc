@@ -8,12 +8,12 @@ namespace kdb {
 
 Status KingDB::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
   LOG_TRACE("KingDB Get()", "[%s]", key->ToString().c_str());
-  Status s = bm_.Get(read_options, key, value_out);
+  Status s = wb_->Get(read_options, key, value_out);
   if (s.IsRemoveOrder()) {
     return Status::NotFound("Unable to find entry");
   } else if (s.IsNotFound()) {
     LOG_TRACE("KingDB Get()", "not found in buffer");
-    s = se_.Get(key, value_out);
+    s = se_->Get(key, value_out);
     if (s.IsNotFound()) {
       LOG_TRACE("KingDB Get()", "not found in storage engine");
       return s;
@@ -96,7 +96,7 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 
   LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu crc32:0x%llx END", key->ToString().c_str(), size_value_compressed, crc32);
 
-  return bm_.PutChunk(write_options,
+  return wb_->PutChunk(write_options,
                       key,
                       chunk_final,
                       offset_chunk_compressed,
@@ -108,7 +108,7 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 
 Status KingDB::Remove(WriteOptions& write_options, ByteArray *key) {
   LOG_TRACE("KingDB::Remove()", "[%s]", key->ToString().c_str());
-  return bm_.Remove(write_options, key);
+  return wb_->Remove(write_options, key);
 }
 
 
@@ -116,13 +116,13 @@ Interface* KingDB::NewSnapshot() {
   LOG_TRACE("KingDB::NewSnapshot()", "start");
   std::set<uint32_t>* fileids_ignore;
   uint32_t snapshot_id;
-  Status s = se_.GetNewSnapshotData(&snapshot_id, &fileids_ignore);
+  Status s = se_->GetNewSnapshotData(&snapshot_id, &fileids_ignore);
   if (!s.IsOK()) return nullptr;
 
   LOG_TRACE("KingDB::NewSnapshot()", "Flushing 0");
-  bm_.Flush();
+  wb_->Flush();
   LOG_TRACE("KingDB::NewSnapshot()", "Flushing 1");
-  uint32_t fileid_end = se_.FlushCurrentFileForSnapshot();
+  uint32_t fileid_end = se_->FlushCurrentFileForSnapshot();
   LOG_TRACE("KingDB::NewSnapshot()", "Flushing 2");
   StorageEngine *se_readonly = new StorageEngine(db_options_,
                                                  dbname_,
@@ -132,12 +132,11 @@ Interface* KingDB::NewSnapshot() {
   std::vector<uint32_t> *fileids_iterator = se_readonly->GetFileidsIterator();
   Snapshot *snapshot = new Snapshot(db_options_,
                                     dbname_,
-                                    &se_,
+                                    se_,
                                     se_readonly,
                                     fileids_iterator,
                                     snapshot_id);
   return snapshot;
 }
 
-};
-
+} // namespace kdb

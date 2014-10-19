@@ -39,6 +39,10 @@ class Snapshot: public Interface {
     Close();
   }
 
+  virtual Status Open() override {
+    return Status::OK(); 
+  }
+
   virtual void Close() override {
     std::unique_lock<std::mutex> lock(mutex_close_);
     if (is_closed_) return;

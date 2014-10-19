@@ -284,7 +284,7 @@ class LogfileManager {
 
 
   uint64_t WriteFirstChunkLargeOrder(Order& order, uint64_t hashed_key) {
-    // TODO: what if the large order is self-contained? then need to do all the
+    // TODO-28: what if the large order is self-contained? then need to do all the
     // actions done for the last chunk in WriteChunk() -- maybe make a new
     // method to factorize that code
     uint64_t fileid_largefile = IncrementSequenceFileId(1);
@@ -605,15 +605,13 @@ class LogfileManager {
     Status s;
     struct stat info;
 
-    if (   stat(dbname.c_str(), &info) != 0
-        && db_options_.create_if_missing
-        && (   mkdir(dbname.c_str(), 0755) < 0
-            || mkdir(dirpath_locks_.c_str(), 0755) < 0)) {
-      return Status::IOError("Could not create directory", strerror(errno));
+    if (   stat(dirpath_locks_.c_str(), &info) != 0
+        && mkdir(dirpath_locks_.c_str(), 0755) < 0) {
+      return Status::IOError("Could not create lock directory", strerror(errno));
     }
 
     if(!(info.st_mode & S_IFDIR)) {
-      return Status::IOError("A file with same name as the database already exists and is not a directory. Remove or rename this file to continue.", dbname.c_str());
+      return Status::IOError("A file with same name as the lock directory already exists and is not a directory. Remove or rename this file to continue.", dirpath_locks_.c_str());
     }
 
     if (!is_read_only_) {
@@ -654,8 +652,9 @@ class LogfileManager {
     uint64_t timestamp_max = 0;
     uint32_t fileid = 0;
     while ((entry = readdir(directory)) != NULL) {
+      if (strcmp(entry->d_name, DatabaseOptions::GetFilename().c_str()) == 0) continue;
+      if (strcmp(entry->d_name, prefix_compaction_.c_str()) == 0) continue;
       sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
-      if (strncmp(entry->d_name, prefix_compaction_.c_str(), prefix_compaction_.size()) == 0) continue;
       if (stat(filepath, &info) != 0 || !(info.st_mode & S_IFREG)) continue;
       fileid = LogfileManager::hex_to_num(entry->d_name);
       if (   fileids_ignore != nullptr

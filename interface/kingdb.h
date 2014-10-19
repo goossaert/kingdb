@@ -13,6 +13,7 @@
 #include "interface/interface.h"
 #include "cache/write_buffer.h"
 #include "storage/storage_engine.h"
+#include "storage/format.h"
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
@@ -33,9 +34,7 @@ class KingDB: public Interface {
   KingDB(const DatabaseOptions& db_options, const std::string dbname)
       : db_options_(db_options),
         dbname_(dbname),
-        bm_(db_options),
-        se_(db_options, dbname),
-        is_closed_(false)
+        is_closed_(true)
   {
     // Word-swapped endianness is not supported
     assert(getEndianness() == kBytesLittleEndian || getEndianness() == kBytesBigEndian);
@@ -44,13 +43,71 @@ class KingDB: public Interface {
   virtual ~KingDB() {
     Close();
   }
+  
+  virtual Status Open() override {
+    std::unique_lock<std::mutex> lock(mutex_close_);
+    if (!is_closed_) return Status::IOError("The database is already open");
+    is_closed_ = false;
+
+    Status s;
+    struct stat info;
+    bool db_exists = (stat(dbname_.c_str(), &info) == 0);
+
+    if (   db_exists
+        && db_options_.error_if_exists) {
+      return Status::IOError("Could not create database directory", strerror(errno));
+    }
+
+    if (   !db_exists
+        && db_options_.create_if_missing
+        && mkdir(dbname_.c_str(), 0755) < 0) {
+      return Status::IOError("Could not create database directory", strerror(errno));
+    }
+
+    if(!(info.st_mode & S_IFDIR)) {
+      return Status::IOError("A file with same name as the database already exists and is not a directory. Remove or rename this file to continue.", dbname_.c_str());
+    }
+
+    std::string filepath_dboptions = DatabaseOptions::GetPath(dbname_);
+    int fd;
+    if (stat(filepath_dboptions.c_str(), &info) == 0) {
+      // If there is a db_options file, try loading it
+      LOG_TRACE("KingDB::Open()", "Loading db_option file");
+      if ((fd = open(filepath_dboptions.c_str(), O_RDONLY, 0644)) < 0) {
+        LOG_EMERG("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
+      }
+      Mmap mmap(filepath_dboptions, info.st_size);
+      s = DatabaseOptionEncoder::DecodeFrom(mmap.datafile(), mmap.filesize(), &db_options_);
+      close(fd);
+      if (!s.IsOK()) return s;
+    } else {
+      // If there is no db_options file, write it
+      LOG_TRACE("KingDB::Open()", "Writing db_option file");
+      if ((fd = open(filepath_dboptions.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
+        LOG_EMERG("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
+      }
+      char buffer[DatabaseOptionEncoder::GetFixedSize()];
+      DatabaseOptionEncoder::EncodeTo(&db_options_, buffer);
+      if (write(fd, buffer, DatabaseOptionEncoder::GetFixedSize()) < 0) {
+        close(fd);
+        return Status::IOError("Could not write 'db_options' file", strerror(errno));
+      }
+      close(fd);
+    }
+
+    wb_ = new WriteBuffer(db_options_);
+    se_ = new StorageEngine(db_options_, dbname_);
+    return Status::OK(); 
+  }
 
   virtual void Close() override {
     std::unique_lock<std::mutex> lock(mutex_close_);
     if (is_closed_) return;
     is_closed_ = true;
-    bm_.Close();
-    se_.Close();
+    wb_->Close();
+    se_->Close();
+    delete wb_;
+    delete se_;
   }
 
   virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override;
@@ -70,15 +127,14 @@ class KingDB: public Interface {
   //         manager and storage engine.
   kdb::DatabaseOptions db_options_;
   std::string dbname_;
-  kdb::WriteBuffer bm_;
-  kdb::StorageEngine se_;
+  kdb::WriteBuffer *wb_;
+  kdb::StorageEngine *se_;
   kdb::CompressorLZ4 compressor_;
   kdb::CRC32 crc32_;
   bool is_closed_;
   std::mutex mutex_close_;
 };
 
-};
-
+} // namespace kdb
 
 #endif // KINGDB_INTERFACE_MAIN_H_

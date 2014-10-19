@@ -357,6 +357,12 @@ void Server::AcceptNetworkTraffic() {
 
   // Create the database object and the thread pool
   db_ = new kdb::KingDB(options_, dbname_);
+  Status s = db_->Open();
+  if (!s.IsOK()) {
+    delete db_;
+    LOG_EMERG("Server", s.ToString().c_str()); 
+    return;
+  }
   tp_ = new ThreadPool(num_threads_);
   tp_->Start();
   LOG_TRACE("Server", "waiting for connections...");

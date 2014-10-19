@@ -2,23 +2,13 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
-#include <sys/resource.h>
 #include "network/server.h"
 #include "thread/threadpool.h"
 #include "util/options.h"
+#include "util/file.h"
 
 void show_usage(char *program_name) {
   printf("Example: %s --db-name mydb --port 3490 --backlog 150 --num-threads 150\n", program_name);
-}
-
-void increase_limit_open_files() {
-  struct rlimit rl;
-  if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
-    rl.rlim_cur = OPEN_MAX;
-    if (setrlimit(RLIMIT_NOFILE, &rl) != 0) {
-      fprintf(stderr, "Could not increase the limit on open files for this process");
-    }
-  }
 }
 
 bool stop_requested = false;
@@ -40,7 +30,7 @@ int main(int argc, char** argv) {
     exit(-1);
   }
 
-  increase_limit_open_files();
+  kdb::FileUtil::increase_limit_open_files();
 
   int port = 0;
   int backlog = 0;
