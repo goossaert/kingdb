@@ -47,12 +47,12 @@ class FileUtil {
     ** on systems that do not have a real fallocate() system call.
     */
     struct stat buf;
-    if (fstat(fd, &buf) != 0) return Status::IOError("kingdb_fallocate()", "fstat() error");
+    if (fstat(fd, &buf) != 0) return Status::IOError("kingdb_fallocate() - fstat()", strerror(errno));
     if (buf.st_size >= length) return Status::IOError("kingdb_fallocate()", "buf.st_size >= length");
 
     const int blocksize = buf.st_blksize;
     if (!blocksize) return Status::IOError("kingdb_fallocate()", "Invalid block size");
-    if (ftruncate(fd, length) != 0) return Status::IOError("kingdb_fallocate()", "ftruncate() error");
+    if (ftruncate(fd, length) != 0) return Status::IOError("kingdb_fallocate() - ftruncate()", strerror(errno));
 
     int num_bytes_written;
     int64_t offset_write = ((buf.st_size + 2 * blocksize - 1) / blocksize) * blocksize - 1;
@@ -63,12 +63,22 @@ class FileUtil {
       }
       offset_write += blocksize;
     } while (num_bytes_written == 1 && offset_write < length);
-    if (num_bytes_written != 1) return Status::IOError("kingdb_fallocate()", "write() error");
+    if (num_bytes_written != 1) return Status::IOError("kingdb_fallocate() - write()", strerror(errno));
     return Status::OK();
   }
 
+  static Status fallocate_filepath(std::string filepath, int64_t length) {
+    int fd;
+    if ((fd = open(filepath.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
+      return Status::IOError("kingdb_fallocate_filepath() - open()", strerror(errno));
+    }
+    Status s = fallocate(fd, length);
+    close(fd);
+    return s;
+  }
 
-  static int64_t fs_free_space(char *filepath) {
+
+  static int64_t fs_free_space(const char *filepath) {
     struct statvfs stat;
     if (statvfs(filepath, &stat) != 0) {
       LOG_TRACE("disk_free_space()", "statvfs() error");

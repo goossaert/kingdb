@@ -277,6 +277,10 @@ class LogfileManager {
     if (write(fd, buffer_index_, offset) < 0) {
       LOG_TRACE("StorageEngine::WriteLogIndex()", "Error write(): %s", strerror(errno));
     }
+
+    // ftruncate() is necessary in case the file system space for the file was pre-allocated 
+    ftruncate(fd, position + offset);
+
     *size_out = offset;
     LOG_TRACE("StorageEngine::WriteLogIndex()", "offset_indexes:%u, num_entries:[%lu]", position, logindex_current.size());
     return Status::OK();
@@ -287,6 +291,10 @@ class LogfileManager {
     // TODO-28: what if the large order is self-contained? then need to do all the
     // actions done for the last chunk in WriteChunk() -- maybe make a new
     // method to factorize that code
+
+    // TODO-30: large files should be pre-allocated. The problem here is that
+    // the streaming interface needs to work over a network, thus the
+    // pre-allocation can't block or take too long.
     uint64_t fileid_largefile = IncrementSequenceFileId(1);
     uint64_t timestamp_largefile = IncrementSequenceTimestamp(1);
     std::string filepath = GetFilepath(fileid_largefile);
@@ -422,7 +430,7 @@ class LogfileManager {
         filesize += size_logindex;
         file_resource_manager.SetFileSize(fileid, filesize);
         if (is_large_order) file_resource_manager.SetFileLarge(fileid);
-        file_resource_manager.ResetDataForFileId(fileid);
+        file_resource_manager.ClearTemporaryDataForFileId(fileid);
       }
 
     }

@@ -57,10 +57,12 @@ class StorageEngine {
     sequence_snapshot_ = 0;
     stop_requested_ = false;
     is_closed_ = false;
+    fs_free_space_ = 0;
     if (!is_read_only_) {
       thread_index_ = std::thread(&StorageEngine::ProcessingLoopIndex, this);
       thread_data_ = std::thread(&StorageEngine::ProcessingLoopData, this);
       thread_compaction_ = std::thread(&StorageEngine::ProcessingLoopCompaction, this);
+      thread_statistics_ = std::thread(&StorageEngine::ProcessingLoopStatistics, this);
     }
     hash_ = MakeHash(db_options.hash);
     if (!is_read_only_) {
@@ -94,6 +96,7 @@ class StorageEngine {
       thread_index_.join();
       thread_data_.join();
       thread_compaction_.join();
+      thread_statistics_.join();
       ReleaseAllSnapshots();
       LOG_TRACE("StorageEngine::Close()", "join end");
     }
@@ -111,26 +114,124 @@ class StorageEngine {
   }
 
   bool IsStopRequested() { return stop_requested_; }
-  void Stop() { stop_requested_ = true; }
+  void Stop() {
+    stop_requested_ = true;
+    cv_stop_.notify_all();
+  }
+
+  void ProcessingLoopStatistics() {
+    std::chrono::seconds duration(60);
+    while (true) {
+      mutex_statistics_.lock();
+      fs_free_space_ = FileUtil::fs_free_space(dbname_.c_str());
+      mutex_statistics_.unlock();
+      std::unique_lock<std::mutex> lock(mutex_waitfor_);
+      cv_stop_.wait_for(lock, duration);
+      if (IsStopRequested()) return;
+    }
+  }
+
+  uint64_t GetFreeSpace() {
+    std::unique_lock<std::mutex> lock(mutex_statistics_);
+    return fs_free_space_;
+  }
+
 
 
   void ProcessingLoopCompaction() {
-    // TODO: have the compaction loop actually do the right thing
-    std::chrono::milliseconds duration(200);
-    std::chrono::milliseconds forever(100000000000000000);
-    while(true) {
-      struct stat info;
-      if (stat("/tmp/do_compaction", &info) == 0) {
-        uint32_t seq = logfile_manager_.GetSequenceFileId();
-        Compaction(dbname_, 1, seq+1); 
-        std::this_thread::sleep_for(forever);
+    // NOTE for debugging:
+    // - I think there is a bug in the file truncating (could be the use of SEEK_END)
+    // - compaction fails and make the program crash
+    // - compaction triggering isn't so accurate either
+    // - compaction shouldn't be triggered if fileid_lastcompacted == (seq - 1)
+    //
+    // 1. Have a ProcessingLoopStatistics() which pull the disk usage and
+    //    dbsize values every 60 seconds.
+    // 2. Add a new variable in ProcessingLoopCompaction 'fileid_lastcompacted'
+    // 3. If enough disk space:
+    //    - Do compaction if
+    //        COMPACTION_SIZE_UNCOMPACTED_HAS_SPACE > 0
+    //        &&
+    //        free disk space > COMPACTION_FS_FREE_SPACE_THRESHOLD
+    //        &&
+    //        dbsize_uncompacted > COMPACTION_SIZE_UNCOMPACTED_HAS_SPACE
+    //    - Do compaction if
+    //        COMPACTION_SIZE_UNCOMPACTED_NO_SPACE > 0
+    //        &&
+    //        free disk space <= COMPACTION_FS_FREE_SPACE_THRESHOLD
+    //        &&
+    //        dbsize_uncompacted > COMPACTION_SIZE_UNCOMPACTED_NO_SPACE
+    //    - Do compaction if
+    //        COMPACTION_TIMEOUT > 0
+    //        &&
+    //        current wait > COMPACTION_TIMEOUT
+    // 4. Initialize: M = M_default
+    // 5. In compaction:
+    //    - Scan through uncompacted files until the sum of their sizes reaches M
+    //    - Try reserving the disk space necessary for the compaction process
+    //    - If compaction fails, do M <- M/2 and goto step 5
+    //    - If M reaches 0, try one compaction run (trying to clear the large
+    //      files if any), and if still unsuccessful, declare compaction impossible
+    // 6. If the compaction succeeded, update 'fileid_lastcompacted'
+ 
+    std::chrono::seconds duration(30);
+    uint64_t dbsize_total = logfile_manager_.file_resource_manager.GetDbSizeTotal();
+    uint64_t dbsize_uncompacted = logfile_manager_.file_resource_manager.GetDbSizeUncompacted();
+    uint32_t fileid_lastcompacted = 0;
+    uint32_t fileid_out = 0;
+
+    // TODO: make these db_options_
+    uint64_t dbo_size_compaction_fs_free_space_threshold = 2 * 1000 * 1024*1024;
+    uint64_t dbo_size_compaction_uncompacted_has_space   = 1 * 1000 * 1024*1024;
+    uint64_t dbo_size_compaction_uncompacted_no_space    =      256 * 1024*1024;
+    uint64_t dbo_fs_free_space_sleep                     =      128 * 1024*1024;
+
+    while (true) {
+      //std::chrono::milliseconds forever(100000000000000000);
+      //struct stat info;
+      //if (stat("/tmp/do_compaction", &info) == 0) {
+      //  uint32_t seq = logfile_manager_.GetSequenceFileId();
+      //  Compaction(dbname_, 1, seq+1); 
+      //  std::this_thread::sleep_for(forever);
+      //}
+      uint64_t size_compaction = 0;
+      uint64_t fs_free_space = GetFreeSpace();
+      if (fs_free_space > dbo_size_compaction_fs_free_space_threshold) {
+        size_compaction = dbo_size_compaction_uncompacted_has_space;
+      } else {
+        size_compaction = dbo_size_compaction_uncompacted_no_space;
       }
+      uint32_t seq = logfile_manager_.GetSequenceFileId();
+
+      if (   fs_free_space > dbo_fs_free_space_sleep
+          && size_compaction > logfile_manager_.file_resource_manager.GetDbSizeUncompacted()) {
+        while (true) {
+          fileid_out = 0;
+          Status s = Compaction(dbname_, fileid_lastcompacted+1, seq+1, size_compaction, &fileid_out);
+          if (!s.IsOK()) {
+            if (size_compaction == 0) break;
+            size_compaction /= 2;
+          } else {
+            fileid_lastcompacted = fileid_out;  
+            break;
+          }
+        }
+      }
+
+      std::unique_lock<std::mutex> lock(mutex_waitfor_);
+      cv_stop_.wait_for(lock, duration);
       if (IsStopRequested()) return;
-      std::this_thread::sleep_for(duration);
     }
   }
 
   void ProcessingLoopData() {
+    // TODO-29: Detect full file system:
+    //   - If disk space goes below N, stop accepting incoming queries
+    //   - Do not fail the current writes, just make them sleep until free space
+    //     is made on the drive (if the compaction is pre-allocating space and
+    //     then failing, the write must not fail, wait for the pre-allocated
+    //     files to be removed, write the files when there is space, and finally
+    //     stop accepting incoming queries)
     while(true) {
       // Wait for orders to process
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "start");
@@ -330,7 +431,9 @@ class StorageEngine {
 
   Status Compaction(std::string dbname,
                     uint32_t fileid_start,
-                    uint32_t fileid_end) {
+                    uint32_t fileid_end,
+                    uint64_t size_compaction,
+                    uint32_t *fileid_out) {
     // TODO: make sure that all sets, maps and multimaps are cleared whenever
     // they are no longer needed
     
@@ -355,7 +458,7 @@ class StorageEngine {
     if (!s.IsOK()) return Status::IOError("Could not clean up previous compaction", dbname.c_str());
 
 
-    // 1. Get the files needed for compaction
+    // 1a. Get *all* the files that are candidates for compaction
     // TODO: This is a quick hack to get the files for compaction, by going
     //       through all the files. Fix that to be only the latest non-handled
     //       log files
@@ -366,6 +469,8 @@ class StorageEngine {
     if ((directory = opendir(dbname.c_str())) == NULL) {
       return Status::IOError("Could not open database directory", dbname.c_str());
     }
+
+    std::map<uint32_t, uint64_t> fileids_to_filesizes;
     char filepath[2048];
     uint32_t fileid = 0;
     struct stat info;
@@ -381,6 +486,15 @@ class StorageEngine {
           || info.st_size <= SIZE_LOGFILE_HEADER) {
         continue;
       }
+      fileids_to_filesizes[fileid] = info.st_size;
+    }
+    closedir(directory);
+
+
+    // 1b. Filter to process files only up to a certain total size
+    //     (large files are ignored)
+    uint64_t size_total = 0;
+    for (auto& p: fileids_to_filesizes) {
       // NOTE: Here the locations are read directly from the secondary storage,
       //       which could be optimized by reading them from the index in memory. 
       //       One way to do that is to have a temporary index to which all
@@ -388,14 +502,20 @@ class StorageEngine {
       //       guaranteed to not be changed, thus all sorts of scans and changes
       //       can be done on it. Once compaction is over, the temporary index
       //       can just be poured into the main index.
-      Mmap mmap(filepath, info.st_size);
+      uint32_t fileid = p.first;
+      uint64_t filesize = p.second;
+      if (!IsFileLarge(fileid) && size_total + filesize > size_compaction) break;
+      *fileid_out = fileid;
+      std::string filepath = logfile_manager_.GetFilepath(fileid);
+      Mmap mmap(filepath, filesize);
       s = logfile_manager_.LoadFile(mmap, fileid, index_compaction);
       if (!s.IsOK()) {
-        LOG_WARN("LogfileManager::Compaction()", "Could not load index in file [%s]", filepath);
+        LOG_WARN("LogfileManager::Compaction()", "Could not load index in file [%s]", filepath.c_str());
         // TODO: handle the case where a file is found to be damaged during compaction
       }
+      size_total += filesize;
     }
-    closedir(directory);
+    fileids_to_filesizes.clear(); // no longer needed
 
 
     // 2. Iterating over all unique hashed keys of index_compaction, and determine which
@@ -503,7 +623,25 @@ class StorageEngine {
      *
      */
 
-    // 5. Mmapping all the files involved in the compaction
+    // 5a. Reserving space in the file system
+    // Reserve as much space are the files to compact are using, this is a
+    // poor approximation, but should cover most cases. Large files are ignored.
+    uint32_t fileid_compaction = 1;
+    for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
+      uint32_t fileid = *it;
+      if (IsFileLarge(fileid)) continue;
+      uint64_t filesize = logfile_manager_.file_resource_manager.GetFileSize(fileid);
+      std::string filepath = logfile_manager_compaction_.GetFilepath(fileid_compaction);
+      Status s = FileUtil::fallocate_filepath(filepath, filesize);
+      if (!s.IsOK()) {
+        FileUtil::remove_files_with_prefix(dbname.c_str(), prefix_compaction_);
+        return s;
+      }
+      fileid_compaction += 1;
+    }
+
+
+    // 5b. Mmapping all the files involved in the compaction
     LOG_TRACE("Compaction()", "Step 5: Mmap() all the files! ALL THE FILES!");
     std::map<uint32_t, Mmap*> mmaps;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
@@ -757,6 +895,7 @@ class StorageEngine {
         if (std::remove(logfile_manager_.GetFilepath(fileid).c_str()) != 0) {
           LOG_EMERG("Compaction()", "Could not remove file [%s]", logfile_manager_.GetFilepath(fileid).c_str());
         }
+        logfile_manager_.file_resource_manager.ClearAllDataForFileId(fileid);
       }
     } else {
       // Snapshots are in progress, therefore mark the files and they will be removed when the snapshots are released
@@ -784,6 +923,9 @@ class StorageEngine {
 
     // TODO-20: update changelogs and fsync() wherever necessary (journal, or whatever name, which has
     //          the sequence of operations that can be used to recover)
+
+    // Cleanup pre-allocated files
+    FileUtil::remove_files_with_prefix(dbname.c_str(), prefix_compaction_);
  
     return Status::OK();
   }
@@ -815,6 +957,8 @@ class StorageEngine {
         if (std::remove(logfile_manager_.GetLockFilepath(fileid).c_str()) != 0) {
           LOG_EMERG("ReleaseSnapshot()", "Could not lock file [%s]", logfile_manager_.GetLockFilepath(fileid).c_str());
         }
+        logfile_manager_.file_resource_manager.ClearAllDataForFileId(fileid);
+        num_references_to_unused_files_.erase(fileid);
       } else {
         num_references_to_unused_files_[fileid] -= 1;
       }
@@ -901,9 +1045,12 @@ class StorageEngine {
   std::mutex mutex_compaction_;
   bool is_compaction_in_progress_;
   std::thread thread_compaction_;
-  std::mutex mutex_fileds_compacted_;
-  std::set<uint32_t> fileids_compacted_;
   std::map<uint32_t, uint32_t> num_references_to_unused_files_;
+
+  // Statistics
+  std::mutex mutex_statistics_;
+  std::thread thread_statistics_;
+  uint64_t fs_free_space_; // in bytes
 
   // Snapshot
   std::mutex mutex_snapshot_;
@@ -913,9 +1060,11 @@ class StorageEngine {
   std::vector<uint32_t> *fileids_iterator_;
 
   // Stopping and closing
+  std::condition_variable cv_stop_;
   bool stop_requested_;
   bool is_closed_;
   std::mutex mutex_close_;
+  std::mutex mutex_waitfor_;
 };
 
 } // namespace kdb

@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstdio>
 
+#include <assert.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -34,13 +35,32 @@ namespace kdb {
 
 class FileResourceManager {
  public:
-  FileResourceManager() {
+  FileResourceManager()
+    : dbsize_total_(0),
+      dbsize_uncompacted_(0) {
   }
 
-  void ResetDataForFileId(uint32_t fileid) {
+  void ClearTemporaryDataForFileId(uint32_t fileid) {
+    std::unique_lock<std::mutex> lock(mutex_);
     num_writes_in_progress_.erase(fileid);
     logindexes_.erase(fileid);
     has_padding_in_values_.erase(fileid);
+  }
+
+  void ClearAllDataForFileId(uint32_t fileid) {
+    ClearTemporaryDataForFileId(fileid);
+    std::unique_lock<std::mutex> lock(mutex_);
+    uint64_t filesize = 0;
+    if (filesizes_.find(fileid) != filesizes_.end()) {
+      filesize = filesizes_[fileid];
+    }
+    IncrementDbSizeTotal(-filesize);
+    if (compactedfiles_.find(fileid) == compactedfiles_.end()) {
+      IncrementDbSizeUncompacted(-filesize);
+    }
+    filesizes_.erase(fileid);
+    largefiles_.erase(fileid);
+    compactedfiles_.erase(fileid);
   }
 
   uint64_t GetFileSize(uint32_t fileid) {
@@ -50,6 +70,16 @@ class FileResourceManager {
 
   void SetFileSize(uint32_t fileid, uint64_t filesize) {
     std::unique_lock<std::mutex> lock(mutex_);
+
+    uint64_t filesize_before = 0;
+    if (filesizes_.find(fileid) != filesizes_.end()) {
+      filesize_before = filesizes_[fileid];
+    }
+    IncrementDbSizeTotal(filesize - filesize_before);
+    if (compactedfiles_.find(fileid) == compactedfiles_.end()) {
+      IncrementDbSizeUncompacted(filesize - filesize_before);
+    }
+
     filesizes_[fileid] = filesize;
   }
 
@@ -70,7 +100,13 @@ class FileResourceManager {
 
   void SetFileCompacted(uint32_t fileid) {
     std::unique_lock<std::mutex> lock(mutex_);
+    if (compactedfiles_.find(fileid) != compactedfiles_.end()) return;
     compactedfiles_.insert(fileid);
+    if (filesizes_.find(fileid) != filesizes_.end()) {
+      // The size for this file was already set, thus the size of uncompacted
+      // files needs to be updated.
+      IncrementDbSizeUncompacted(-filesizes_[fileid]);
+    }
   }
 
   uint32_t GetNumWritesInProgress(uint32_t fileid) {
@@ -114,14 +150,40 @@ class FileResourceManager {
     }
   }
 
+  uint64_t GetDbSizeTotal() {
+    std::unique_lock<std::mutex> lock(mutex_dbsize_);
+    return dbsize_total_;
+  }
+
+  uint64_t GetDbSizeUncompacted() {
+    std::unique_lock<std::mutex> lock(mutex_dbsize_);
+    return dbsize_uncompacted_;
+  }
+
+  void IncrementDbSizeTotal(int64_t inc) {
+    std::unique_lock<std::mutex> lock(mutex_dbsize_);
+    assert(dbsize_total_ + inc >= 0);
+    dbsize_total_ += inc;
+  }
+
+  void IncrementDbSizeUncompacted(int64_t inc) {
+    std::unique_lock<std::mutex> lock(mutex_dbsize_);
+    assert(dbsize_uncompacted_ + inc >= 0);
+    dbsize_uncompacted_ += inc;
+  }
+
  private:
+  // NOTE: all files go through the same mutexes -- this can easily be sharded
   std::mutex mutex_;
+  std::mutex mutex_dbsize_;
   std::map<uint32_t, uint64_t> filesizes_;
   std::set<uint32_t> largefiles_;
   std::set<uint32_t> compactedfiles_;
   std::map<uint32_t, uint64_t> num_writes_in_progress_;
   std::map<uint32_t, std::vector< std::pair<uint64_t, uint32_t> > > logindexes_;
   std::set<uint32_t> has_padding_in_values_;
+  uint64_t dbsize_total_;
+  uint64_t dbsize_uncompacted_;
 };
 
 } // namespace kdb
