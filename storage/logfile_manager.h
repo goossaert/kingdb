@@ -59,14 +59,8 @@ class LogfileManager {
         dirpath_locks_(dirpath_locks) {
     LOG_TRACE("LogfileManager::LogfileManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
     dbname_ = dbname;
-    sequence_fileid_ = 0;
-    sequence_timestamp_ = 0;
-    size_block_ = SIZE_LOGFILE_TOTAL;
-    has_file_ = false;
-    buffer_has_items_ = false;
     hash_ = MakeHash(db_options.hash);
-    is_closed_ = false;
-    is_locked_sequence_timestamp_ = false;
+    Reset();
     if (!is_read_only_) {
       buffer_raw_ = new char[size_block_*2];
       buffer_index_ = new char[size_block_*2];
@@ -75,6 +69,16 @@ class LogfileManager {
 
   ~LogfileManager() {
     Close();
+  }
+
+  void Reset() {
+    sequence_fileid_ = 0;
+    sequence_timestamp_ = 0;
+    size_block_ = SIZE_LOGFILE_TOTAL;
+    has_file_ = false;
+    buffer_has_items_ = false;
+    is_closed_ = false;
+    is_locked_sequence_timestamp_ = false;
   }
 
   void Close() {
@@ -166,7 +170,7 @@ class LogfileManager {
   }
 
   void OpenNewFile() {
-    LOG_EMERG("StorageEngine::OpenNewFile()", "Opening file [%s]: %u", filepath_.c_str(), GetSequenceFileId());
+    LOG_EMERG("StorageEngine::OpenNewFile()", "Opening file (before) [%s]: %u", filepath_.c_str(), GetSequenceFileId());
     IncrementSequenceFileId(1);
     IncrementSequenceTimestamp(1);
     filepath_ = GetFilepath(GetSequenceFileId());
@@ -193,6 +197,7 @@ class LogfileManager {
   void CloseCurrentFile() {
     if (!has_file_) return;
     LOG_TRACE("LogfileManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
+    //ftruncate(fd_, offset_end_);
     FlushLogIndex();
     close(fd_);
     //IncrementSequenceFileId(1);
@@ -243,6 +248,7 @@ class LogfileManager {
     LOG_TRACE("LogfileManager::FlushLogIndex()", "ENTER - fileid_:%d - num_writes_in_progress:%u", fileid_, num);
     if (file_resource_manager.GetNumWritesInProgress(fileid_) == 0) {
       uint64_t size_logindex;
+      // PROBLEM
       Status s = WriteLogIndex(fd_, file_resource_manager.GetLogIndex(fileid_), &size_logindex, filetype_default_, file_resource_manager.HasPaddingInValues(fileid_), false);
       uint64_t filesize = file_resource_manager.GetFileSize(fileid_);
       file_resource_manager.SetFileSize(fileid_, filesize + size_logindex);
@@ -432,9 +438,11 @@ class LogfileManager {
 
       uint32_t num_writes_in_progress = file_resource_manager.SetNumWritesInProgress(fileid, -1);
       if (fileid != fileid_ && num_writes_in_progress == 0) {
-        lseek(fd, 0, SEEK_END);
         uint64_t size_logindex;
         FileType filetype = is_large_order ? kCompactedLargeType : filetype_default_;
+        // PROBLEM
+        //uint64_t filesize_before = file_resource_manager.GetFileSize(fileid);
+        //ftruncate(fd, filesize_before);
         WriteLogIndex(fd, file_resource_manager.GetLogIndex(fileid), &size_logindex, filetype, file_resource_manager.HasPaddingInValues(fileid), false);
         uint64_t filesize = file_resource_manager.GetFileSize(fileid);
         filesize += size_logindex;
@@ -844,7 +852,6 @@ class LogfileManager {
         return Status::IOError("Could not open file for recovery", mmap.filepath());
       }
       ftruncate(fd, offset);
-      lseek(fd, 0, SEEK_END);
       uint64_t size_logindex;
       WriteLogIndex(fd, logindex_current, &size_logindex, lfh.GetFileType(), has_padding_in_values, has_invalid_entries);
       file_resource_manager.SetFileSize(fileid, mmap.filesize() + size_logindex);

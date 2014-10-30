@@ -640,6 +640,8 @@ class StorageEngine {
       std::string filepath = logfile_manager_compaction_.GetFilepath(fileid_compaction);
       Status s = FileUtil::fallocate_filepath(filepath, filesize);
       if (!s.IsOK()) {
+        // TODO: the cleanup of the compaction (removals, etc.) should be
+        //       mutualized in the processing loop
         FileUtil::remove_files_with_prefix(dbname.c_str(), prefix_compaction_);
         return s;
       }
@@ -781,6 +783,7 @@ class StorageEngine {
     // maximum of all the timestamps in the set of files that have been
     // compacted. This will allow the resulting files to be properly ordered
     // during the next database startup or recovery process.
+    logfile_manager_compaction_.Reset();
     logfile_manager_compaction_.LockSequenceTimestamp(timestamp_max);
     logfile_manager_compaction_.WriteOrdersAndFlushFile(orders, map_index);
     logfile_manager_compaction_.CloseCurrentFile();
@@ -801,7 +804,7 @@ class StorageEngine {
                                                            logfile_manager_.GetFilepath(fileid_new).c_str());
       if (std::rename(logfile_manager_compaction_.GetFilepath(fileid).c_str(),
                       logfile_manager_.GetFilepath(fileid_new).c_str()) != 0) {
-        LOG_EMERG("Compaction()", "Could not rename file");
+        LOG_EMERG("Compaction()", "Could not rename file: %s", strerror(errno));
         // TODO: crash here
       }
       uint64_t filesize = logfile_manager_compaction_.file_resource_manager.GetFileSize(fileid);
