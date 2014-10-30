@@ -142,6 +142,8 @@ class StorageEngine {
     // NOTE for debugging:
     // - I think there is a bug in the file truncating (could be the use of SEEK_END)
     // - compaction fails and make the program crash
+    //    - wrong files are being removed or the wrong file ids are being used
+    //      when shuffling the main and temporary indexes => the use of fileid_end is wrong!!!!!!
     // - compaction triggering isn't so accurate either
     // - compaction shouldn't be triggered if fileid_lastcompacted == (seq - 1)
     //
@@ -175,25 +177,16 @@ class StorageEngine {
     // 6. If the compaction succeeded, update 'fileid_lastcompacted'
  
     std::chrono::seconds duration(30);
-    uint64_t dbsize_total = logfile_manager_.file_resource_manager.GetDbSizeTotal();
-    uint64_t dbsize_uncompacted = logfile_manager_.file_resource_manager.GetDbSizeUncompacted();
     uint32_t fileid_lastcompacted = 0;
     uint32_t fileid_out = 0;
 
     // TODO: make these db_options_
     uint64_t dbo_size_compaction_fs_free_space_threshold = 2 * 1000 * 1024*1024;
-    uint64_t dbo_size_compaction_uncompacted_has_space   = 1 * 1000 * 1024*1024;
+    uint64_t dbo_size_compaction_uncompacted_has_space   = 1 *   70 * 1024*1024;//1 * 1000 * 1024*1024;
     uint64_t dbo_size_compaction_uncompacted_no_space    =      256 * 1024*1024;
     uint64_t dbo_fs_free_space_sleep                     =      128 * 1024*1024;
 
     while (true) {
-      //std::chrono::milliseconds forever(100000000000000000);
-      //struct stat info;
-      //if (stat("/tmp/do_compaction", &info) == 0) {
-      //  uint32_t seq = logfile_manager_.GetSequenceFileId();
-      //  Compaction(dbname_, 1, seq+1); 
-      //  std::this_thread::sleep_for(forever);
-      //}
       uint64_t size_compaction = 0;
       uint64_t fs_free_space = GetFreeSpace();
       if (fs_free_space > dbo_size_compaction_fs_free_space_threshold) {
@@ -201,13 +194,23 @@ class StorageEngine {
       } else {
         size_compaction = dbo_size_compaction_uncompacted_no_space;
       }
-      uint32_t seq = logfile_manager_.GetSequenceFileId();
+ 
+      // Only files that are no longer taking incoming updates can be compacted
+      uint32_t fileid_end = logfile_manager_.GetHighestStableFileId(fileid_lastcompacted + 1);
+      
+      uint64_t dbsize_uncompacted = logfile_manager_.file_resource_manager.GetDbSizeUncompacted();
+      LOG_TRACE("ProcessingLoopCompaction",
+                "fs_free_space:%llu dbo_fs_free_space_sleep:%llu size_compaction:%llu dbsize_uncompacted:%llu",
+                fs_free_space,
+                dbo_fs_free_space_sleep,
+                size_compaction,
+                dbsize_uncompacted);
 
       if (   fs_free_space > dbo_fs_free_space_sleep
-          && size_compaction > logfile_manager_.file_resource_manager.GetDbSizeUncompacted()) {
+          && dbsize_uncompacted > size_compaction) {
         while (true) {
           fileid_out = 0;
-          Status s = Compaction(dbname_, fileid_lastcompacted+1, seq+1, size_compaction, &fileid_out);
+          Status s = Compaction(dbname_, fileid_lastcompacted + 1, fileid_end, size_compaction, &fileid_out);
           if (!s.IsOK()) {
             if (size_compaction == 0) break;
             size_compaction /= 2;
@@ -431,7 +434,7 @@ class StorageEngine {
 
   Status Compaction(std::string dbname,
                     uint32_t fileid_start,
-                    uint32_t fileid_end,
+                    uint32_t fileid_end_target,
                     uint64_t size_compaction,
                     uint32_t *fileid_out) {
     // TODO: make sure that all sets, maps and multimaps are cleared whenever
@@ -462,7 +465,7 @@ class StorageEngine {
     // TODO: This is a quick hack to get the files for compaction, by going
     //       through all the files. Fix that to be only the latest non-handled
     //       log files
-    LOG_TRACE("Compaction()", "Step 1: Get files between fileids %u and %u", fileid_start, fileid_end);
+    LOG_TRACE("Compaction()", "Step 1: Get files between fileids %u and %u", fileid_start, fileid_end_target);
     std::multimap<uint64_t, uint64_t> index_compaction;
     DIR *directory;
     struct dirent *entry;
@@ -482,7 +485,7 @@ class StorageEngine {
           || stat(filepath, &info) != 0
           || !(info.st_mode & S_IFREG) 
           || fileid < fileid_start
-          || fileid > fileid_end
+          || fileid > fileid_end_target
           || info.st_size <= SIZE_LOGFILE_HEADER) {
         continue;
       }
@@ -493,6 +496,7 @@ class StorageEngine {
 
     // 1b. Filter to process files only up to a certain total size
     //     (large files are ignored)
+    uint32_t fileid_end_actual = 0;
     uint64_t size_total = 0;
     for (auto& p: fileids_to_filesizes) {
       // NOTE: Here the locations are read directly from the secondary storage,
@@ -505,6 +509,7 @@ class StorageEngine {
       uint32_t fileid = p.first;
       uint64_t filesize = p.second;
       if (!IsFileLarge(fileid) && size_total + filesize > size_compaction) break;
+      fileid_end_actual = fileid;
       *fileid_out = fileid;
       std::string filepath = logfile_manager_.GetFilepath(fileid);
       Mmap mmap(filepath, filesize);
@@ -547,7 +552,7 @@ class StorageEngine {
       ByteArray *key, *value;
       uint64_t& location = p.second;
       uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
-      if (fileid > fileid_end) {
+      if (fileid > fileid_end_actual) {
         // Make sure that files added after the compacted
         // log files or during the compaction itself are not used
         continue;
@@ -626,6 +631,7 @@ class StorageEngine {
     // 5a. Reserving space in the file system
     // Reserve as much space are the files to compact are using, this is a
     // poor approximation, but should cover most cases. Large files are ignored.
+    /*
     uint32_t fileid_compaction = 1;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
       uint32_t fileid = *it;
@@ -639,6 +645,7 @@ class StorageEngine {
       }
       fileid_compaction += 1;
     }
+    */
 
 
     // 5b. Mmapping all the files involved in the compaction
@@ -700,14 +707,18 @@ class StorageEngine {
         // that an entry is invalid after doing a Get(), and that his choice to
         // emit a 'delete' command if he wants to delete the entry.
         
-        // NOTE: the uses of sizeof(struct Entry) here make not sense, since this
-        // size is variable based on the local architecture
         if (   !s.IsOK()
             || offset + sizeof(struct Entry) >= mmap->filesize()
             || entry.size_key == 0
             || offset + sizeof(struct Entry) + entry.size_key > mmap->filesize()
             || offset + sizeof(struct Entry) + entry.size_key + entry.size_value_offset() > mmap->filesize()) {
-          LOG_TRACE("Compaction()", "Unexpected end of file - mmap->filesize():%d\n", mmap->filesize());
+          LOG_TRACE("Compaction()",
+                    "Unexpected end of file - IsOK:%d, offset:%u, size_key:%llu, size_value_offset:%llu, mmap->filesize():%d\n",
+                    s.IsOK(),
+                    offset,
+                    entry.size_key,
+                    entry.size_value_offset(),
+                    mmap->filesize());
           entry.print();
           break;
         }
@@ -824,8 +835,8 @@ class StorageEngine {
 
 
     // 12. Update the storage engine index_, by removing the locations that have
-    //     been compacted, while making sure that the locations that have been
-    //     added as the compaction are not removed
+    //     been compacted, and making sure that the locations that have been
+    //     added while the compaction was taking place are not removed
     LOG_TRACE("Compaction()", "Step 12: Update the storage engine index_");
     int num_iterations_per_lock = 10;
     int counter_iterations = 0;
@@ -838,14 +849,14 @@ class StorageEngine {
 
       // For each hashed key, get the group of locations from the index_: all the locations
       // in that group have already been handled during the compaction, except for the ones
-      // that have fileids larger than the max fileid 'fileid_end' -- call these 'locations_after'.
+      // that have fileids larger than the max fileid 'fileid_end_actual' -- call these 'locations_after'.
       const uint64_t& hashedkey = it->first;
       auto range_index = index_.equal_range(hashedkey);
       std::vector<uint64_t> locations_after;
       for (auto it_bucket = range_index.first; it_bucket != range_index.second; ++it_bucket) {
         const uint64_t& location = it_bucket->second;
         uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
-        if (fileid > fileid_end) {
+        if (fileid > fileid_end_actual) {
           // Save all the locations for files with fileid that were not part of
           // the compaction process
           locations_after.push_back(location);
@@ -854,7 +865,7 @@ class StorageEngine {
 
       // Erase the bucket, insert the locations from the compaction process, and
       // then insert the locations from the files that were not part of the
-      // compaction process started, 'locations_after'
+      // compaction process, 'locations_after'
       index_.erase(hashedkey);
       auto range_compaction = map_index_shifted.equal_range(hashedkey);
       index_.insert(range_compaction.first, range_compaction.second);
@@ -862,7 +873,8 @@ class StorageEngine {
         index_.insert(std::pair<uint64_t, uint64_t>(hashedkey, *p));
       }
 
-      // Release the lock if needed (throttling)
+      // Throttling the index updates, and allows other processes
+      // to acquire the write lock if they need it
       if (counter_iterations >= num_iterations_per_lock) {
         ReleaseWriteLock();
         counter_iterations = 0;

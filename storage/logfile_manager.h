@@ -155,6 +155,16 @@ class LogfileManager {
     return num;
   }
 
+  uint32_t GetHighestStableFileId(uint32_t fileid_start) {
+    uint32_t fileid_max = GetSequenceFileId();
+    uint32_t fileid_current = fileid_start;
+    while (   fileid_current < fileid_max
+           && file_resource_manager.GetNumWritesInProgress(fileid_current) == 0) {
+      fileid_current += 1;
+    }
+    return fileid_current;
+  }
+
   void OpenNewFile() {
     LOG_EMERG("StorageEngine::OpenNewFile()", "Opening file [%s]: %u", filepath_.c_str(), GetSequenceFileId());
     IncrementSequenceFileId(1);
@@ -229,8 +239,8 @@ class LogfileManager {
 
   Status FlushLogIndex() {
     if (!has_file_) return Status::OK();
-    uint64_t num = file_resource_manager.GetNumWritesInProgress(fileid_);
-    LOG_TRACE("LogfileManager::FlushLogIndex()", "ENTER - fileid_:%d - num_writes_in_progress:%llu", fileid_, num);
+    uint32_t num = file_resource_manager.GetNumWritesInProgress(fileid_);
+    LOG_TRACE("LogfileManager::FlushLogIndex()", "ENTER - fileid_:%d - num_writes_in_progress:%u", fileid_, num);
     if (file_resource_manager.GetNumWritesInProgress(fileid_) == 0) {
       uint64_t size_logindex;
       Status s = WriteLogIndex(fd_, file_resource_manager.GetLogIndex(fileid_), &size_logindex, filetype_default_, file_resource_manager.HasPaddingInValues(fileid_), false);
@@ -420,8 +430,8 @@ class LogfileManager {
         ftruncate(fd, filesize);
       }
 
-      uint32_t num_writes = file_resource_manager.SetNumWritesInProgress(fileid, -1);
-      if (fileid != fileid_ && num_writes == 0) {
+      uint32_t num_writes_in_progress = file_resource_manager.SetNumWritesInProgress(fileid, -1);
+      if (fileid != fileid_ && num_writes_in_progress == 0) {
         lseek(fd, 0, SEEK_END);
         uint64_t size_logindex;
         FileType filetype = is_large_order ? kCompactedLargeType : filetype_default_;
