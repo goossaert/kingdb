@@ -760,6 +760,15 @@ class StorageEngine {
           ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header, entry.size_key);
           ByteArray *chunk = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header + entry.size_key, entry.size_value_used());
           LOG_TRACE("Compaction()", "order list loop - push_back() orders");
+
+          // NOTE: Need to recompute the crc32 of the key and value, as entry.crc32
+          //       contains information about the header, which is incorrect as the
+          //       header changes due to the compaction. This could be optimized by
+          //       just recomputing the crc32 of the header, and then 'uncombining'
+          //       it from entry.crc32. This will be fixed as soon as I find an
+          //       implementation of 'uncombine'.
+          uint32_t crc32 = crc32c::Value(mmap->datafile() + offset + size_header, entry.size_key + entry.size_value_used());
+
           orders.push_back(Order{std::this_thread::get_id(),
                                  OrderType::Put,
                                  key,
@@ -767,7 +776,7 @@ class StorageEngine {
                                  0,
                                  entry.size_value,
                                  entry.size_value_compressed,
-                                 entry.crc32});
+                                 crc32});
         }
         offset += size_header + entry.size_key + entry.size_value_offset();
       }

@@ -485,6 +485,7 @@ class LogfileManager {
         uint32_t crc32_header = crc32c::Value(buffer_raw_ + offset_end_ + 4, size_header - 4);
         entry.crc32 = crc32c::Combine(crc32_header, order.crc32, entry.size_key + entry.size_value_used());
         size_header = Entry::EncodeTo(db_options_, &entry, buffer_raw_ + offset_end_);
+        LOG_TRACE("StorageEngine::WriteFirstChunkOrSmallOrder()", "IsSelfContained():true - crc32 [0x%08x]", entry.crc32);
       }
 
       memcpy(buffer_raw_ + offset_end_ + size_header, order.key->data(), order.key->size());
