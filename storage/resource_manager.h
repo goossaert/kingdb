@@ -35,9 +35,20 @@ namespace kdb {
 
 class FileResourceManager {
  public:
-  FileResourceManager()
-    : dbsize_total_(0),
-      dbsize_uncompacted_(0) {
+  FileResourceManager() {
+    Reset();
+  }
+
+  void Reset() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    dbsize_total_ = 0;
+    dbsize_uncompacted_ = 0;
+    filesizes_.clear();
+    largefiles_.clear();
+    compactedfiles_.clear();
+    num_writes_in_progress_.clear();
+    logindexes_.clear();
+    has_padding_in_values_.clear();
   }
 
   void ClearTemporaryDataForFileId(uint32_t fileid) {

@@ -631,7 +631,6 @@ class StorageEngine {
     // 5a. Reserving space in the file system
     // Reserve as much space are the files to compact are using, this is a
     // poor approximation, but should cover most cases. Large files are ignored.
-    /*
     uint32_t fileid_compaction = 1;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
       uint32_t fileid = *it;
@@ -647,7 +646,6 @@ class StorageEngine {
       }
       fileid_compaction += 1;
     }
-    */
 
 
     // 5b. Mmapping all the files involved in the compaction

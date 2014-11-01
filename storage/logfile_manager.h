@@ -72,6 +72,7 @@ class LogfileManager {
   }
 
   void Reset() {
+    file_resource_manager.Reset();
     sequence_fileid_ = 0;
     sequence_timestamp_ = 0;
     size_block_ = SIZE_LOGFILE_TOTAL;
@@ -248,7 +249,8 @@ class LogfileManager {
     LOG_TRACE("LogfileManager::FlushLogIndex()", "ENTER - fileid_:%d - num_writes_in_progress:%u", fileid_, num);
     if (file_resource_manager.GetNumWritesInProgress(fileid_) == 0) {
       uint64_t size_logindex;
-      // PROBLEM
+      file_resource_manager.SetFileSize(fileid_, offset_end_);
+      ftruncate(fd_, offset_end_);
       Status s = WriteLogIndex(fd_, file_resource_manager.GetLogIndex(fileid_), &size_logindex, filetype_default_, file_resource_manager.HasPaddingInValues(fileid_), false);
       uint64_t filesize = file_resource_manager.GetFileSize(fileid_);
       file_resource_manager.SetFileSize(fileid_, filesize + size_logindex);
@@ -440,13 +442,11 @@ class LogfileManager {
       if (fileid != fileid_ && num_writes_in_progress == 0) {
         uint64_t size_logindex;
         FileType filetype = is_large_order ? kCompactedLargeType : filetype_default_;
-        // PROBLEM
-        //uint64_t filesize_before = file_resource_manager.GetFileSize(fileid);
-        //ftruncate(fd, filesize_before);
+        uint64_t filesize_before = file_resource_manager.GetFileSize(fileid);
+        ftruncate(fd, filesize_before);
         WriteLogIndex(fd, file_resource_manager.GetLogIndex(fileid), &size_logindex, filetype, file_resource_manager.HasPaddingInValues(fileid), false);
         uint64_t filesize = file_resource_manager.GetFileSize(fileid);
-        filesize += size_logindex;
-        file_resource_manager.SetFileSize(fileid, filesize);
+        file_resource_manager.SetFileSize(fileid, filesize + size_logindex);
         if (is_large_order) file_resource_manager.SetFileLarge(fileid);
         file_resource_manager.ClearTemporaryDataForFileId(fileid);
       }
@@ -730,12 +730,12 @@ class LogfileManager {
       } else if (!s.IsOK() && !is_read_only_) {
         LOG_WARN("LogfileManager::LoadDatabase()", "Could not load index in file [%s], entering recovery mode", filepath.c_str());
         s = RecoverFile(mmap, fileid, index_se);
-      }
-      if (!s.IsOK() && !is_read_only_) {
-        LOG_WARN("LogfileManager::LoadDatabase()", "Recovery failed for file [%s]", filepath.c_str());
-        mmap.Close();
-        if (std::remove(filepath.c_str()) != 0) {
-          LOG_EMERG("LogfileManager::LoadDatabase()", "Could not remove file [%s]", filepath.c_str());
+        if (!s.IsOK()) {
+          LOG_WARN("LogfileManager::LoadDatabase()", "Recovery failed for file [%s]", filepath.c_str());
+          mmap.Close();
+          if (std::remove(filepath.c_str()) != 0) {
+            LOG_EMERG("LogfileManager::LoadDatabase()", "Could not remove file [%s]", filepath.c_str());
+          }
         }
       }
     }
