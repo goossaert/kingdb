@@ -13,6 +13,7 @@
 #include <set>
 #include <algorithm>
 #include <cstdio>
+#include <ctime>
 
 #include <assert.h>
 #include <unistd.h>
@@ -49,6 +50,7 @@ class FileResourceManager {
     num_writes_in_progress_.clear();
     logindexes_.clear();
     has_padding_in_values_.clear();
+    epoch_last_activity_.clear();
   }
 
   void ClearTemporaryDataForFileId(uint32_t fileid) {
@@ -56,6 +58,7 @@ class FileResourceManager {
     num_writes_in_progress_.erase(fileid);
     logindexes_.erase(fileid);
     has_padding_in_values_.erase(fileid);
+    epoch_last_activity_.erase(fileid);
   }
 
   void ClearAllDataForFileId(uint32_t fileid) {
@@ -136,7 +139,13 @@ class FileResourceManager {
       num_writes_in_progress_[fileid] = 0;
     }
     num_writes_in_progress_[fileid] += inc;
+    epoch_last_activity_[fileid] = std::time(0);
     return num_writes_in_progress_[fileid];
+  }
+
+  time_t GetEpochLastActivity(uint32_t fileid) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return epoch_last_activity_[fileid];
   }
 
   const std::vector< std::pair<uint64_t, uint32_t> > GetLogIndex(uint32_t fileid) {
@@ -193,6 +202,7 @@ class FileResourceManager {
   std::map<uint32_t, uint64_t> num_writes_in_progress_;
   std::map<uint32_t, std::vector< std::pair<uint64_t, uint32_t> > > logindexes_;
   std::set<uint32_t> has_padding_in_values_;
+  std::map<uint32_t, time_t> epoch_last_activity_;
   uint64_t dbsize_total_;
   uint64_t dbsize_uncompacted_;
 };

@@ -28,5 +28,7 @@
 
 #define SIZE_LARGE_TEST_ITEMS 1024*1024*64 // size of large items used for testing
 
+#define STREAMING_WRITE_TIMEOUT 60 // in seconds
+
 
 #endif // KINGDB_HEADERS_H_

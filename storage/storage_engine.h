@@ -109,7 +109,6 @@ class StorageEngine {
       delete fileids_iterator_; 
     }
 
-
     LOG_TRACE("StorageEngine::Close()", "done");
   }
 
@@ -135,8 +134,6 @@ class StorageEngine {
     std::unique_lock<std::mutex> lock(mutex_statistics_);
     return fs_free_space_;
   }
-
-
 
   void ProcessingLoopCompaction() {
     // NOTE for debugging:
@@ -183,7 +180,7 @@ class StorageEngine {
     // TODO: make these db_options_
     uint64_t dbo_size_compaction_fs_free_space_threshold = 2 * 1000 * 1024*1024;
     uint64_t dbo_size_compaction_uncompacted_has_space   = 1 *   70 * 1024*1024;//1 * 1000 * 1024*1024;
-    uint64_t dbo_size_compaction_uncompacted_no_space    =      256 * 1024*1024;
+    uint64_t dbo_size_compaction_uncompacted_no_space    = 1 *   70 * 1024*1024;//     256 * 1024*1024;
     uint64_t dbo_fs_free_space_sleep                     =      128 * 1024*1024;
 
     while (true) {
@@ -200,13 +197,15 @@ class StorageEngine {
       
       uint64_t dbsize_uncompacted = logfile_manager_.file_resource_manager.GetDbSizeUncompacted();
       LOG_TRACE("ProcessingLoopCompaction",
-                "fs_free_space:%llu dbo_fs_free_space_sleep:%llu size_compaction:%llu dbsize_uncompacted:%llu",
+                "fileid_end:%u fs_free_space:%llu dbo_fs_free_space_sleep:%llu size_compaction:%llu dbsize_uncompacted:%llu",
+                fileid_end,
                 fs_free_space,
                 dbo_fs_free_space_sleep,
                 size_compaction,
                 dbsize_uncompacted);
 
-      if (   fs_free_space > dbo_fs_free_space_sleep
+      if (   fileid_end > 0
+          && fs_free_space > dbo_fs_free_space_sleep
           && dbsize_uncompacted > size_compaction) {
         while (true) {
           fileid_out = 0;
@@ -459,7 +458,6 @@ class StorageEngine {
     Status s;
     s = FileUtil::remove_files_with_prefix(dbname.c_str(), prefix_compaction_);
     if (!s.IsOK()) return Status::IOError("Could not clean up previous compaction", dbname.c_str());
-
 
     // 1a. Get *all* the files that are candidates for compaction
     // TODO: This is a quick hack to get the files for compaction, by going

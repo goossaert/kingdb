@@ -162,12 +162,33 @@ class LogfileManager {
 
   uint32_t GetHighestStableFileId(uint32_t fileid_start) {
     uint32_t fileid_max = GetSequenceFileId();
-    uint32_t fileid_current = fileid_start;
-    while (   fileid_current < fileid_max
-           && file_resource_manager.GetNumWritesInProgress(fileid_current) == 0) {
-      fileid_current += 1;
+    uint32_t fileid_stable = 0;
+    uint32_t fileid_candidate = fileid_start;
+    time_t epoch_now = std::time(0);
+      
+    while (true) {
+      if (fileid_candidate >= fileid_max) break;
+      uint32_t num_writes = file_resource_manager.GetNumWritesInProgress(fileid_candidate);
+      time_t epoch = file_resource_manager.GetEpochLastActivity(fileid_candidate);
+      if (num_writes > 0) {
+        if (epoch > epoch_now - STREAMING_WRITE_TIMEOUT) {
+          // The in-progress writes for this file haven't timed out yet, thus it
+          // is not stable yet.
+          break;
+        } else {
+          // The file epoch is such that the in-progress writes to the file have
+          // timed out. All temporary data is cleared: future incoming writes to
+          // this file will fail, and at the next startup, its internal index
+          // will be recovered. And this is what we want: we don't want to
+          // recover the file now, the recovery process should only run at
+          // database startup.
+          file_resource_manager.ClearTemporaryDataForFileId(fileid_candidate);
+        }
+      }
+      fileid_stable = fileid_candidate;
+      fileid_candidate += 1;
     }
-    return fileid_current;
+    return fileid_stable;
   }
 
   void OpenNewFile() {
@@ -374,6 +395,13 @@ class LogfileManager {
     uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
     uint32_t offset_file = location & 0x00000000FFFFFFFF;
     std::string filepath = GetFilepath(fileid);
+
+    if (fileid != fileid_ && file_resource_manager.GetNumWritesInProgress(fileid) == 0) {
+      // This file is not the lastest file, and it has no writes in progress.
+      // The file was either closed or the writes timed out, therefore do nothing
+      return 0;
+    }
+
     LOG_TRACE("LogfileManager::WriteChunk()", "key [%s] filepath:[%s] offset_chunk:%llu", order.key->ToString().c_str(), filepath.c_str(), order.offset_chunk);
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
@@ -440,6 +468,7 @@ class LogfileManager {
 
       uint32_t num_writes_in_progress = file_resource_manager.SetNumWritesInProgress(fileid, -1);
       if (fileid != fileid_ && num_writes_in_progress == 0) {
+        // TODO: factorize this code with FlushLogIndex()
         uint64_t size_logindex;
         FileType filetype = is_large_order ? kCompactedLargeType : filetype_default_;
         uint64_t filesize_before = file_resource_manager.GetFileSize(fileid);
