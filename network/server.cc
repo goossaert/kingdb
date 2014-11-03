@@ -412,13 +412,45 @@ void Server::AcceptNetworkTraffic() {
 
   sockfd_listen_ = sockfd_listen;
 
+  // Create notification pipe
+  int pipefd[2];
+  if(pipe(pipefd) < 0) {
+    return;
+  }
+  sockfd_notify_recv_ = pipefd[0];
+  sockfd_notify_send_ = pipefd[1];
+  fcntl(sockfd_notify_send_, F_SETFL, O_NONBLOCK);
+
+  struct timeval tv;
+  tv.tv_sec = 60;
+  tv.tv_usec = 0;
+
+  fd_set sockfds_read;
+  int sockfd_max = std::max(sockfd_notify_recv_, sockfd_listen) + 1;
+
   // Start accepting connections
   int sockfd_accept;
   struct sockaddr_storage sockaddr_client;
   socklen_t size_sa;
   char address[INET6_ADDRSTRLEN];
   while (!IsStopRequested()) {
+    FD_ZERO(&sockfds_read);
+    FD_SET(sockfd_notify_recv_, &sockfds_read);
+    FD_SET(sockfd_listen, &sockfds_read);
+
+    LOG_TRACE("Server", "select()");
     size_sa = sizeof(sockaddr_client);
+    int ret_select = select(sockfd_max, &sockfds_read, NULL, NULL, NULL);// &tv);
+    if (ret_select < 0) {
+      LOG_TRACE("Server", "select() error %s", strerror(errno));
+      return;
+    } else if (ret_select == 0) {
+      continue;
+    }
+
+    if (!FD_ISSET(sockfd_listen, &sockfds_read)) continue;
+
+    LOG_TRACE("Server", "accept()");
     sockfd_accept = accept(sockfd_listen, (struct sockaddr *)&sockaddr_client, &size_sa);
     if (sockfd_accept == -1) continue;
 
@@ -430,6 +462,7 @@ void Server::AcceptNetworkTraffic() {
 
     tp_->AddTask(new NetworkTask(sockfd_accept, db_));
   }
+  LOG_TRACE("Server", "Exiting thread");
 }
 
 } // end of namespace kdb

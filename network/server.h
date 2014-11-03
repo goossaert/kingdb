@@ -12,6 +12,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <arpa/inet.h>
@@ -71,12 +72,17 @@ class Server {
   void AcceptNetworkTraffic();
   bool IsStopRequested() { return stop_requested_; }
   void Stop() {
+    LOG_TRACE("Server", "Stop()");
     stop_requested_ = true;
+    write(sockfd_notify_send_, "0", 1);
+    thread_network_.join();
     tp_->Stop();
     db_->Close();
     delete tp_;
     delete db_;
-    //thread_network_.join();
+    close(sockfd_listen_);
+    close(sockfd_notify_recv_);
+    close(sockfd_notify_send_);
   }
 
 
@@ -84,13 +90,16 @@ class Server {
   void* GetSockaddrIn(struct sockaddr *sa);
   bool stop_requested_;
   std::thread thread_network_;
-  int sockfd_listen_;
 
   DatabaseOptions options_;
   std::string dbname_;
   int port_;
   int backlog_;
   int num_threads_;
+
+  int sockfd_listen_;
+  int sockfd_notify_recv_;
+  int sockfd_notify_send_;
 
   kdb::KingDB* db_;
   ThreadPool *tp_;
