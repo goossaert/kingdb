@@ -40,6 +40,9 @@ Status KingDB::PutChunk(WriteOptions& write_options,
                         ByteArray *chunk,
                         uint64_t offset_chunk,
                         uint64_t size_value) {
+  if (se_->GetFreeSpace() < dbo_fs_free_space_reject_orders) {
+    return Status::IOError("Not enough free space on the file system");
+  }
   LOG_TRACE("KingDB PutChunk()", "[%s] offset_chunk:%llu", key->ToString().c_str(), offset_chunk);
   bool do_compression = true;
   uint64_t size_value_compressed = 0;
@@ -108,6 +111,9 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 
 Status KingDB::Remove(WriteOptions& write_options, ByteArray *key) {
   LOG_TRACE("KingDB::Remove()", "[%s]", key->ToString().c_str());
+  if (se_->GetFreeSpace() < dbo_fs_free_space_reject_orders) {
+    return Status::IOError("Not enough free space on the file system");
+  }
   return wb_->Remove(write_options, key);
 }
 

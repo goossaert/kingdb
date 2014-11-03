@@ -30,5 +30,12 @@
 
 #define STREAMING_WRITE_TIMEOUT 60 // in seconds
 
+// TODO: make these db_options_
+#define dbo_fs_free_space_reject_orders             (SIZE_LOGFILE_TOTAL * 5)
+#define dbo_fs_free_space_threshold                 (2 * 1000 * 1024*1024)
+#define dbo_size_compaction_uncompacted_has_space   (1 *   70 * 1024*1024) //1 * 1000 * 1024*1024;
+#define dbo_size_compaction_uncompacted_no_space    (1 *   70 * 1024*1024) //     256 * 1024*1024;
+#define dbo_fs_free_space_sleep                     (     128 * 1024*1024)
+
 
 #endif // KINGDB_HEADERS_H_

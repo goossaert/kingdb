@@ -136,14 +136,6 @@ class StorageEngine {
   }
 
   void ProcessingLoopCompaction() {
-    // NOTE for debugging:
-    // - I think there is a bug in the file truncating (could be the use of SEEK_END)
-    // - compaction fails and make the program crash
-    //    - wrong files are being removed or the wrong file ids are being used
-    //      when shuffling the main and temporary indexes => the use of fileid_end is wrong!!!!!!
-    // - compaction triggering isn't so accurate either
-    // - compaction shouldn't be triggered if fileid_lastcompacted == (seq - 1)
-    //
     // 1. Have a ProcessingLoopStatistics() which pull the disk usage and
     //    dbsize values every 60 seconds.
     // 2. Add a new variable in ProcessingLoopCompaction 'fileid_lastcompacted'
@@ -177,16 +169,10 @@ class StorageEngine {
     uint32_t fileid_lastcompacted = 0;
     uint32_t fileid_out = 0;
 
-    // TODO: make these db_options_
-    uint64_t dbo_size_compaction_fs_free_space_threshold = 2 * 1000 * 1024*1024;
-    uint64_t dbo_size_compaction_uncompacted_has_space   = 1 *   70 * 1024*1024;//1 * 1000 * 1024*1024;
-    uint64_t dbo_size_compaction_uncompacted_no_space    = 1 *   70 * 1024*1024;//     256 * 1024*1024;
-    uint64_t dbo_fs_free_space_sleep                     =      128 * 1024*1024;
-
     while (true) {
       uint64_t size_compaction = 0;
       uint64_t fs_free_space = GetFreeSpace();
-      if (fs_free_space > dbo_size_compaction_fs_free_space_threshold) {
+      if (fs_free_space > dbo_fs_free_space_threshold) {
         size_compaction = dbo_size_compaction_uncompacted_has_space;
       } else {
         size_compaction = dbo_size_compaction_uncompacted_no_space;
@@ -227,13 +213,6 @@ class StorageEngine {
   }
 
   void ProcessingLoopData() {
-    // TODO-29: Detect full file system:
-    //   - If disk space goes below N, stop accepting incoming queries
-    //   - Do not fail the current writes, just make them sleep until free space
-    //     is made on the drive (if the compaction is pre-allocating space and
-    //     then failing, the write must not fail, wait for the pre-allocated
-    //     files to be removed, write the files when there is space, and finally
-    //     stop accepting incoming queries)
     while(true) {
       // Wait for orders to process
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "start");
