@@ -199,29 +199,29 @@ struct EntryFooter {
 
 enum FileType {
   kUnknownType        = 0x0,
-  kUncompactedLogType = 0x1,
-  kCompactedLogType   = 0x2,
+  kUncompactedRegularType = 0x1,
+  kCompactedRegularType   = 0x2,
   kCompactedLargeType = 0x4,
 };
 
-struct LogFileHeader {
+struct HSTableHeader {
   uint32_t crc32;
   uint32_t version_data_format_major;
   uint32_t version_data_format_minor;
   uint32_t filetype;
   uint64_t timestamp;
 
-  LogFileHeader() {
+  HSTableHeader() {
     filetype = 0;
   }
 
   FileType GetFileType() {
     if (filetype & kCompactedLargeType) {
       return kCompactedLargeType;
-    } else if (filetype & kCompactedLogType) {
-      return kCompactedLogType;
-    } else if (filetype & kUncompactedLogType) {
-      return kUncompactedLogType;
+    } else if (filetype & kCompactedRegularType) {
+      return kCompactedRegularType;
+    } else if (filetype & kUncompactedRegularType) {
+      return kUncompactedRegularType;
     }
     return kUnknownType;
   }
@@ -231,7 +231,7 @@ struct LogFileHeader {
   }
 
   bool IsTypeCompacted() {
-    return (   filetype & kCompactedLogType
+    return (   filetype & kCompactedRegularType
             || filetype & kCompactedLargeType);
   }
 
@@ -250,7 +250,7 @@ struct LogFileHeader {
     return false;
   }
 
-  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct LogFileHeader *output) {
+  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct HSTableHeader *output) {
     if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
     GetFixed32(buffer_in     , &(output->crc32));
     GetFixed32(buffer_in +  4, &(output->version_data_format_major));
@@ -263,7 +263,7 @@ struct LogFileHeader {
     return Status::OK();
   }
 
-  static uint32_t EncodeTo(const struct LogFileHeader *input, char* buffer) {
+  static uint32_t EncodeTo(const struct HSTableHeader *input, char* buffer) {
     EncodeFixed32(buffer +  4, kVersionDataFormatMajor);
     EncodeFixed32(buffer +  8, kVersionDataFormatMinor);
     EncodeFixed32(buffer + 12, input->filetype);
@@ -278,12 +278,12 @@ struct LogFileHeader {
   }
 };
 
-enum LogFileFooterFlags {
+enum HSTableFooterFlags {
   kHasPaddingInValues = 0x1, // 1 if some values have size_value space but only use size_value_compressed and therefore need compaction, 0 otherwise
   kHasInvalidEntries  = 0x2  // 1 if some values have erroneous content that needs to be washed out in a compaction process -- will be set to 1 during a file recovery
 };
 
-struct LogFileFooter {
+struct HSTableFooter {
   uint32_t filetype;
   uint32_t flags;
   uint64_t offset_indexes;
@@ -291,7 +291,7 @@ struct LogFileFooter {
   uint64_t magic_number;
   uint32_t crc32;
 
-  LogFileFooter() {
+  HSTableFooter() {
     flags = 0;
     filetype = 0;
   }
@@ -301,7 +301,7 @@ struct LogFileFooter {
   }
 
   bool IsTypeCompacted() {
-    return (   filetype & kCompactedLogType
+    return (   filetype & kCompactedRegularType
             || filetype & kCompactedLargeType);
   }
   
@@ -313,7 +313,7 @@ struct LogFileFooter {
     flags |= kHasInvalidEntries;
   }
 
-  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct LogFileFooter *output) {
+  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct HSTableFooter *output) {
     if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
     GetFixed32(buffer_in,      &(output->filetype));
     GetFixed32(buffer_in +  4, &(output->flags));
@@ -324,7 +324,7 @@ struct LogFileFooter {
     return Status::OK();
   }
 
-  static uint32_t EncodeTo(const struct LogFileFooter *input, char* buffer) {
+  static uint32_t EncodeTo(const struct HSTableFooter *input, char* buffer) {
     EncodeFixed32(buffer,      input->filetype);
     EncodeFixed32(buffer +  4, input->flags);
     EncodeFixed64(buffer +  8, input->offset_indexes);
@@ -340,11 +340,11 @@ struct LogFileFooter {
 };
 
 
-struct LogFileFooterIndex {
+struct HSTableFooterIndex {
   uint64_t hashed_key;
   uint32_t offset_entry;
 
-  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct LogFileFooterIndex *output, uint32_t *num_bytes_read) {
+  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct HSTableFooterIndex *output, uint32_t *num_bytes_read) {
     int length;
     char *buffer = const_cast<char*>(buffer_in);
     SimpleByteArray array(buffer, num_bytes_max);
@@ -361,7 +361,7 @@ struct LogFileFooterIndex {
     return Status::OK();
   }
 
-  static uint32_t EncodeTo(const struct LogFileFooterIndex *input, char* buffer) {
+  static uint32_t EncodeTo(const struct HSTableFooterIndex *input, char* buffer) {
     char *ptr;
     ptr = EncodeVarint64(buffer, input->hashed_key);
     ptr = EncodeVarint32(ptr, input->offset_entry);

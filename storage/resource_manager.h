@@ -48,7 +48,7 @@ class FileResourceManager {
     largefiles_.clear();
     compactedfiles_.clear();
     num_writes_in_progress_.clear();
-    logindexes_.clear();
+    offarrays_.clear();
     has_padding_in_values_.clear();
     epoch_last_activity_.clear();
   }
@@ -56,7 +56,7 @@ class FileResourceManager {
   void ClearTemporaryDataForFileId(uint32_t fileid) {
     std::unique_lock<std::mutex> lock(mutex_);
     num_writes_in_progress_.erase(fileid);
-    logindexes_.erase(fileid);
+    offarrays_.erase(fileid);
     has_padding_in_values_.erase(fileid);
     epoch_last_activity_.erase(fileid);
   }
@@ -148,12 +148,12 @@ class FileResourceManager {
     return epoch_last_activity_[fileid];
   }
 
-  const std::vector< std::pair<uint64_t, uint32_t> > GetLogIndex(uint32_t fileid) {
-    return logindexes_[fileid];
+  const std::vector< std::pair<uint64_t, uint32_t> > GetOffsetArray(uint32_t fileid) {
+    return offarrays_[fileid];
   }
 
-  void AddLogIndex(uint32_t fileid, std::pair<uint64_t, uint32_t> p) {
-    logindexes_[fileid].push_back(p);
+  void AddOffsetArray(uint32_t fileid, std::pair<uint64_t, uint32_t> p) {
+    offarrays_[fileid].push_back(p);
   }
 
   bool HasPaddingInValues(uint32_t fileid) {
@@ -200,7 +200,7 @@ class FileResourceManager {
   std::set<uint32_t> largefiles_;
   std::set<uint32_t> compactedfiles_;
   std::map<uint32_t, uint64_t> num_writes_in_progress_;
-  std::map<uint32_t, std::vector< std::pair<uint64_t, uint32_t> > > logindexes_;
+  std::map<uint32_t, std::vector< std::pair<uint64_t, uint32_t> > > offarrays_;
   std::set<uint32_t> has_padding_in_values_;
   std::map<uint32_t, time_t> epoch_last_activity_;
   uint64_t dbsize_total_;

@@ -89,7 +89,7 @@ class Iterator {
         uint64_t dummy_filesize;
         bool dummy_is_file_large;
         std::multimap<uint64_t, uint64_t> index_temp;
-        s = LogfileManager::LoadFile(mmap,
+        s = HSTableManager::LoadFile(mmap,
                                      fileid_current_,
                                      index_temp,
                                      &dummy_filesize,

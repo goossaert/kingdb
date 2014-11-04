@@ -31,7 +31,7 @@
 #include "util/file.h"
 #include "storage/format.h"
 #include "storage/resource_manager.h"
-#include "storage/logfile_manager.h"
+#include "storage/hstable_manager.h"
 
 
 namespace kdb {
@@ -47,8 +47,8 @@ class StorageEngine {
         is_read_only_(read_only),
         prefix_compaction_("compaction_"),
         dirpath_locks_(dbname + "/locks"),
-        logfile_manager_(db_options, dbname, "", prefix_compaction_, dirpath_locks_, kUncompactedLogType, read_only),
-        logfile_manager_compaction_(db_options, dbname, prefix_compaction_, prefix_compaction_, dirpath_locks_, kCompactedLogType, read_only) {
+        hstable_manager_(db_options, dbname, "", prefix_compaction_, dirpath_locks_, kUncompactedRegularType, read_only),
+        hstable_manager_compaction_(db_options, dbname, prefix_compaction_, prefix_compaction_, dirpath_locks_, kCompactedRegularType, read_only) {
     LOG_TRACE("StorageEngine:StorageEngine()", "dbname: %s", dbname.c_str());
     dbname_ = dbname;
     fileids_ignore_ = fileids_ignore;
@@ -70,7 +70,7 @@ class StorageEngine {
     } else {
       fileids_iterator_ = new std::vector<uint32_t>();
     }
-    Status s = logfile_manager_.LoadDatabase(dbname, index_, fileids_ignore_, fileid_end, fileids_iterator_);
+    Status s = hstable_manager_.LoadDatabase(dbname, index_, fileids_ignore_, fileid_end, fileids_iterator_);
     if (!s.IsOK()) {
       LOG_EMERG("StorageEngine", "Could not load database");
     }
@@ -85,7 +85,7 @@ class StorageEngine {
 
     // Wait for readers to exit
     AcquireWriteLock();
-    logfile_manager_.Close();
+    hstable_manager_.Close();
     Stop();
     ReleaseWriteLock();
 
@@ -179,9 +179,9 @@ class StorageEngine {
       }
  
       // Only files that are no longer taking incoming updates can be compacted
-      uint32_t fileid_end = logfile_manager_.GetHighestStableFileId(fileid_lastcompacted + 1);
+      uint32_t fileid_end = hstable_manager_.GetHighestStableFileId(fileid_lastcompacted + 1);
       
-      uint64_t dbsize_uncompacted = logfile_manager_.file_resource_manager.GetDbSizeUncompacted();
+      uint64_t dbsize_uncompacted = hstable_manager_.file_resource_manager.GetDbSizeUncompacted();
       LOG_TRACE("ProcessingLoopCompaction",
                 "fileid_end:%u fs_free_space:%llu dbo_fs_free_space_sleep:%llu size_compaction:%llu dbsize_uncompacted:%llu",
                 fileid_end,
@@ -223,7 +223,7 @@ class StorageEngine {
       // Process orders, and create update map for the index
       AcquireWriteLock();
       std::multimap<uint64_t, uint64_t> map_index;
-      logfile_manager_.WriteOrdersAndFlushFile(orders, map_index);
+      hstable_manager_.WriteOrdersAndFlushFile(orders, map_index);
       ReleaseWriteLock();
 
       EventManager::flush_buffer.Done();
@@ -362,10 +362,10 @@ class StorageEngine {
     uint64_t filesize = 0;
     // NOTE: used to be in mutex_write_ and mutex_read_ -- if crashing, put the
     //       mutexes back
-    filesize = logfile_manager_.file_resource_manager.GetFileSize(fileid);
+    filesize = hstable_manager_.file_resource_manager.GetFileSize(fileid);
 
     LOG_TRACE("StorageEngine::GetEntry()", "location:%llu fileid:%u offset_file:%u filesize:%llu", location, fileid, offset_file, filesize);
-    std::string filepath = logfile_manager_.GetFilepath(fileid); // TODO: optimize here
+    std::string filepath = hstable_manager_.GetFilepath(fileid); // TODO: optimize here
 
     auto key_temp = new SharedMmappedByteArray(filepath, filesize);
     auto value_temp = new SharedMmappedByteArray();
@@ -407,7 +407,7 @@ class StorageEngine {
   }
 
   bool IsFileLarge(uint32_t fileid) {
-    return logfile_manager_.file_resource_manager.IsFileLarge(fileid);
+    return hstable_manager_.file_resource_manager.IsFileLarge(fileid);
   }
 
   Status Compaction(std::string dbname,
@@ -422,8 +422,8 @@ class StorageEngine {
     //       space -- or write a bunch of files with the "compaction_" prefix
     //       that will be overwritten when the compacted files are written.
 
-    // TODO: add a new flag in files that says "compacted" or "log", and before
-    //       starting any compaction process, select only log files, ignore
+    // TODO: add a new flag in files that says "compacted" or "regular", and before
+    //       starting any compaction process, select only regular files, ignore
     //       compacted ones. (large files are 'compacted' by default).
 
     // TODO-23: replace the change on is_compaction_in_progress_ by a RAII
@@ -441,7 +441,7 @@ class StorageEngine {
     // 1a. Get *all* the files that are candidates for compaction
     // TODO: This is a quick hack to get the files for compaction, by going
     //       through all the files. Fix that to be only the latest non-handled
-    //       log files
+    //       uncompacted files
     LOG_TRACE("Compaction()", "Step 1: Get files between fileids %u and %u", fileid_start, fileid_end_target);
     std::multimap<uint64_t, uint64_t> index_compaction;
     DIR *directory;
@@ -457,13 +457,13 @@ class StorageEngine {
     while ((entry = readdir(directory)) != NULL) {
       if (strcmp(entry->d_name, DatabaseOptions::GetFilename().c_str()) == 0) continue;
       sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
-      fileid = LogfileManager::hex_to_num(entry->d_name);
-      if (   logfile_manager_.file_resource_manager.IsFileCompacted(fileid)
+      fileid = HSTableManager::hex_to_num(entry->d_name);
+      if (   hstable_manager_.file_resource_manager.IsFileCompacted(fileid)
           || stat(filepath, &info) != 0
           || !(info.st_mode & S_IFREG) 
           || fileid < fileid_start
           || fileid > fileid_end_target
-          || info.st_size <= SIZE_LOGFILE_HEADER) {
+          || info.st_size <= SIZE_HSTABLE_HEADER) {
         continue;
       }
       fileids_to_filesizes[fileid] = info.st_size;
@@ -488,11 +488,11 @@ class StorageEngine {
       if (!IsFileLarge(fileid) && size_total + filesize > size_compaction) break;
       fileid_end_actual = fileid;
       *fileid_out = fileid;
-      std::string filepath = logfile_manager_.GetFilepath(fileid);
+      std::string filepath = hstable_manager_.GetFilepath(fileid);
       Mmap mmap(filepath, filesize);
-      s = logfile_manager_.LoadFile(mmap, fileid, index_compaction);
+      s = hstable_manager_.LoadFile(mmap, fileid, index_compaction);
       if (!s.IsOK()) {
-        LOG_WARN("LogfileManager::Compaction()", "Could not load index in file [%s]", filepath.c_str());
+        LOG_WARN("HSTableManager::Compaction()", "Could not load index in file [%s]", filepath.c_str());
         // TODO: handle the case where a file is found to be damaged during compaction
       }
       size_total += filesize;
@@ -531,7 +531,7 @@ class StorageEngine {
       uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
       if (fileid > fileid_end_actual) {
         // Make sure that files added after the compacted
-        // log files or during the compaction itself are not used
+        // files or during the compaction itself are not used
         continue;
       }
       fileids_compaction.insert(fileid);
@@ -612,8 +612,8 @@ class StorageEngine {
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
       uint32_t fileid = *it;
       if (IsFileLarge(fileid)) continue;
-      uint64_t filesize = logfile_manager_.file_resource_manager.GetFileSize(fileid);
-      std::string filepath = logfile_manager_compaction_.GetFilepath(fileid_compaction);
+      uint64_t filesize = hstable_manager_.file_resource_manager.GetFileSize(fileid);
+      std::string filepath = hstable_manager_compaction_.GetFilepath(fileid_compaction);
       Status s = FileUtil::fallocate_filepath(filepath, filesize);
       if (!s.IsOK()) {
         // TODO: the cleanup of the compaction (removals, etc.) should be
@@ -632,7 +632,7 @@ class StorageEngine {
       uint32_t fileid = *it;
       if (fileids_largefiles_keep.find(fileid) != fileids_largefiles_keep.end()) continue;
       struct stat info;
-      std::string filepath = logfile_manager_.GetFilepath(fileid);
+      std::string filepath = hstable_manager_.GetFilepath(fileid);
       if (stat(filepath.c_str(), &info) != 0 || !(info.st_mode & S_IFREG)) {
         LOG_EMERG("Compaction()", "Error during compaction with file [%s]", filepath.c_str());
       }
@@ -642,7 +642,7 @@ class StorageEngine {
 
 
     // 6. Now building a vector of orders, that will be passed to the
-    //    logmanager_compaction_ object to persist them on disk
+    //    hstable_manager_compaction_ object to persist them on disk
     LOG_TRACE("Compaction()", "Step 6: Build order list");
     std::vector<Order> orders;
     uint64_t timestamp_max = 0;
@@ -652,18 +652,18 @@ class StorageEngine {
       Mmap* mmap = mmaps[fileid];
 
       // Read the header to update the maximimum timestamp
-      struct LogFileHeader lfh;
-      s = LogFileHeader::DecodeFrom(mmap->datafile(), mmap->filesize(), &lfh);
+      struct HSTableHeader lfh;
+      s = HSTableHeader::DecodeFrom(mmap->datafile(), mmap->filesize(), &lfh);
       if (!s.IsOK()) return Status::IOError("Could not read file header during compaction"); // TODO: skip file instead of returning an error 
       timestamp_max = std::max(timestamp_max, lfh.timestamp);
 
       // Read the footer to get the offset where entries stop
-      struct LogFileFooter footer;
-      Status s = LogFileFooter::DecodeFrom(mmap->datafile() + mmap->filesize() - LogFileFooter::GetFixedSize(), LogFileFooter::GetFixedSize(), &footer);
+      struct HSTableFooter footer;
+      Status s = HSTableFooter::DecodeFrom(mmap->datafile() + mmap->filesize() - HSTableFooter::GetFixedSize(), HSTableFooter::GetFixedSize(), &footer);
       uint32_t crc32_computed = crc32c::Value(mmap->datafile() + footer.offset_indexes, mmap->filesize() - footer.offset_indexes - 4);
       uint64_t offset_end;
       if (   !s.IsOK()
-          || footer.magic_number != LogfileManager::get_magic_number()
+          || footer.magic_number != HSTableManager::get_magic_number()
           || footer.crc32 != crc32_computed) {
         // TODO: handle error
         offset_end = mmap->filesize();
@@ -673,7 +673,7 @@ class StorageEngine {
       }
 
       // Process entries in the file
-      uint32_t offset = SIZE_LOGFILE_HEADER;
+      uint32_t offset = SIZE_HSTABLE_HEADER;
       while (offset < offset_end) {
         LOG_TRACE("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
         struct EntryHeader entry_header;
@@ -764,33 +764,33 @@ class StorageEngine {
     // maximum of all the timestamps in the set of files that have been
     // compacted. This will allow the resulting files to be properly ordered
     // during the next database startup or recovery process.
-    logfile_manager_compaction_.Reset();
-    logfile_manager_compaction_.LockSequenceTimestamp(timestamp_max);
-    logfile_manager_compaction_.WriteOrdersAndFlushFile(orders, map_index);
-    logfile_manager_compaction_.CloseCurrentFile();
+    hstable_manager_compaction_.Reset();
+    hstable_manager_compaction_.LockSequenceTimestamp(timestamp_max);
+    hstable_manager_compaction_.WriteOrdersAndFlushFile(orders, map_index);
+    hstable_manager_compaction_.CloseCurrentFile();
     orders.clear();
     mmaps.clear();
 
 
-    // 8. Get fileid range from logfile_manager_
-    uint32_t num_files_compacted = logfile_manager_compaction_.GetSequenceFileId();
-    uint32_t offset_fileid = logfile_manager_.IncrementSequenceFileId(num_files_compacted) - num_files_compacted;
+    // 8. Get fileid range from hstable_manager_
+    uint32_t num_files_compacted = hstable_manager_compaction_.GetSequenceFileId();
+    uint32_t offset_fileid = hstable_manager_.IncrementSequenceFileId(num_files_compacted) - num_files_compacted;
     LOG_TRACE("Compaction()", "Step 8: num_files_compacted:%u offset_fileid:%u", num_files_compacted, offset_fileid);
 
 
     // 9. Rename files
     for (auto fileid = 1; fileid <= num_files_compacted; fileid++) {
       uint32_t fileid_new = fileid + offset_fileid;
-      LOG_TRACE("Compaction()", "Renaming [%s] into [%s]", logfile_manager_compaction_.GetFilepath(fileid).c_str(),
-                                                           logfile_manager_.GetFilepath(fileid_new).c_str());
-      if (std::rename(logfile_manager_compaction_.GetFilepath(fileid).c_str(),
-                      logfile_manager_.GetFilepath(fileid_new).c_str()) != 0) {
+      LOG_TRACE("Compaction()", "Renaming [%s] into [%s]", hstable_manager_compaction_.GetFilepath(fileid).c_str(),
+                                                           hstable_manager_.GetFilepath(fileid_new).c_str());
+      if (std::rename(hstable_manager_compaction_.GetFilepath(fileid).c_str(),
+                      hstable_manager_.GetFilepath(fileid_new).c_str()) != 0) {
         LOG_EMERG("Compaction()", "Could not rename file: %s", strerror(errno));
         // TODO: crash here
       }
-      uint64_t filesize = logfile_manager_compaction_.file_resource_manager.GetFileSize(fileid);
-      logfile_manager_.file_resource_manager.SetFileSize(fileid_new, filesize);
-      logfile_manager_.file_resource_manager.SetFileCompacted(fileid_new);
+      uint64_t filesize = hstable_manager_compaction_.file_resource_manager.GetFileSize(fileid);
+      hstable_manager_.file_resource_manager.SetFileSize(fileid_new, filesize);
+      hstable_manager_.file_resource_manager.SetFileCompacted(fileid_new);
     }
 
     
@@ -886,12 +886,12 @@ class StorageEngine {
       // No snapshots are in progress, remove the files on the spot
       for (auto& fileid: fileids_compaction) {
         if (fileids_largefiles_keep.find(fileid) != fileids_largefiles_keep.end()) continue;
-        LOG_TRACE("Compaction()", "Removing [%s]", logfile_manager_.GetFilepath(fileid).c_str());
+        LOG_TRACE("Compaction()", "Removing [%s]", hstable_manager_.GetFilepath(fileid).c_str());
         // TODO: free memory associated with the removed file in the file resource manager
-        if (std::remove(logfile_manager_.GetFilepath(fileid).c_str()) != 0) {
-          LOG_EMERG("Compaction()", "Could not remove file [%s]", logfile_manager_.GetFilepath(fileid).c_str());
+        if (std::remove(hstable_manager_.GetFilepath(fileid).c_str()) != 0) {
+          LOG_EMERG("Compaction()", "Could not remove file [%s]", hstable_manager_.GetFilepath(fileid).c_str());
         }
-        logfile_manager_.file_resource_manager.ClearAllDataForFileId(fileid);
+        hstable_manager_.file_resource_manager.ClearAllDataForFileId(fileid);
       }
     } else {
       // Snapshots are in progress, therefore mark the files and they will be removed when the snapshots are released
@@ -907,7 +907,7 @@ class StorageEngine {
         num_references_to_unused_files_[fileid] += num_snapshots;
 
         // Create lock file
-        std::string filepath_lock = logfile_manager_.GetLockFilepath(fileid);
+        std::string filepath_lock = hstable_manager_.GetLockFilepath(fileid);
         int fd;
         if ((fd = open(filepath_lock.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
           LOG_EMERG("StorageEngine::Compaction()", "Could not open file [%s]: %s", filepath_lock.c_str(), strerror(errno));
@@ -946,14 +946,14 @@ class StorageEngine {
 
     for (auto& fileid: snapshotids_to_fileids_[snapshot_id]) {
       if(num_references_to_unused_files_[fileid] == 1) {
-        LOG_TRACE("ReleaseSnapshot()", "Removing [%s]", logfile_manager_.GetFilepath(fileid).c_str());
-        if (std::remove(logfile_manager_.GetFilepath(fileid).c_str()) != 0) {
-          LOG_EMERG("ReleaseSnapshot()", "Could not remove file [%s]", logfile_manager_.GetFilepath(fileid).c_str());
+        LOG_TRACE("ReleaseSnapshot()", "Removing [%s]", hstable_manager_.GetFilepath(fileid).c_str());
+        if (std::remove(hstable_manager_.GetFilepath(fileid).c_str()) != 0) {
+          LOG_EMERG("ReleaseSnapshot()", "Could not remove file [%s]", hstable_manager_.GetFilepath(fileid).c_str());
         }
-        if (std::remove(logfile_manager_.GetLockFilepath(fileid).c_str()) != 0) {
-          LOG_EMERG("ReleaseSnapshot()", "Could not lock file [%s]", logfile_manager_.GetLockFilepath(fileid).c_str());
+        if (std::remove(hstable_manager_.GetLockFilepath(fileid).c_str()) != 0) {
+          LOG_EMERG("ReleaseSnapshot()", "Could not lock file [%s]", hstable_manager_.GetLockFilepath(fileid).c_str());
         }
-        logfile_manager_.file_resource_manager.ClearAllDataForFileId(fileid);
+        hstable_manager_.file_resource_manager.ClearAllDataForFileId(fileid);
         num_references_to_unused_files_.erase(fileid);
       } else {
         num_references_to_unused_files_[fileid] -= 1;
@@ -982,13 +982,13 @@ class StorageEngine {
   }
   
   std::string GetFilepath(uint32_t fileid) {
-    return logfile_manager_.GetFilepath(fileid);
+    return hstable_manager_.GetFilepath(fileid);
   }
 
   uint32_t FlushCurrentFileForSnapshot() {
     // TODO: flushing the current file is not enough, I also need to make sure
     //       that all the buffers are flushed
-    return logfile_manager_.FlushCurrentFile(1, 0);
+    return hstable_manager_.FlushCurrentFile(1, 0);
   }
 
   std::vector<uint32_t>* GetFileidsIterator() {
@@ -1022,7 +1022,7 @@ class StorageEngine {
 
   // Data
   std::string dbname_;
-  LogfileManager logfile_manager_;
+  HSTableManager hstable_manager_;
   std::map<uint64_t, std::string> data_;
   std::thread thread_data_;
   std::condition_variable cv_read_;
@@ -1037,7 +1037,7 @@ class StorageEngine {
   std::mutex mutex_index_;
 
   // Compaction
-  LogfileManager logfile_manager_compaction_;
+  HSTableManager hstable_manager_compaction_;
   std::mutex mutex_compaction_;
   bool is_compaction_in_progress_;
   std::thread thread_compaction_;

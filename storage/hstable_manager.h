@@ -2,8 +2,8 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
-#ifndef KINGDB_LOGFILE_MANAGER_H_
-#define KINGDB_LOGFILE_MANAGER_H_
+#ifndef KINGDB_HSTABLE_MANAGER_H_
+#define KINGDB_HSTABLE_MANAGER_H_
 
 #include <thread>
 #include <mutex>
@@ -35,16 +35,22 @@
 
 namespace kdb {
 
-class LogfileManager {
+// A HSTable (Hashed String Table) is a file consisting of entries, followed by
+// an Offset Array. The entries are a sequence of bytes in the form <key, value>,
+// and for each entry, the Offset Array has one item which is the hashed key of
+// that entry, and the offset where the entry can be found in the file.
+// The Offset Array can be used to quickly build a hash table in memory,
+// mapping hashed keys to locations in HSTables.
+class HSTableManager {
  public:
-  LogfileManager() {
+  HSTableManager() {
     is_closed_ = true;
     is_read_only_ = true;
     has_file_ = false;
     buffer_has_items_ = false;
   }
 
-  LogfileManager(DatabaseOptions& db_options,
+  HSTableManager(DatabaseOptions& db_options,
                  std::string dbname,
                  std::string prefix,
                  std::string prefix_compaction,
@@ -57,7 +63,7 @@ class LogfileManager {
         prefix_(prefix),
         prefix_compaction_(prefix_compaction),
         dirpath_locks_(dirpath_locks) {
-    LOG_TRACE("LogfileManager::LogfileManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
+    LOG_TRACE("HSTableManager::HSTableManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
     dbname_ = dbname;
     hash_ = MakeHash(db_options.hash);
     Reset();
@@ -67,7 +73,7 @@ class LogfileManager {
     }
   }
 
-  ~LogfileManager() {
+  ~HSTableManager() {
     Close();
   }
 
@@ -75,7 +81,7 @@ class LogfileManager {
     file_resource_manager.Reset();
     sequence_fileid_ = 0;
     sequence_timestamp_ = 0;
-    size_block_ = SIZE_LOGFILE_TOTAL;
+    size_block_ = SIZE_HSTABLE_TOTAL;
     has_file_ = false;
     buffer_has_items_ = false;
     is_closed_ = false;
@@ -97,18 +103,18 @@ class LogfileManager {
   }
 
   std::string GetFilepath(uint32_t fileid) {
-    return dbname_ + "/" + prefix_ + LogfileManager::num_to_hex(fileid); // TODO: optimize here
+    return dbname_ + "/" + prefix_ + HSTableManager::num_to_hex(fileid); // TODO: optimize here
   }
 
   std::string GetLockFilepath(uint32_t fileid) {
-    return dirpath_locks_ + "/" + LogfileManager::num_to_hex(fileid); // TODO: optimize here
+    return dirpath_locks_ + "/" + HSTableManager::num_to_hex(fileid); // TODO: optimize here
   }
 
   // File id sequence helpers
   void SetSequenceFileId(uint32_t seq) {
     std::unique_lock<std::mutex> lock(mutex_sequence_fileid_);
     sequence_fileid_ = seq;
-    LOG_TRACE("LogfileManager::SetSequenceFileId", "seq:%u", seq);
+    LOG_TRACE("HSTableManager::SetSequenceFileId", "seq:%u", seq);
   }
 
   uint32_t GetSequenceFileId() {
@@ -118,7 +124,7 @@ class LogfileManager {
 
   uint32_t IncrementSequenceFileId(uint32_t inc) {
     std::unique_lock<std::mutex> lock(mutex_sequence_fileid_);
-    LOG_TRACE("LogfileManager::IncrementSequenceFileId", "sequence_fileid_:%u, inc:%u", sequence_fileid_, inc);
+    LOG_TRACE("HSTableManager::IncrementSequenceFileId", "sequence_fileid_:%u, inc:%u", sequence_fileid_, inc);
     sequence_fileid_ += inc;
     return sequence_fileid_;
   }
@@ -207,25 +213,25 @@ class LogfileManager {
 
     // Reserving space for header
     offset_start_ = 0;
-    offset_end_ = SIZE_LOGFILE_HEADER;
+    offset_end_ = SIZE_HSTABLE_HEADER;
 
     // Filling in default header
-    struct LogFileHeader lfh;
+    struct HSTableHeader lfh;
     lfh.filetype  = filetype_default_;
     lfh.timestamp = timestamp_;
-    LogFileHeader::EncodeTo(&lfh, buffer_raw_);
+    HSTableHeader::EncodeTo(&lfh, buffer_raw_);
   }
 
   void CloseCurrentFile() {
     if (!has_file_) return;
-    LOG_TRACE("LogfileManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
+    LOG_TRACE("HSTableManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
 
-    // The logindex should only be written if there are no more incoming writes to
-    // the current file. If there are still writes in progress, the logindex should not
+    // The offarray should only be written if there are no more incoming writes to
+    // the current file. If there are still writes in progress, the offarray should not
     // be written so that the next database start-up can trigger a recovery process.
     // Same goes with files that had in-progress writes but timed out: their
-    // logindex will not be written so that they will be recovered at start-up.
-    FlushLogIndex();
+    // offarray will not be written so that they will be recovered at start-up.
+    FlushOffsetArray();
 
     close(fd_);
     buffer_has_items_ = false;
@@ -235,16 +241,16 @@ class LogfileManager {
   uint32_t FlushCurrentFile(int force_new_file=0, uint64_t padding=0) {
     if (!has_file_) return 0;
     uint32_t fileid_out = fileid_;
-    LOG_TRACE("LogfileManager::FlushCurrentFile()", "ENTER - fileid_:%d, has_file_:%d, buffer_has_items_:%d", fileid_, has_file_, buffer_has_items_);
+    LOG_TRACE("HSTableManager::FlushCurrentFile()", "ENTER - fileid_:%d, has_file_:%d, buffer_has_items_:%d", fileid_, has_file_, buffer_has_items_);
     if (has_file_ && buffer_has_items_) {
-      LOG_TRACE("LogfileManager::FlushCurrentFile()", "has_files && buffer_has_items_ - fileid_:%d", fileid_);
+      LOG_TRACE("HSTableManager::FlushCurrentFile()", "has_files && buffer_has_items_ - fileid_:%d", fileid_);
       if (write(fd_, buffer_raw_ + offset_start_, offset_end_ - offset_start_) < 0) {
         LOG_TRACE("StorageEngine::FlushCurrentFile()", "Error write(): %s", strerror(errno));
       }
       file_resource_manager.SetFileSize(fileid_, offset_end_);
       offset_start_ = offset_end_;
       buffer_has_items_ = false;
-      LOG_TRACE("LogfileManager::FlushCurrentFile()", "items written - offset_end_:%d | size_block_:%d | force_new_file:%d", offset_end_, size_block_, force_new_file);
+      LOG_TRACE("HSTableManager::FlushCurrentFile()", "items written - offset_end_:%d | size_block_:%d | force_new_file:%d", offset_end_, size_block_, force_new_file);
     }
 
     if (padding) {
@@ -255,77 +261,78 @@ class LogfileManager {
       lseek(fd_, 0, SEEK_END);
     }
 
-    if (offset_end_ >= size_block_ || (force_new_file && offset_end_ > SIZE_LOGFILE_HEADER)) {
-      LOG_TRACE("LogfileManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
+    if (offset_end_ >= size_block_ || (force_new_file && offset_end_ > SIZE_HSTABLE_HEADER)) {
+      LOG_TRACE("HSTableManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
       file_resource_manager.SetFileSize(fileid_, offset_end_);
       CloseCurrentFile();
       //OpenNewFile();
     } else {
       //fileid_out = fileid_out - 1;
     }
-    LOG_TRACE("LogfileManager::FlushCurrentFile()", "done!");
+    LOG_TRACE("HSTableManager::FlushCurrentFile()", "done!");
     return fileid_out;
   }
 
 
-  Status FlushLogIndex() {
+  Status FlushOffsetArray() {
     if (!has_file_) return Status::OK();
     uint32_t num = file_resource_manager.GetNumWritesInProgress(fileid_);
-    LOG_TRACE("LogfileManager::FlushLogIndex()", "ENTER - fileid_:%d - num_writes_in_progress:%u", fileid_, num);
+    LOG_TRACE("HSTableManager::FlushOffsetArray()", "ENTER - fileid_:%d - num_writes_in_progress:%u", fileid_, num);
     if (file_resource_manager.GetNumWritesInProgress(fileid_) == 0) {
-      uint64_t size_logindex;
+      uint64_t size_offarray;
       file_resource_manager.SetFileSize(fileid_, offset_end_);
       ftruncate(fd_, offset_end_);
-      Status s = WriteLogIndex(fd_, file_resource_manager.GetLogIndex(fileid_), &size_logindex, filetype_default_, file_resource_manager.HasPaddingInValues(fileid_), false);
+      Status s = WriteOffsetArray(fd_, file_resource_manager.GetOffsetArray(fileid_), &size_offarray, filetype_default_, file_resource_manager.HasPaddingInValues(fileid_), false);
       uint64_t filesize = file_resource_manager.GetFileSize(fileid_);
-      file_resource_manager.SetFileSize(fileid_, filesize + size_logindex);
+      file_resource_manager.SetFileSize(fileid_, filesize + size_offarray);
       return s;
     }
     return Status::OK();
   }
 
 
-  Status WriteLogIndex(int fd,
-                       const std::vector< std::pair<uint64_t, uint32_t> >& logindex_current,
+  Status WriteOffsetArray(int fd,
+                       const std::vector< std::pair<uint64_t, uint32_t> >& offarray_current,
                        uint64_t* size_out,
                        FileType filetype,
                        bool has_padding_in_values,
                        bool has_invalid_entries) {
     uint64_t offset = 0;
-    struct LogFileFooterIndex lffi;
-    for (auto& p: logindex_current) {
+    struct HSTableFooterIndex lffi;
+    for (auto& p: offarray_current) {
       lffi.hashed_key = p.first;
       lffi.offset_entry = p.second;
-      uint32_t length = LogFileFooterIndex::EncodeTo(&lffi, buffer_index_ + offset);
+      uint32_t length = HSTableFooterIndex::EncodeTo(&lffi, buffer_index_ + offset);
       offset += length;
-      LOG_TRACE("StorageEngine::WriteLogIndex()", "hashed_key:[%llu] offset:[%08x]", p.first, p.second);
+      LOG_TRACE("StorageEngine::WriteOffsetArray()", "hashed_key:[%llu] offset:[%08x]", p.first, p.second);
     }
 
     uint64_t position = lseek(fd, 0, SEEK_END);
-    // NOTE: lseek() will not work to retrieve 'position' if the configs allow logfiles
-    // to have sizes larger than (2^32)-1 -- lseek64() could be used, but is not standard on all unixes
-    struct LogFileFooter footer;
+    // NOTE: lseek() will not work to retrieve 'position' if the configs allow
+    // hstables to have sizes larger than (2^32)-1 -- lseek64() could be used,
+    // but is not standard on all unixes
+    struct HSTableFooter footer;
     footer.filetype = filetype;
     footer.offset_indexes = position;
-    footer.num_entries = logindex_current.size();
+    footer.num_entries = offarray_current.size();
     footer.magic_number = get_magic_number();
     if (has_padding_in_values) footer.SetFlagHasPaddingInValues();
     if (has_invalid_entries) footer.SetFlagHasInvalidEntries();
-    uint32_t length = LogFileFooter::EncodeTo(&footer, buffer_index_ + offset);
+    uint32_t length = HSTableFooter::EncodeTo(&footer, buffer_index_ + offset);
     offset += length;
 
     uint32_t crc32 = crc32c::Value(buffer_index_, offset - 4);
     EncodeFixed32(buffer_index_ + offset - 4, crc32);
 
     if (write(fd, buffer_index_, offset) < 0) {
-      LOG_TRACE("StorageEngine::WriteLogIndex()", "Error write(): %s", strerror(errno));
+      LOG_TRACE("StorageEngine::WriteOffsetArray()", "Error write(): %s", strerror(errno));
     }
 
     // ftruncate() is necessary in case the file system space for the file was pre-allocated 
     ftruncate(fd, position + offset);
 
     *size_out = offset;
-    LOG_TRACE("StorageEngine::WriteLogIndex()", "offset_indexes:%u, num_entries:[%lu]", position, logindex_current.size());
+    LOG_TRACE("StorageEngine::WriteOffsetArray()", "offset_indexes:%u, num_entries:[%lu]", position, offarray_current.size());
     return Status::OK();
   }
 
@@ -341,7 +348,7 @@ class LogfileManager {
     uint64_t fileid_largefile = IncrementSequenceFileId(1);
     uint64_t timestamp_largefile = IncrementSequenceTimestamp(1);
     std::string filepath = GetFilepath(fileid_largefile);
-    LOG_TRACE("LogfileManager::WriteFirstChunkLargeOrder()", "enter %s", filepath.c_str());
+    LOG_TRACE("HSTableManager::WriteFirstChunkLargeOrder()", "enter %s", filepath.c_str());
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
       LOG_EMERG("StorageEngine::WriteFirstChunkLargeOrder()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
@@ -349,13 +356,13 @@ class LogfileManager {
     }
 
     // Write header
-    char buffer[SIZE_LOGFILE_HEADER];
-    struct LogFileHeader lfh;
+    char buffer[SIZE_HSTABLE_HEADER];
+    struct HSTableHeader lfh;
     lfh.filetype  = kCompactedLargeType;
     lfh.timestamp = timestamp_largefile;
-    LogFileHeader::EncodeTo(&lfh, buffer);
-    if(write(fd, buffer, SIZE_LOGFILE_HEADER) < 0) {
-      LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+    HSTableHeader::EncodeTo(&lfh, buffer);
+    if(write(fd, buffer, SIZE_HSTABLE_HEADER) < 0) {
+      LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
 
     // Write entry metadata
@@ -371,27 +378,27 @@ class LogfileManager {
     uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
     key_to_headersize[order.tid][order.key->ToString()] = size_header;
     if(write(fd, buffer, size_header) < 0) {
-      LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
 
     // Write key and chunk
     // NOTE: Could also put the key and chunk in the buffer and do a single write
     if(write(fd, order.key->data(), order.key->size()) < 0) {
-      LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
     if(write(fd, order.chunk->data(), order.chunk->size()) < 0) {
-      LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
 
-    uint64_t filesize = SIZE_LOGFILE_HEADER + size_header + order.key->size() + order.size_value;
+    uint64_t filesize = SIZE_HSTABLE_HEADER + size_header + order.key->size() + order.size_value;
     ftruncate(fd, filesize);
     file_resource_manager.SetFileSize(fileid_largefile, filesize);
     close(fd);
     uint64_t fileid_shifted = fileid_largefile;
     fileid_shifted <<= 32;
-    LOG_TRACE("LogfileManager::WriteFirstChunkLargeOrder()", "fileid [%d]", fileid_largefile);
+    LOG_TRACE("HSTableManager::WriteFirstChunkLargeOrder()", "fileid [%d]", fileid_largefile);
     file_resource_manager.SetNumWritesInProgress(fileid_largefile, 1);
-    return fileid_shifted | SIZE_LOGFILE_HEADER;
+    return fileid_shifted | SIZE_HSTABLE_HEADER;
   }
 
 
@@ -406,7 +413,7 @@ class LogfileManager {
       return 0;
     }
 
-    LOG_TRACE("LogfileManager::WriteChunk()", "key [%s] filepath:[%s] offset_chunk:%llu", order.key->ToString().c_str(), filepath.c_str(), order.offset_chunk);
+    LOG_TRACE("HSTableManager::WriteChunk()", "key [%s] filepath:[%s] offset_chunk:%llu", order.key->ToString().c_str(), filepath.c_str(), order.offset_chunk);
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
       LOG_EMERG("StorageEngine::WriteChunk()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
@@ -415,7 +422,7 @@ class LogfileManager {
 
     if (key_to_headersize.find(order.tid) == key_to_headersize.end() ||
         key_to_headersize[order.tid].find(order.key->ToString()) == key_to_headersize[order.tid].end()) {
-      LOG_TRACE("LogfileManager::WriteChunk()", "Missing in key_to_headersize[]");
+      LOG_TRACE("HSTableManager::WriteChunk()", "Missing in key_to_headersize[]");
     }
 
     uint32_t size_header = key_to_headersize[order.tid][order.key->ToString()];
@@ -425,13 +432,13 @@ class LogfileManager {
                order.chunk->data(),
                order.chunk->size(),
                offset_file + size_header + order.key->size() + order.offset_chunk) < 0) {
-      LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
+      LOG_TRACE("HSTableManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
     }
 
     // If this is a last chunk, the header is written again to save the right size of compressed value,
     // and the crc32 is saved too
     if (order.IsLastChunk()) {
-      LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:0x%08llx", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
+      LOG_TRACE("HSTableManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:0x%08llx", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct EntryHeader entry_header;
       entry_header.SetTypePut();
       entry_header.SetEntryFull();
@@ -457,29 +464,29 @@ class LogfileManager {
       entry_header.crc32 = crc32c::Combine(crc32_header, order.crc32, entry_header.size_key + entry_header.size_value_used());
       size_header_new = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
       if (size_header_new != size_header) {
-        LOG_EMERG("LogfileManager::WriteChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
+        LOG_EMERG("HSTableManager::WriteChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
       }
 
       if (pwrite(fd, buffer, size_header, offset_file) < 0) {
-        LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
+        LOG_TRACE("HSTableManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
       }
       
       if (is_large_order && entry_header.IsCompressed()) {
-        uint64_t filesize = SIZE_LOGFILE_HEADER + size_header + order.key->size() + order.size_value_compressed;
+        uint64_t filesize = SIZE_HSTABLE_HEADER + size_header + order.key->size() + order.size_value_compressed;
         file_resource_manager.SetFileSize(fileid, filesize);
         ftruncate(fd, filesize);
       }
 
       uint32_t num_writes_in_progress = file_resource_manager.SetNumWritesInProgress(fileid, -1);
       if (fileid != fileid_ && num_writes_in_progress == 0) {
-        // TODO: factorize this code with FlushLogIndex()
-        uint64_t size_logindex;
+        // TODO: factorize this code with FlushOffsetArray()
+        uint64_t size_offarray;
         FileType filetype = is_large_order ? kCompactedLargeType : filetype_default_;
         uint64_t filesize_before = file_resource_manager.GetFileSize(fileid);
         ftruncate(fd, filesize_before);
-        WriteLogIndex(fd, file_resource_manager.GetLogIndex(fileid), &size_logindex, filetype, file_resource_manager.HasPaddingInValues(fileid), false);
+        WriteOffsetArray(fd, file_resource_manager.GetOffsetArray(fileid), &size_offarray, filetype, file_resource_manager.HasPaddingInValues(fileid), false);
         uint64_t filesize = file_resource_manager.GetFileSize(fileid);
-        file_resource_manager.SetFileSize(fileid, filesize + size_logindex);
+        file_resource_manager.SetFileSize(fileid, filesize + size_offarray);
         if (is_large_order) file_resource_manager.SetFileLarge(fileid);
         file_resource_manager.ClearTemporaryDataForFileId(fileid);
       }
@@ -487,7 +494,7 @@ class LogfileManager {
     }
 
     close(fd);
-    LOG_TRACE("LogfileManager::WriteChunk()", "all good");
+    LOG_TRACE("HSTableManager::WriteChunk()", "all good");
     return location;
   }
 
@@ -528,7 +535,7 @@ class LogfileManager {
       uint64_t fileid_shifted = fileid_;
       fileid_shifted <<= 32;
       location_out = fileid_shifted | offset_end_;
-      file_resource_manager.AddLogIndex(fileid_, std::pair<uint64_t, uint32_t>(hashed_key, offset_end_));
+      file_resource_manager.AddOffsetArray(fileid_, std::pair<uint64_t, uint32_t>(hashed_key, offset_end_));
       offset_end_ += size_header + order.key->size() + order.chunk->size();
 
       if (!order.IsSelfContained()) {
@@ -564,7 +571,7 @@ class LogfileManager {
       uint64_t fileid_shifted = fileid_;
       fileid_shifted <<= 32;
       location_out = fileid_shifted | offset_end_;
-      file_resource_manager.AddLogIndex(fileid_, std::pair<uint64_t, uint32_t>(hashed_key, offset_end_));
+      file_resource_manager.AddOffsetArray(fileid_, std::pair<uint64_t, uint32_t>(hashed_key, offset_end_));
       offset_end_ += size_header + order.key->size();
     }
     return location_out;
@@ -716,27 +723,27 @@ class LogfileManager {
       if (strcmp(entry->d_name, prefix_compaction_.c_str()) == 0) continue;
       sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
       if (stat(filepath, &info) != 0 || !(info.st_mode & S_IFREG)) continue;
-      fileid = LogfileManager::hex_to_num(entry->d_name);
+      fileid = HSTableManager::hex_to_num(entry->d_name);
       if (   fileids_ignore != nullptr
           && fileids_ignore->find(fileid) != fileids_ignore->end()) {
-        LOG_TRACE("LogfileManager::LoadDatabase()", "Skipping file in fileids_ignore:: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
+        LOG_TRACE("HSTableManager::LoadDatabase()", "Skipping file in fileids_ignore:: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
         continue;
       }
       if (fileid_end != 0 && fileid > fileid_end) {
-        LOG_TRACE("LogfileManager::LoadDatabase()", "Skipping file with id larger than fileid_end (%u): [%s] [%lld] [%u]\n", fileid, entry->d_name, info.st_size, fileid);
+        LOG_TRACE("HSTableManager::LoadDatabase()", "Skipping file with id larger than fileid_end (%u): [%s] [%lld] [%u]\n", fileid, entry->d_name, info.st_size, fileid);
         continue;
       }
-      LOG_TRACE("LogfileManager::LoadDatabase()", "file: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
-      if (info.st_size <= SIZE_LOGFILE_HEADER) {
-        LOG_TRACE("LogfileManager::LoadDatabase()", "file: [%s] only has a header or less, skipping\n", entry->d_name);
+      LOG_TRACE("HSTableManager::LoadDatabase()", "file: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
+      if (info.st_size <= SIZE_HSTABLE_HEADER) {
+        LOG_TRACE("HSTableManager::LoadDatabase()", "file: [%s] only has a header or less, skipping\n", entry->d_name);
         continue;
       }
 
       Mmap mmap(filepath, info.st_size);
-      struct LogFileHeader lfh;
-      Status s = LogFileHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
+      struct HSTableHeader lfh;
+      Status s = HSTableHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
       if (!s.IsOK()) {
-        LOG_TRACE("LogfileManager::LoadDatabase()", "file: [%s] has an invalid header, skipping\n", entry->d_name);
+        LOG_TRACE("HSTableManager::LoadDatabase()", "file: [%s] has an invalid header, skipping\n", entry->d_name);
         continue;
       }
 
@@ -751,7 +758,7 @@ class LogfileManager {
       uint32_t fileid = p.second;
       if (fileids_iterator != nullptr) fileids_iterator->push_back(fileid);
       std::string filepath = GetFilepath(fileid);
-      LOG_TRACE("LogfileManager::LoadDatabase()", "Loading file:[%s] with key:[%s]", filepath.c_str(), p.first.c_str());
+      LOG_TRACE("HSTableManager::LoadDatabase()", "Loading file:[%s] with key:[%s]", filepath.c_str(), p.first.c_str());
       if (stat(filepath.c_str(), &info) != 0) continue;
       Mmap mmap(filepath.c_str(), info.st_size);
       uint64_t filesize;
@@ -762,13 +769,13 @@ class LogfileManager {
         if (is_file_large) file_resource_manager.SetFileLarge(fileid);
         if (is_file_compacted) file_resource_manager.SetFileCompacted(fileid);
       } else if (!s.IsOK() && !is_read_only_) {
-        LOG_WARN("LogfileManager::LoadDatabase()", "Could not load index in file [%s], entering recovery mode", filepath.c_str());
+        LOG_WARN("HSTableManager::LoadDatabase()", "Could not load index in file [%s], entering recovery mode", filepath.c_str());
         s = RecoverFile(mmap, fileid, index_se);
         if (!s.IsOK()) {
-          LOG_WARN("LogfileManager::LoadDatabase()", "Recovery failed for file [%s]", filepath.c_str());
+          LOG_WARN("HSTableManager::LoadDatabase()", "Recovery failed for file [%s]", filepath.c_str());
           mmap.Close();
           if (std::remove(filepath.c_str()) != 0) {
-            LOG_EMERG("LogfileManager::LoadDatabase()", "Could not remove file [%s]", filepath.c_str());
+            LOG_EMERG("HSTableManager::LoadDatabase()", "Could not remove file [%s]", filepath.c_str());
           }
         }
       }
@@ -787,11 +794,11 @@ class LogfileManager {
                   uint64_t *filesize_out=nullptr,
                   bool *is_file_large_out=nullptr,
                   bool *is_file_compacted_out=nullptr) {
-    LOG_TRACE("LoadFile()", "Loading [%s] of size:%u, sizeof(LogFileFooter):%u", mmap.filepath(), mmap.filesize(), LogFileFooter::GetFixedSize());
+    LOG_TRACE("LoadFile()", "Loading [%s] of size:%u, sizeof(HSTableFooter):%u", mmap.filepath(), mmap.filesize(), HSTableFooter::GetFixedSize());
 
-    struct LogFileFooter footer;
-    Status s = LogFileFooter::DecodeFrom(mmap.datafile() + mmap.filesize() - LogFileFooter::GetFixedSize(), LogFileFooter::GetFixedSize(), &footer);
-    if (!s.IsOK() || footer.magic_number != LogfileManager::get_magic_number()) {
+    struct HSTableFooter footer;
+    Status s = HSTableFooter::DecodeFrom(mmap.datafile() + mmap.filesize() - HSTableFooter::GetFixedSize(), HSTableFooter::GetFixedSize(), &footer);
+    if (!s.IsOK() || footer.magic_number != HSTableManager::get_magic_number()) {
       LOG_TRACE("LoadFile()", "Skipping [%s] - magic_number:[%llu/%llu]", mmap.filepath(), footer.magic_number, get_magic_number());
       return Status::IOError("Invalid footer");
     }
@@ -805,10 +812,10 @@ class LogfileManager {
     LOG_TRACE("LoadFile()", "Footer OK");
     // The file has a clean footer, load all the offsets in the index
     uint64_t offset_index = footer.offset_indexes;
-    struct LogFileFooterIndex lffi;
+    struct HSTableFooterIndex lffi;
     for (auto i = 0; i < footer.num_entries; i++) {
       uint32_t length_lffi;
-      LogFileFooterIndex::DecodeFrom(mmap.datafile() + offset_index, mmap.filesize() - offset_index, &lffi, &length_lffi);
+      HSTableFooterIndex::DecodeFrom(mmap.datafile() + offset_index, mmap.filesize() - offset_index, &lffi, &length_lffi);
       uint64_t fileid_shifted = fileid;
       fileid_shifted <<= 32;
       index_se.insert(std::pair<uint64_t, uint64_t>(lffi.hashed_key, fileid_shifted | lffi.offset_entry));
@@ -828,19 +835,19 @@ class LogfileManager {
   Status RecoverFile(Mmap& mmap,
                      uint32_t fileid,
                      std::multimap<uint64_t, uint64_t>& index_se) {
-    uint32_t offset = SIZE_LOGFILE_HEADER;
-    std::vector< std::pair<uint64_t, uint32_t> > logindex_current;
+    uint32_t offset = SIZE_HSTABLE_HEADER;
+    std::vector< std::pair<uint64_t, uint32_t> > offarray_current;
     bool has_padding_in_values = false;
     bool has_invalid_entries   = false;
 
-    struct LogFileHeader lfh;
-    Status s = LogFileHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
+    struct HSTableHeader lfh;
+    Status s = HSTableHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
     // 1. If the file is a large file, just discard it
     if (!s.IsOK() || lfh.IsTypeLarge()) {
       return Status::IOError("Could not recover file");
     }
 
-    // 2. If the file is a logfile, go over all its entries and verify each one of them
+    // 2. If the file is a hstable, go over all its entries and verify each one of them
     while (true) {
       struct EntryHeader entry_header;
       uint32_t size_header;
@@ -873,7 +880,7 @@ class LogfileManager {
       }
       if (!do_crc32_verification || is_crc32_valid) {
         // Valid content, add to index
-        logindex_current.push_back(std::pair<uint64_t, uint32_t>(entry_header.hash, offset));
+        offarray_current.push_back(std::pair<uint64_t, uint32_t>(entry_header.hash, offset));
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
         index_se.insert(std::pair<uint64_t, uint64_t>(entry_header.hash, fileid_shifted | offset));
@@ -883,23 +890,23 @@ class LogfileManager {
 
       if (entry_header.HasPadding()) has_padding_in_values = true;
       offset += size_header + entry_header.size_key + entry_header.size_value_offset();
-      LOG_TRACE("LogManager::RecoverFile",
+      LOG_TRACE("HSTableManager::RecoverFile",
                 "Scanned hash [%llu], next offset [%llu] - CRC32:%s stored=0x%08x computed=0x%08x",
                 entry_header.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry_header.crc32, crc32_.get());
     }
 
     // 3. Write a new index at the end of the file with whatever entries could be save
-    if (offset > SIZE_LOGFILE_HEADER) {
+    if (offset > SIZE_HSTABLE_HEADER) {
       mmap.Close();
       int fd;
       if ((fd = open(mmap.filepath(), O_WRONLY, 0644)) < 0) {
-        LOG_EMERG("LogManager::RecoverFile()", "Could not open file [%s]: %s", mmap.filepath(), strerror(errno));
+        LOG_EMERG("HSTableManager::RecoverFile()", "Could not open file [%s]: %s", mmap.filepath(), strerror(errno));
         return Status::IOError("Could not open file for recovery", mmap.filepath());
       }
       ftruncate(fd, offset);
-      uint64_t size_logindex;
-      WriteLogIndex(fd, logindex_current, &size_logindex, lfh.GetFileType(), has_padding_in_values, has_invalid_entries);
-      file_resource_manager.SetFileSize(fileid, mmap.filesize() + size_logindex);
+      uint64_t size_offarray;
+      WriteOffsetArray(fd, offarray_current, &size_offarray, lfh.GetFileType(), has_padding_in_values, has_invalid_entries);
+      file_resource_manager.SetFileSize(fileid, mmap.filesize() + size_offarray);
       close(fd);
     } else {
       return Status::IOError("Could not recover file");
@@ -922,7 +929,7 @@ class LogfileManager {
     struct stat info;
     while ((entry = readdir(directory)) != NULL) {
       if (strncmp(entry->d_name, ".", 1) == 0) continue;
-      fileid = LogfileManager::hex_to_num(entry->d_name);
+      fileid = HSTableManager::hex_to_num(entry->d_name);
       fileids.insert(fileid);
     }
 
@@ -989,4 +996,4 @@ class LogfileManager {
 
 } // namespace kdb
 
-#endif // KINGDB_LOGFILE_MANAGER_H_
+#endif // KINGDB_HSTABLE_MANAGER_H_
