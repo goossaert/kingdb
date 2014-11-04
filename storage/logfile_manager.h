@@ -219,11 +219,15 @@ class LogfileManager {
   void CloseCurrentFile() {
     if (!has_file_) return;
     LOG_TRACE("LogfileManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
-    //ftruncate(fd_, offset_end_);
+
+    // The logindex should only be written if there are no more incoming writes to
+    // the current file. If there are still writes in progress, the logindex should not
+    // be written so that the next database start-up can trigger a recovery process.
+    // Same goes with files that had in-progress writes but timed out: their
+    // logindex will not be written so that they will be recovered at start-up.
     FlushLogIndex();
+
     close(fd_);
-    //IncrementSequenceFileId(1);
-    //IncrementSequenceTimestamp(1);
     buffer_has_items_ = false;
     has_file_ = false;
   }
@@ -852,17 +856,24 @@ class LogfileManager {
         break;
       }
 
-      crc32_.ResetThreadLocalStorage();
-      crc32_.stream(mmap.datafile() + offset + 4, size_header + entry.size_key + entry.size_value_used() - 4);
-      bool is_crc32_valid = (entry.crc32 == crc32_.get());
-      if (is_crc32_valid) {
+      // NOTE: The checksum is not verified because during the recovery and compaction
+      // it doesn't matter whether or not the entry is valid. The user will know that
+      // an entry is invalid after doing a Get(), and that is his choice to do a
+      // Delete() if he wants to delete the entry.
+      const bool do_crc32_verification = false; // this boolean is here just to toggle the verification
+      bool is_crc32_valid = true;
+      if (do_crc32_verification) {
+        crc32_.ResetThreadLocalStorage();
+        crc32_.stream(mmap.datafile() + offset + 4, size_header + entry.size_key + entry.size_value_used() - 4);
+        is_crc32_valid = (entry.crc32 == crc32_.get());
+      }
+      if (!do_crc32_verification || is_crc32_valid) {
         // Valid content, add to index
         logindex_current.push_back(std::pair<uint64_t, uint32_t>(entry.hash, offset));
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
         index_se.insert(std::pair<uint64_t, uint64_t>(entry.hash, fileid_shifted | offset));
       } else {
-        is_crc32_valid = false;
         has_invalid_entries = true; 
       }
 
@@ -870,7 +881,7 @@ class LogfileManager {
       offset += size_header + entry.size_key + entry.size_value_offset();
       LOG_TRACE("LogManager::RecoverFile",
                 "Scanned hash [%llu], next offset [%llu] - CRC32:%s stored=0x%08x computed=0x%08x",
-                entry.hash, offset, is_crc32_valid?"OK":"ERROR", entry.crc32, crc32_.get());
+                entry.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry.crc32, crc32_.get());
     }
 
     // 3. Write a new index at the end of the file with whatever entries could be save
