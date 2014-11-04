@@ -679,11 +679,8 @@ class StorageEngine {
         struct Entry entry;
         uint32_t size_header;
         Status s = Entry::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry, &size_header);
-        // NOTE: The checksum is not verified because during the recovery and compaction
-        // it doesn't matter whether or not the entry is valid. The user will know that
-        // an entry is invalid after doing a Get(), and that is his choice to do a
-        // Delete() if he wants to delete the entry.
-        
+
+        // NOTE: No need to verify the checksum. See notes in RecoverFile().
         if (   !s.IsOK()
             || offset + sizeof(struct Entry) >= mmap->filesize()
             || entry.size_key == 0

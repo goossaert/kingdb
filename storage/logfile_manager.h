@@ -859,7 +859,11 @@ class LogfileManager {
       // NOTE: The checksum is not verified because during the recovery and compaction
       // it doesn't matter whether or not the entry is valid. The user will know that
       // an entry is invalid after doing a Get(), and that is his choice to do a
-      // Delete() if he wants to delete the entry.
+      // Delete() if he wants to delete the entry. Keep in mind though that if
+      // the checksum is wrong, it's possible for the hashedkey to be
+      // erroneous, in which case the only way to find and remove invalid
+      // entries is to iterate over whole database, and do Delete() commands
+      // for the entries with invalid checksums.
       const bool do_crc32_verification = false; // this boolean is here just to toggle the verification
       bool is_crc32_valid = true;
       if (do_crc32_verification) {
