@@ -31,7 +31,7 @@ static const uint32_t kVersionDataFormatMinor = 0;
 // 32-bit flags
 // NOTE: kEntryFirst, kEntryMiddle and kEntryLast are not used yet,
 //       they are reserved for possible future implementation.
-enum EntryFlag {
+enum EntryHeaderFlag {
   kTypeRemove    = 0x1,
   kHasPadding    = 0x2,
   kEntryFull     = 0x4,
@@ -41,8 +41,8 @@ enum EntryFlag {
 };
 
 
-struct Entry {
-  Entry() { flags = 0; }
+struct EntryHeader {
+  EntryHeader() { flags = 0; }
   uint32_t crc32;
   uint32_t flags;
   uint64_t size_key;
@@ -51,7 +51,7 @@ struct Entry {
   uint64_t hash;
 
   void print() {
-    LOG_TRACE("Entry::print()", "flags:%u crc32:%u size_key:%llu size_value:%llu size_value_compressed:%llu hash:%llu", flags, crc32, size_key, size_value, size_value_compressed, hash);
+    LOG_TRACE("EntryHeader::print()", "flags:%u crc32:%u size_key:%llu size_value:%llu size_value_compressed:%llu hash:%llu", flags, crc32, size_key, size_value, size_value_compressed, hash);
   }
 
   void SetHasPadding(bool b) {
@@ -112,14 +112,14 @@ struct Entry {
   }
 
 
-  static Status DecodeFrom(const DatabaseOptions& db_options, const char* buffer_in, uint64_t num_bytes_max, struct Entry *output, uint32_t *num_bytes_read) {
+  static Status DecodeFrom(const DatabaseOptions& db_options, const char* buffer_in, uint64_t num_bytes_max, struct EntryHeader *output, uint32_t *num_bytes_read) {
     /*
     // Dumb serialization for debugging
-    LOG_TRACE("Entry::DecodeFrom", "start num_bytes_max:%llu - sizeof(Entry):%d", num_bytes_max, sizeof(struct Entry));
+    LOG_TRACE("EntryHeader::DecodeFrom", "start num_bytes_max:%llu - sizeof(EntryHeader):%d", num_bytes_max, sizeof(struct EntryHeader));
     char *buffer = const_cast<char*>(buffer_in);
-    struct Entry* entry = reinterpret_cast<struct Entry*>(buffer);
-    *output = *entry;
-    *num_bytes_read = sizeof(struct Entry);
+    struct EntryHeader* entry_header = reinterpret_cast<struct EntryHeader*>(buffer);
+    *output = *entry_header;
+    *num_bytes_read = sizeof(struct EntryHeader);
     return Status::OK();
     */
 
@@ -152,16 +152,16 @@ struct Entry {
     GetFixed64(array.data(), &(output->hash));
 
     *num_bytes_read = num_bytes_max - array.size() + 8;
-    //LOG_TRACE("Entry::DecodeFrom", "size:%u", *num_bytes_read);
+    //LOG_TRACE("EntryHeader::DecodeFrom", "size:%u", *num_bytes_read);
     return Status::OK();
   }
 
-  static uint32_t EncodeTo(const DatabaseOptions& db_options, const struct Entry *input, char* buffer) {
+  static uint32_t EncodeTo(const DatabaseOptions& db_options, const struct EntryHeader *input, char* buffer) {
     /*
     // Dumb serialization for debugging
-    struct Entry *input_noncast = const_cast<struct Entry*>(input);
-    memcpy(buffer, reinterpret_cast<char*>(input_noncast), sizeof(struct Entry));
-    return sizeof(struct Entry);
+    struct EntryHeader *input_noncast = const_cast<struct EntryHeader*>(input);
+    memcpy(buffer, reinterpret_cast<char*>(input_noncast), sizeof(struct EntryHeader));
+    return sizeof(struct EntryHeader);
     */
 
     // NOTE: it would be interesting to run an analysis and determine if it is
@@ -183,7 +183,7 @@ struct Entry {
       ptr += length_value;
     }
     EncodeFixed64(ptr, input->hash);
-    //LOG_TRACE("Entry::EncodeTo", "size:%u", ptr - buffer + 8);
+    //LOG_TRACE("EntryHeader::EncodeTo", "size:%u", ptr - buffer + 8);
     return (ptr - buffer + 8);
   }
 

@@ -359,16 +359,16 @@ class LogfileManager {
     }
 
     // Write entry metadata
-    struct Entry entry;
-    entry.SetTypePut();
-    entry.SetEntryFull();
-    entry.size_key = order.key->size();
-    entry.size_value = order.size_value;
-    entry.size_value_compressed = order.size_value_compressed;
-    entry.hash = hashed_key;
-    entry.crc32 = 0;
-    entry.SetHasPadding(false);
-    uint32_t size_header = Entry::EncodeTo(db_options_, &entry, buffer);
+    struct EntryHeader entry_header;
+    entry_header.SetTypePut();
+    entry_header.SetEntryFull();
+    entry_header.size_key = order.key->size();
+    entry_header.size_value = order.size_value;
+    entry_header.size_value_compressed = order.size_value_compressed;
+    entry_header.hash = hashed_key;
+    entry_header.crc32 = 0;
+    entry_header.SetHasPadding(false);
+    uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
     key_to_headersize[order.tid][order.key->ToString()] = size_header;
     if(write(fd, buffer, size_header) < 0) {
       LOG_TRACE("LogfileManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
@@ -432,30 +432,30 @@ class LogfileManager {
     // and the crc32 is saved too
     if (order.IsLastChunk()) {
       LOG_TRACE("LogfileManager::WriteChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:0x%08llx", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
-      struct Entry entry;
-      entry.SetTypePut();
-      entry.SetEntryFull();
-      entry.size_key = order.key->size();
-      entry.size_value = order.size_value;
-      entry.size_value_compressed = order.size_value_compressed;
-      if (!is_large_order && entry.IsCompressed()) {
-        // NOTE: entry.IsCompressed() makes no sense since compression is
+      struct EntryHeader entry_header;
+      entry_header.SetTypePut();
+      entry_header.SetEntryFull();
+      entry_header.size_key = order.key->size();
+      entry_header.size_value = order.size_value;
+      entry_header.size_value_compressed = order.size_value_compressed;
+      if (!is_large_order && entry_header.IsCompressed()) {
+        // NOTE: entry_header.IsCompressed() makes no sense since compression is
         // handled at database level, not at entry level. All usages of
         // IsCompressed() should be replaced by a check on the database options.
-        entry.SetHasPadding(true);
+        entry_header.SetHasPadding(true);
         file_resource_manager.SetHasPaddingInValues(fileid_, true);
       }
-      entry.hash = hashed_key;
+      entry_header.hash = hashed_key;
 
       // Compute the header a first time to get the data serialized
-      char buffer[sizeof(struct Entry)*2];
-      uint32_t size_header_new = Entry::EncodeTo(db_options_, &entry, buffer);
+      char buffer[sizeof(struct EntryHeader)*2];
+      uint32_t size_header_new = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
 
       // Compute the checksum for the header and combine it with the one for the
       // key and value, then recompute the header to save the checksum
       uint32_t crc32_header = crc32c::Value(buffer + 4, size_header_new - 4);
-      entry.crc32 = crc32c::Combine(crc32_header, order.crc32, entry.size_key + entry.size_value_used());
-      size_header_new = Entry::EncodeTo(db_options_, &entry, buffer);
+      entry_header.crc32 = crc32c::Combine(crc32_header, order.crc32, entry_header.size_key + entry_header.size_value_used());
+      size_header_new = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
       if (size_header_new != size_header) {
         LOG_EMERG("LogfileManager::WriteChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
       }
@@ -464,7 +464,7 @@ class LogfileManager {
         LOG_TRACE("LogfileManager::WriteChunk()", "Error pwrite(): %s", strerror(errno));
       }
       
-      if (is_large_order && entry.IsCompressed()) {
+      if (is_large_order && entry_header.IsCompressed()) {
         uint64_t filesize = SIZE_LOGFILE_HEADER + size_header + order.key->size() + order.size_value_compressed;
         file_resource_manager.SetFileSize(fileid, filesize);
         ftruncate(fd, filesize);
@@ -494,31 +494,31 @@ class LogfileManager {
 
   uint64_t WriteFirstChunkOrSmallOrder(Order& order, uint64_t hashed_key) {
     uint64_t location_out = 0;
-    struct Entry entry;
+    struct EntryHeader entry_header;
     if (order.type == OrderType::Put) {
-      entry.SetTypePut();
-      entry.SetEntryFull();
-      entry.size_key = order.key->size();
-      entry.size_value = order.size_value;
-      entry.size_value_compressed = order.size_value_compressed;
-      entry.hash = hashed_key;
-      entry.crc32 = order.crc32;
+      entry_header.SetTypePut();
+      entry_header.SetEntryFull();
+      entry_header.size_key = order.key->size();
+      entry_header.size_value = order.size_value;
+      entry_header.size_value_compressed = order.size_value_compressed;
+      entry_header.hash = hashed_key;
+      entry_header.crc32 = order.crc32;
       if (order.IsSelfContained()) {
-        entry.SetHasPadding(false);
+        entry_header.SetHasPadding(false);
       } else {
-        entry.SetHasPadding(true);
+        entry_header.SetHasPadding(true);
         file_resource_manager.SetHasPaddingInValues(fileid_, true);
         // TODO: check that the has_padding_in_values field in fields is used during compaction
       }
-      uint32_t size_header = Entry::EncodeTo(db_options_, &entry, buffer_raw_ + offset_end_);
+      uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer_raw_ + offset_end_);
 
       if (order.IsSelfContained()) {
         // Compute the checksum for the header and combine it with the one for the
         // key and value, then recompute the header to save the checksum
         uint32_t crc32_header = crc32c::Value(buffer_raw_ + offset_end_ + 4, size_header - 4);
-        entry.crc32 = crc32c::Combine(crc32_header, order.crc32, entry.size_key + entry.size_value_used());
-        size_header = Entry::EncodeTo(db_options_, &entry, buffer_raw_ + offset_end_);
-        LOG_TRACE("StorageEngine::WriteFirstChunkOrSmallOrder()", "IsSelfContained():true - crc32 [0x%08x]", entry.crc32);
+        entry_header.crc32 = crc32c::Combine(crc32_header, order.crc32, entry_header.size_key + entry_header.size_value_used());
+        size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer_raw_ + offset_end_);
+        LOG_TRACE("StorageEngine::WriteFirstChunkOrSmallOrder()", "IsSelfContained():true - crc32 [0x%08x]", entry_header.crc32);
       }
 
       memcpy(buffer_raw_ + offset_end_ + size_header, order.key->data(), order.key->size());
@@ -552,13 +552,13 @@ class LogfileManager {
       LOG_TRACE("StorageEngine::WriteFirstChunkOrSmallOrder()", "Put [%s]", order.key->ToString().c_str());
     } else { // order.type == OrderType::Remove
       LOG_TRACE("StorageEngine::WriteFirstChunkOrSmallOrder()", "Remove [%s]", order.key->ToString().c_str());
-      entry.SetTypeRemove();
-      entry.SetEntryFull();
-      entry.size_key = order.key->size();
-      entry.size_value = 0;
-      entry.size_value_compressed = 0;
-      entry.crc32 = 0;
-      uint32_t size_header = Entry::EncodeTo(db_options_, &entry, buffer_raw_ + offset_end_);
+      entry_header.SetTypeRemove();
+      entry_header.SetEntryFull();
+      entry_header.size_key = order.key->size();
+      entry_header.size_value = 0;
+      entry_header.size_value_compressed = 0;
+      entry_header.crc32 = 0;
+      uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer_raw_ + offset_end_);
       memcpy(buffer_raw_ + offset_end_ + size_header, order.key->data(), order.key->size());
 
       uint64_t fileid_shifted = fileid_;
@@ -842,16 +842,16 @@ class LogfileManager {
 
     // 2. If the file is a logfile, go over all its entries and verify each one of them
     while (true) {
-      struct Entry entry;
+      struct EntryHeader entry_header;
       uint32_t size_header;
-      Status s = Entry::DecodeFrom(db_options_, mmap.datafile() + offset, mmap.filesize() - offset, &entry, &size_header);
-      // NOTE: the uses of sizeof(struct Entry) here make not sense, since this
+      Status s = EntryHeader::DecodeFrom(db_options_, mmap.datafile() + offset, mmap.filesize() - offset, &entry_header, &size_header);
+      // NOTE: the uses of sizeof(struct EntryHeader) here make not sense, since this
       // size is variable based on the local architecture
       if (   !s.IsOK()
-          || offset + sizeof(struct Entry) >= mmap.filesize()
-          || entry.size_key == 0
-          || offset + sizeof(struct Entry) + entry.size_key > mmap.filesize()
-          || offset + sizeof(struct Entry) + entry.size_key + entry.size_value_offset() > mmap.filesize()) {
+          || offset + sizeof(struct EntryHeader) >= mmap.filesize()
+          || entry_header.size_key == 0
+          || offset + sizeof(struct EntryHeader) + entry_header.size_key > mmap.filesize()
+          || offset + sizeof(struct EntryHeader) + entry_header.size_key + entry_header.size_value_offset() > mmap.filesize()) {
         // End of file during recovery, thus breaking out of the while-loop
         break;
       }
@@ -868,24 +868,24 @@ class LogfileManager {
       bool is_crc32_valid = true;
       if (do_crc32_verification) {
         crc32_.ResetThreadLocalStorage();
-        crc32_.stream(mmap.datafile() + offset + 4, size_header + entry.size_key + entry.size_value_used() - 4);
-        is_crc32_valid = (entry.crc32 == crc32_.get());
+        crc32_.stream(mmap.datafile() + offset + 4, size_header + entry_header.size_key + entry_header.size_value_used() - 4);
+        is_crc32_valid = (entry_header.crc32 == crc32_.get());
       }
       if (!do_crc32_verification || is_crc32_valid) {
         // Valid content, add to index
-        logindex_current.push_back(std::pair<uint64_t, uint32_t>(entry.hash, offset));
+        logindex_current.push_back(std::pair<uint64_t, uint32_t>(entry_header.hash, offset));
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
-        index_se.insert(std::pair<uint64_t, uint64_t>(entry.hash, fileid_shifted | offset));
+        index_se.insert(std::pair<uint64_t, uint64_t>(entry_header.hash, fileid_shifted | offset));
       } else {
         has_invalid_entries = true; 
       }
 
-      if (entry.HasPadding()) has_padding_in_values = true;
-      offset += size_header + entry.size_key + entry.size_value_offset();
+      if (entry_header.HasPadding()) has_padding_in_values = true;
+      offset += size_header + entry_header.size_key + entry_header.size_value_offset();
       LOG_TRACE("LogManager::RecoverFile",
                 "Scanned hash [%llu], next offset [%llu] - CRC32:%s stored=0x%08x computed=0x%08x",
-                entry.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry.crc32, crc32_.get());
+                entry_header.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry_header.crc32, crc32_.get());
     }
 
     // 3. Write a new index at the end of the file with whatever entries could be save

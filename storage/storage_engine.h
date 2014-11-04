@@ -374,31 +374,31 @@ class StorageEngine {
     // the size was 0: should the size of an mmapped byte array be the size of
     // the file by default?
 
-    struct Entry entry;
+    struct EntryHeader entry_header;
     uint32_t size_header;
-    s = Entry::DecodeFrom(db_options_, value_temp->datafile() + offset_file, filesize - offset_file, &entry, &size_header);
+    s = EntryHeader::DecodeFrom(db_options_, value_temp->datafile() + offset_file, filesize - offset_file, &entry_header, &size_header);
     if (!s.IsOK()) return s;
 
-    key_temp->SetOffset(offset_file + size_header, entry.size_key);
-    value_temp->SetOffset(offset_file + size_header + entry.size_key, entry.size_value);
-    value_temp->SetSizeCompressed(entry.size_value_compressed);
-    value_temp->SetCRC32(entry.crc32);
+    key_temp->SetOffset(offset_file + size_header, entry_header.size_key);
+    value_temp->SetOffset(offset_file + size_header + entry_header.size_key, entry_header.size_value);
+    value_temp->SetSizeCompressed(entry_header.size_value_compressed);
+    value_temp->SetCRC32(entry_header.crc32);
 
-    uint32_t crc32_headerkey = crc32c::Value(value_temp->datafile() + offset_file + 4, size_header + entry.size_key - 4);
+    uint32_t crc32_headerkey = crc32c::Value(value_temp->datafile() + offset_file + 4, size_header + entry_header.size_key - 4);
     value_temp->SetInitialCRC32(crc32_headerkey);
 
-    if (!entry.IsEntryFull()) {
+    if (!entry_header.IsEntryFull()) {
       LOG_EMERG("StorageEngine::GetEntry()", "Entry is not of type FULL, which is not supported");
       return Status::IOError("Entries of type not FULL are not supported");
     }
 
-    if (entry.IsTypeRemove()) {
+    if (entry_header.IsTypeRemove()) {
       s = Status::RemoveOrder();
       delete value_temp;
       value_temp = nullptr;
     }
 
-    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry.IsTypeRemove());
+    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeRemove());
     LOG_TRACE("StorageEngine::GetEntry()", "Sizes: key_temp:%llu value_temp:%llu filesize:%llu", key_temp->size(), value_temp->size(), filesize);
 
     *key_out = key_temp;
@@ -676,24 +676,24 @@ class StorageEngine {
       uint32_t offset = SIZE_LOGFILE_HEADER;
       while (offset < offset_end) {
         LOG_TRACE("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
-        struct Entry entry;
+        struct EntryHeader entry_header;
         uint32_t size_header;
-        Status s = Entry::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry, &size_header);
+        Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
 
         // NOTE: No need to verify the checksum. See notes in RecoverFile().
         if (   !s.IsOK()
-            || offset + sizeof(struct Entry) >= mmap->filesize()
-            || entry.size_key == 0
-            || offset + sizeof(struct Entry) + entry.size_key > mmap->filesize()
-            || offset + sizeof(struct Entry) + entry.size_key + entry.size_value_offset() > mmap->filesize()) {
+            || offset + sizeof(struct EntryHeader) >= mmap->filesize()
+            || entry_header.size_key == 0
+            || offset + sizeof(struct EntryHeader) + entry_header.size_key > mmap->filesize()
+            || offset + sizeof(struct EntryHeader) + entry_header.size_key + entry_header.size_value_offset() > mmap->filesize()) {
           LOG_TRACE("Compaction()",
                     "Unexpected end of file - IsOK:%d, offset:%u, size_key:%llu, size_value_offset:%llu, mmap->filesize():%d\n",
                     s.IsOK(),
                     offset,
-                    entry.size_key,
-                    entry.size_value_offset(),
+                    entry_header.size_key,
+                    entry_header.size_value_offset(),
                     mmap->filesize());
-          entry.print();
+          entry_header.print();
           break;
         }
 
@@ -706,7 +706,7 @@ class StorageEngine {
         LOG_TRACE("Compaction()", "order list loop - check if we should keep it - fileid:%u offset:%u", fileid, offset);
         if (   locations_delete.find(location) != locations_delete.end()
             || locations_secondary.find(location) != locations_secondary.end()) {
-          offset += size_header + entry.size_key + entry.size_value_offset();
+          offset += size_header + entry_header.size_key + entry_header.size_value_offset();
           continue;
         }
  
@@ -726,33 +726,33 @@ class StorageEngine {
           uint32_t offset_file = location & 0x00000000FFFFFFFF;
           LOG_TRACE("Compaction()", "order list loop - location fileid:%u offset:%u", fileid_location, offset_file);
           Mmap *mmap_location = mmaps[fileid_location];
-          struct Entry entry;
+          struct EntryHeader entry_header;
           uint32_t size_header;
-          Status s = Entry::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry, &size_header);
+          Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
 
           LOG_TRACE("Compaction()", "order list loop - create byte arrays");
-          ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header, entry.size_key);
-          ByteArray *chunk = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header + entry.size_key, entry.size_value_used());
+          ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header, entry_header.size_key);
+          ByteArray *chunk = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header + entry_header.size_key, entry_header.size_value_used());
           LOG_TRACE("Compaction()", "order list loop - push_back() orders");
 
-          // NOTE: Need to recompute the crc32 of the key and value, as entry.crc32
+          // NOTE: Need to recompute the crc32 of the key and value, as entry_header.crc32
           //       contains information about the header, which is incorrect as the
           //       header changes due to the compaction. This could be optimized by
           //       just recomputing the crc32 of the header, and then 'uncombining'
-          //       it from entry.crc32. This will be fixed as soon as I find an
+          //       it from entry_header.crc32. This will be fixed as soon as I find an
           //       implementation of 'uncombine'.
-          uint32_t crc32 = crc32c::Value(mmap->datafile() + offset + size_header, entry.size_key + entry.size_value_used());
+          uint32_t crc32 = crc32c::Value(mmap->datafile() + offset + size_header, entry_header.size_key + entry_header.size_value_used());
 
           orders.push_back(Order{std::this_thread::get_id(),
                                  OrderType::Put,
                                  key,
                                  chunk,
                                  0,
-                                 entry.size_value,
-                                 entry.size_value_compressed,
+                                 entry_header.size_value,
+                                 entry_header.size_value_compressed,
                                  crc32});
         }
-        offset += size_header + entry.size_key + entry.size_value_offset();
+        offset += size_header + entry_header.size_key + entry_header.size_value_offset();
       }
     }
 
