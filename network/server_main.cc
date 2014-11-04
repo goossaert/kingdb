@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
 
   kdb::Server server;
   server.Start(options, dbname, port, backlog, num_threads);
-  while (!stop_requested) {
+  while (!stop_requested && !server.IsStopRequested()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }
   server.Stop();

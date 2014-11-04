@@ -359,8 +359,8 @@ void Server::AcceptNetworkTraffic() {
   db_ = new kdb::KingDB(options_, dbname_);
   Status s = db_->Open();
   if (!s.IsOK()) {
-    delete db_;
     LOG_EMERG("Server", s.ToString().c_str()); 
+    stop_requested_ = true;
     return;
   }
   tp_ = new ThreadPool(num_threads_);
@@ -379,6 +379,7 @@ void Server::AcceptNetworkTraffic() {
   std::string str_port = std::to_string(port_);
   int ret;
   if ((ret = getaddrinfo(NULL, str_port.c_str(), &ai_hints, &ai_server)) != 0) {
+    stop_requested_ = true;
     return;// Status::IOError("Server - getaddrinfo", gai_strerror(ret));
   }
 
@@ -391,22 +392,25 @@ void Server::AcceptNetworkTraffic() {
 
     int setsockopt_yes=1;
     if (setsockopt(sockfd_listen, SOL_SOCKET, SO_REUSEADDR, &setsockopt_yes, sizeof(setsockopt_yes)) == -1) {
-      close(sockfd_listen);
+      stop_requested_ = true;
       return;// Status::IOError("Server - setsockopt", strerror(errno));
     }
 
     if (bind(sockfd_listen, ai_ptr->ai_addr, ai_ptr->ai_addrlen) == -1) {
-      close(sockfd_listen);
       continue;
     }
 
     break;
   }
 
-  if (ai_ptr == NULL) return;// Status::IOError("Server - Failed to bind");
+  if (ai_ptr == NULL) {
+    stop_requested_ = true;
+    return;// Status::IOError("Server - Failed to bind");
+  }
   freeaddrinfo(ai_server);
 
   if (listen(sockfd_listen, backlog_) == -1) {
+    stop_requested_ = true;
     return;// Status::IOError("Server - listen", strerror(errno));
   }
 
@@ -415,6 +419,7 @@ void Server::AcceptNetworkTraffic() {
   // Create notification pipe
   int pipefd[2];
   if(pipe(pipefd) < 0) {
+    stop_requested_ = true;
     return;
   }
   sockfd_notify_recv_ = pipefd[0];
@@ -443,6 +448,7 @@ void Server::AcceptNetworkTraffic() {
     int ret_select = select(sockfd_max, &sockfds_read, NULL, NULL, NULL);// &tv);
     if (ret_select < 0) {
       LOG_TRACE("Server", "select() error %s", strerror(errno));
+      stop_requested_ = true;
       return;
     } else if (ret_select == 0) {
       continue;

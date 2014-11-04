@@ -9,6 +9,7 @@
 #include <thread>
 #include <string>
 #include <memory>
+#include <sys/file.h>
 
 #include "interface/interface.h"
 #include "cache/write_buffer.h"
@@ -47,7 +48,6 @@ class KingDB: public Interface {
   virtual Status Open() override {
     std::unique_lock<std::mutex> lock(mutex_close_);
     if (!is_closed_) return Status::IOError("The database is already open");
-    is_closed_ = false;
 
     Status s;
     struct stat info;
@@ -69,40 +69,50 @@ class KingDB: public Interface {
     }
 
     std::string filepath_dboptions = DatabaseOptions::GetPath(dbname_);
-    int fd;
     if (stat(filepath_dboptions.c_str(), &info) == 0) {
       // If there is a db_options file, try loading it
       LOG_TRACE("KingDB::Open()", "Loading db_option file");
-      if ((fd = open(filepath_dboptions.c_str(), O_RDONLY, 0644)) < 0) {
+      if ((fd_dboptions_ = open(filepath_dboptions.c_str(), O_RDONLY, 0644)) < 0) {
         LOG_EMERG("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
       }
+
+      int ret = flock(fd_dboptions_, LOCK_EX | LOCK_NB);
+      if (ret == EWOULDBLOCK) {
+        close(fd_dboptions_);
+        return Status::IOError("The database is already in use by another process"); 
+      } else if (ret < 0) {
+        close(fd_dboptions_);
+        return Status::IOError("Unknown error when trying to acquire the global database lock");
+      }
+
       Mmap mmap(filepath_dboptions, info.st_size);
       s = DatabaseOptionEncoder::DecodeFrom(mmap.datafile(), mmap.filesize(), &db_options_);
-      close(fd);
       if (!s.IsOK()) return s;
     } else {
       // If there is no db_options file, write it
       LOG_TRACE("KingDB::Open()", "Writing db_option file");
-      if ((fd = open(filepath_dboptions.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
+      if ((fd_dboptions_ = open(filepath_dboptions.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
         LOG_EMERG("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
       }
       char buffer[DatabaseOptionEncoder::GetFixedSize()];
       DatabaseOptionEncoder::EncodeTo(&db_options_, buffer);
-      if (write(fd, buffer, DatabaseOptionEncoder::GetFixedSize()) < 0) {
-        close(fd);
+      if (write(fd_dboptions_, buffer, DatabaseOptionEncoder::GetFixedSize()) < 0) {
+        close(fd_dboptions_);
         return Status::IOError("Could not write 'db_options' file", strerror(errno));
       }
-      close(fd);
     }
 
     wb_ = new WriteBuffer(db_options_);
     se_ = new StorageEngine(db_options_, dbname_);
+    is_closed_ = false;
     return Status::OK(); 
   }
 
   virtual void Close() override {
     std::unique_lock<std::mutex> lock(mutex_close_);
     if (is_closed_) return;
+    flock(fd_dboptions_, LOCK_UN);
+    close(fd_dboptions_);
     is_closed_ = true;
     wb_->Close();
     se_->Close();
@@ -132,6 +142,7 @@ class KingDB: public Interface {
   kdb::CompressorLZ4 compressor_;
   kdb::CRC32 crc32_;
   bool is_closed_;
+  int fd_dboptions_;
   std::mutex mutex_close_;
 };
 

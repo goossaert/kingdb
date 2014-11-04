@@ -61,7 +61,10 @@ class Server {
   Server()
       : stop_requested_(false),
         tp_(nullptr),
-        db_(nullptr)
+        db_(nullptr),
+        sockfd_listen_(0),
+        sockfd_notify_recv_(0),
+        sockfd_notify_send_(0)
   {}
 
   Status Start(DatabaseOptions& options,
@@ -74,15 +77,19 @@ class Server {
   void Stop() {
     LOG_TRACE("Server", "Stop()");
     stop_requested_ = true;
-    write(sockfd_notify_send_, "0", 1);
+    if (sockfd_notify_send_) write(sockfd_notify_send_, "0", 1);
     thread_network_.join();
-    tp_->Stop();
-    db_->Close();
-    delete tp_;
-    delete db_;
-    close(sockfd_listen_);
-    close(sockfd_notify_recv_);
-    close(sockfd_notify_send_);
+    if (tp_ != nullptr) {
+      tp_->Stop();
+      delete tp_;
+    }
+    if (db_ != nullptr) {
+      db_->Close();
+      delete db_;
+    }
+    if (sockfd_listen_) close(sockfd_listen_);
+    if (sockfd_notify_recv_) close(sockfd_notify_recv_);
+    if (sockfd_notify_send_) close(sockfd_notify_send_);
   }
 
 
