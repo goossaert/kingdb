@@ -77,7 +77,7 @@ class Server {
   void Stop() {
     LOG_TRACE("Server", "Stop()");
     stop_requested_ = true;
-    if (sockfd_notify_send_) write(sockfd_notify_send_, "0", 1);
+    if (sockfd_notify_send_ > 0) write(sockfd_notify_send_, "0", 1);
     thread_network_.join();
     if (tp_ != nullptr) {
       tp_->Stop();
@@ -87,9 +87,9 @@ class Server {
       db_->Close();
       delete db_;
     }
-    if (sockfd_listen_) close(sockfd_listen_);
-    if (sockfd_notify_recv_) close(sockfd_notify_recv_);
-    if (sockfd_notify_send_) close(sockfd_notify_send_);
+    if (sockfd_listen_ > 0) close(sockfd_listen_);
+    if (sockfd_notify_recv_ > 0) close(sockfd_notify_recv_);
+    if (sockfd_notify_send_ > 0) close(sockfd_notify_send_);
   }
 
 
