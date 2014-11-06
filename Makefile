@@ -3,7 +3,7 @@ CFLAGS=-O3 -g -Wall -std=c++11 -stdlib=libc++ -Wc++11-extensions -Wc++1y-extensi
 INCLUDES=-I/opt/local/include/ -I. -I./include/
 LDFLAGS=-g -lprofiler
 LDFLAGS_CLIENT=-g -L/opt/local/lib/ -lmemcached -lprofiler -fPIC
-SOURCES=interface/kingdb.cc util/logger.cc util/status.cc network/server.cc cache/write_buffer.cc thread/event_manager.cc algorithm/compressor.cc algorithm/murmurhash3.cc algorithm/xxhash.cc algorithm/crc32c.cc algorithm/lz4.cc algorithm/hash.cc algorithm/coding.cc unit-tests/testharness.cc
+SOURCES=interface/kingdb.cc util/logger.cc util/status.cc network/server.cc cache/write_buffer.cc algorithm/compressor.cc algorithm/murmurhash3.cc algorithm/xxhash.cc algorithm/crc32c.cc algorithm/lz4.cc algorithm/hash.cc algorithm/coding.cc unit-tests/testharness.cc
 SOURCES_MAIN=network/server_main.cc
 SOURCES_CLIENT=network/client_main.cc
 SOURCES_CLIENT_EMB=unit-tests/client_embedded.cc

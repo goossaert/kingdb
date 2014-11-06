@@ -131,6 +131,7 @@ Interface* KingDB::NewSnapshot() {
   uint32_t fileid_end = se_->FlushCurrentFileForSnapshot();
   LOG_TRACE("KingDB::NewSnapshot()", "Flushing 2");
   StorageEngine *se_readonly = new StorageEngine(db_options_,
+                                                 nullptr,
                                                  dbname_,
                                                  true,
                                                  fileids_ignore,

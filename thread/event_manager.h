@@ -58,11 +58,9 @@ class Event {
 class EventManager {
  public:
   EventManager() {}
-  // TODO: do not use static event managers -- if multiple databases are
-  // embedded in the program, they will use the same event managers and crash.
-  static Event<std::vector<Order>> flush_buffer;
-  static Event<std::multimap<uint64_t, uint64_t>> update_index;
-  static Event<int> clear_buffer;
+  Event<std::vector<Order>> flush_buffer;
+  Event<std::multimap<uint64_t, uint64_t>> update_index;
+  Event<int> clear_buffer;
 };
 
 }

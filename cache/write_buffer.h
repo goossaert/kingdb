@@ -20,8 +20,10 @@ namespace kdb {
 
 class WriteBuffer {
  public:
-  WriteBuffer(const DatabaseOptions& db_options)
-      : db_options_(db_options) {
+  WriteBuffer(const DatabaseOptions& db_options,
+              EventManager *event_manager)
+      : db_options_(db_options),
+        event_manager_(event_manager) {
     stop_requested_ = false;
     im_live_ = 0;
     im_copy_ = 1;
@@ -81,6 +83,9 @@ class WriteBuffer {
   bool is_closed_;
   std::mutex mutex_close_;
 
+  std::thread thread_buffer_handler_;
+  EventManager *event_manager_;
+
   // Using a lock hierarchy to avoid deadlocks
   std::mutex mutex_live_write_level1_;
   std::mutex mutex_flush_level2_;
@@ -90,9 +95,6 @@ class WriteBuffer {
   std::condition_variable cv_flush_;
   std::condition_variable cv_flush_done_;
   std::condition_variable cv_read_;
-
-  // buffer handler
-  std::thread thread_buffer_handler_;
 };
 
 } // namespace kdb

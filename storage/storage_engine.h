@@ -39,11 +39,13 @@ namespace kdb {
 class StorageEngine {
  public:
   StorageEngine(DatabaseOptions db_options,
+                EventManager *event_manager,
                 std::string dbname,
                 bool read_only=false, // TODO: this should be part of db_options -- sure about that? what options are stored on disk?
                 std::set<uint32_t>* fileids_ignore=nullptr,
                 uint32_t fileid_end=0)
       : db_options_(db_options),
+        event_manager_(event_manager),
         is_read_only_(read_only),
         prefix_compaction_("compaction_"),
         dirpath_locks_(dbname + "/locks"),
@@ -91,8 +93,8 @@ class StorageEngine {
 
     if (!is_read_only_) {
       LOG_TRACE("StorageEngine::Close()", "join start");
-      EventManager::update_index.NotifyWait();
-      EventManager::flush_buffer.NotifyWait();
+      event_manager_->update_index.NotifyWait();
+      event_manager_->flush_buffer.NotifyWait();
       thread_index_.join();
       thread_data_.join();
       thread_compaction_.join();
@@ -216,7 +218,7 @@ class StorageEngine {
     while(true) {
       // Wait for orders to process
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "start");
-      std::vector<Order> orders = EventManager::flush_buffer.Wait();
+      std::vector<Order> orders = event_manager_->flush_buffer.Wait();
       if (IsStopRequested()) return;
       LOG_TRACE("StorageEngine::ProcessingLoopData()", "got %d orders", orders.size());
 
@@ -226,15 +228,15 @@ class StorageEngine {
       hstable_manager_.WriteOrdersAndFlushFile(orders, map_index);
       ReleaseWriteLock();
 
-      EventManager::flush_buffer.Done();
-      EventManager::update_index.StartAndBlockUntilDone(map_index);
+      event_manager_->flush_buffer.Done();
+      event_manager_->update_index.StartAndBlockUntilDone(map_index);
     }
   }
 
   void ProcessingLoopIndex() {
     while(true) {
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "start");
-      std::multimap<uint64_t, uint64_t> index_updates = EventManager::update_index.Wait();
+      std::multimap<uint64_t, uint64_t> index_updates = event_manager_->update_index.Wait();
       if (IsStopRequested()) return;
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "got index_updates");
       mutex_index_.lock();
@@ -273,10 +275,10 @@ class StorageEngine {
       */
 
       mutex_index_.unlock();
-      EventManager::update_index.Done();
+      event_manager_->update_index.Done();
       LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "done");
       int temp = 1;
-      EventManager::clear_buffer.StartAndBlockUntilDone(temp);
+      event_manager_->clear_buffer.StartAndBlockUntilDone(temp);
     }
   }
 
@@ -1014,6 +1016,7 @@ class StorageEngine {
 
   // Options
   DatabaseOptions db_options_;
+  EventManager *event_manager_;
   Hash *hash_;
   bool is_read_only_;
   std::set<uint32_t>* fileids_ignore_;

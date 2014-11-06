@@ -290,12 +290,12 @@ void WriteBuffer::ProcessingLoop() {
  
     // Notify the storage engine that the buffer can be flushed
     LOG_TRACE("BM", "WAIT: Get()-flush_buffer");
-    EventManager::flush_buffer.StartAndBlockUntilDone(buffers_[im_copy_]);
+    event_manager_->flush_buffer.StartAndBlockUntilDone(buffers_[im_copy_]);
 
     // Wait for the index to notify the buffer manager
     LOG_TRACE("BM", "WAIT: Get()-clear_buffer");
-    EventManager::clear_buffer.Wait();
-    EventManager::clear_buffer.Done();
+    event_manager_->clear_buffer.Wait();
+    event_manager_->clear_buffer.Done();
     
     // Wait for readers
     LOG_DEBUG("LOCK", "4 lock");

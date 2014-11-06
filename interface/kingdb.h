@@ -102,8 +102,9 @@ class KingDB: public Interface {
       }
     }
 
-    wb_ = new WriteBuffer(db_options_);
-    se_ = new StorageEngine(db_options_, dbname_);
+    em_ = new EventManager();
+    wb_ = new WriteBuffer(db_options_, em_);
+    se_ = new StorageEngine(db_options_, em_, dbname_);
     is_closed_ = false;
     return Status::OK(); 
   }
@@ -118,6 +119,7 @@ class KingDB: public Interface {
     se_->Close();
     delete wb_;
     delete se_;
+    delete em_;
   }
 
   virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override;
@@ -139,6 +141,7 @@ class KingDB: public Interface {
   std::string dbname_;
   kdb::WriteBuffer *wb_;
   kdb::StorageEngine *se_;
+  kdb::EventManager *em_;
   kdb::CompressorLZ4 compressor_;
   kdb::CRC32 crc32_;
   bool is_closed_;
