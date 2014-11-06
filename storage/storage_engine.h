@@ -93,8 +93,10 @@ class StorageEngine {
 
     if (!is_read_only_) {
       LOG_TRACE("StorageEngine::Close()", "join start");
-      event_manager_->update_index.NotifyWait();
-      event_manager_->flush_buffer.NotifyWait();
+      event_manager_->update_index.NotifyWait(); // notifies ProcessingLoopIndex()
+      event_manager_->flush_buffer.NotifyWait(); // notifies ProcessingLoopData()
+      cv_statistics_.notify_all();               // notifies ProcessingLoopStatistics()
+      cv_loop_compaction_.notify_all();          // notifies ProcessingLoopCompaction()
       thread_index_.join();
       thread_data_.join();
       thread_compaction_.join();
@@ -117,17 +119,14 @@ class StorageEngine {
   bool IsStopRequested() { return stop_requested_; }
   void Stop() {
     stop_requested_ = true;
-    cv_stop_.notify_all();
   }
 
   void ProcessingLoopStatistics() {
-    std::chrono::seconds duration(60);
+    std::chrono::seconds duration(60); // TODO-2
     while (true) {
-      mutex_statistics_.lock();
+      std::unique_lock<std::mutex> lock(mutex_statistics_);
       fs_free_space_ = FileUtil::fs_free_space(dbname_.c_str());
-      mutex_statistics_.unlock();
-      std::unique_lock<std::mutex> lock(mutex_waitfor_);
-      cv_stop_.wait_for(lock, duration);
+      cv_statistics_.wait_for(lock, duration);
       if (IsStopRequested()) return;
     }
   }
@@ -167,7 +166,7 @@ class StorageEngine {
     //      files if any), and if still unsuccessful, declare compaction impossible
     // 6. If the compaction succeeded, update 'fileid_lastcompacted'
  
-    std::chrono::seconds duration(30);
+    std::chrono::seconds duration(30); // TODO-2
     uint32_t fileid_lastcompacted = 0;
     uint32_t fileid_out = 0;
 
@@ -205,11 +204,12 @@ class StorageEngine {
             fileid_lastcompacted = fileid_out;  
             break;
           }
+          if (IsStopRequested()) return;
         }
       }
 
-      std::unique_lock<std::mutex> lock(mutex_waitfor_);
-      cv_stop_.wait_for(lock, duration);
+      std::unique_lock<std::mutex> lock(mutex_loop_compaction_);
+      cv_loop_compaction_.wait_for(lock, duration);
       if (IsStopRequested()) return;
     }
   }
@@ -417,6 +417,11 @@ class StorageEngine {
                     uint32_t fileid_end_target,
                     uint64_t size_compaction,
                     uint32_t *fileid_out) {
+    // NOTE: Depending on what has to be compacted, Compaction() can take a
+    //       long time. Therefore IsStopRequested() is called at the end
+    //       of each major step to allow the method to exit in case a stop
+    //       was requested.
+
     // TODO: make sure that all sets, maps and multimaps are cleared whenever
     // they are no longer needed
     
@@ -451,6 +456,7 @@ class StorageEngine {
     if ((directory = opendir(dbname.c_str())) == NULL) {
       return Status::IOError("Could not open database directory", dbname.c_str());
     }
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
     std::map<uint32_t, uint64_t> fileids_to_filesizes;
     char filepath[2048];
@@ -500,6 +506,7 @@ class StorageEngine {
       size_total += filesize;
     }
     fileids_to_filesizes.clear(); // no longer needed
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 2. Iterating over all unique hashed keys of index_compaction, and determine which
@@ -513,6 +520,7 @@ class StorageEngine {
       }
     }
     index_compaction.clear(); // no longer needed
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 3. For each entry, determine which location has to be kept, which has to be deleted,
@@ -561,6 +569,7 @@ class StorageEngine {
     }
     index_compaction_se.clear(); // no longer needed
     keys_encountered.clear(); // no longer needed
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 4. Building the clusters of locations, indexed by the smallest location
@@ -584,6 +593,7 @@ class StorageEngine {
       }
     }
     hashedkeys_to_locations_regular_keep.clear();
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
     /*
      * The compaction needs the following collections:
@@ -625,6 +635,7 @@ class StorageEngine {
       }
       fileid_compaction += 1;
     }
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 5b. Mmapping all the files involved in the compaction
@@ -641,6 +652,7 @@ class StorageEngine {
       Mmap *mmap = new Mmap(filepath.c_str(), info.st_size);
       mmaps[fileid] = mmap;
     }
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 6. Now building a vector of orders, that will be passed to the
@@ -757,6 +769,7 @@ class StorageEngine {
         offset += size_header + entry_header.size_key + entry_header.size_value_offset();
       }
     }
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 7. Write compacted orders on secondary storage
@@ -772,12 +785,14 @@ class StorageEngine {
     hstable_manager_compaction_.CloseCurrentFile();
     orders.clear();
     mmaps.clear();
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 8. Get fileid range from hstable_manager_
     uint32_t num_files_compacted = hstable_manager_compaction_.GetSequenceFileId();
     uint32_t offset_fileid = hstable_manager_.IncrementSequenceFileId(num_files_compacted) - num_files_compacted;
     LOG_TRACE("Compaction()", "Step 8: num_files_compacted:%u offset_fileid:%u", num_files_compacted, offset_fileid);
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 9. Rename files
@@ -794,6 +809,7 @@ class StorageEngine {
       hstable_manager_.file_resource_manager.SetFileSize(fileid_new, filesize);
       hstable_manager_.file_resource_manager.SetFileCompacted(fileid_new);
     }
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
     
     // 10. Shift returned locations to match renamed files
@@ -814,10 +830,12 @@ class StorageEngine {
       map_index_shifted.insert(std::pair<uint64_t, uint64_t>(hashedkey, location_new));
     }
     map_index.clear();
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 11. Add the large entries to be kept to the map that will update the 'index_'
     map_index_shifted.insert(hashedkeys_to_locations_large_keep.begin(), hashedkeys_to_locations_large_keep.end());
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 12. Update the storage engine index_, by removing the locations that have
@@ -867,6 +885,7 @@ class StorageEngine {
       }
     }
     ReleaseWriteLock();
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 13. Put all the locations inserted after the compaction started
@@ -879,6 +898,7 @@ class StorageEngine {
     is_compaction_in_progress_ = false;
     mutex_compaction_.unlock();
     ReleaseWriteLock();
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 14. Remove compacted files
@@ -918,9 +938,7 @@ class StorageEngine {
       }
     }
     mutex_snapshot_.unlock();
-
-    // TODO-20: update changelogs and fsync() wherever necessary (journal, or whatever name, which has
-    //          the sequence of operations that can be used to recover)
+    if (IsStopRequested()) return Status::IOError("Stop was requested");
 
     // Cleanup pre-allocated files
     FileUtil::remove_files_with_prefix(dbname.c_str(), prefix_compaction_);
@@ -1041,6 +1059,8 @@ class StorageEngine {
 
   // Compaction
   HSTableManager hstable_manager_compaction_;
+  std::condition_variable cv_loop_compaction_;
+  std::mutex mutex_loop_compaction_;
   std::mutex mutex_compaction_;
   bool is_compaction_in_progress_;
   std::thread thread_compaction_;
@@ -1049,6 +1069,7 @@ class StorageEngine {
   // Statistics
   std::mutex mutex_statistics_;
   std::thread thread_statistics_;
+  std::condition_variable cv_statistics_;
   uint64_t fs_free_space_; // in bytes
 
   // Snapshot
@@ -1059,11 +1080,9 @@ class StorageEngine {
   std::vector<uint32_t> *fileids_iterator_;
 
   // Stopping and closing
-  std::condition_variable cv_stop_;
   bool stop_requested_;
   bool is_closed_;
   std::mutex mutex_close_;
-  std::mutex mutex_waitfor_;
 };
 
 } // namespace kdb

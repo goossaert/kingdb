@@ -134,9 +134,6 @@ class KingDB: public Interface {
   virtual Iterator* NewIterator(ReadOptions& read_options) override { return nullptr; };
 
  private:
-  // TODO-6: Make sure that if multiple threads are creating KingDB objects with
-  //         the same database name, they would all refer to the same buffer
-  //         manager and storage engine.
   kdb::DatabaseOptions db_options_;
   std::string dbname_;
   kdb::WriteBuffer *wb_;
