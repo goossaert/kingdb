@@ -35,35 +35,77 @@ Status KingDB::Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk
   return PutChunk(write_options, key, chunk, 0, chunk->size());
 }
 
+
 Status KingDB::PutChunk(WriteOptions& write_options,
                         ByteArray *key,
                         ByteArray *chunk,
                         uint64_t offset_chunk,
                         uint64_t size_value) {
+  if (size_value <= SIZE_BUFFER_MAX_CHUNK) {
+    return PutChunkValidSize(write_options, key, chunk, offset_chunk, size_value);
+  }
+
+  // 'chunk' may be deleted by the call to PutChunkValidSize()
+  // and therefore it cannot be used in the loop test condition
+  uint64_t size_chunk = chunk->size(); 
+  Status s;
+  for (uint64_t offset = 0; offset < size_chunk; offset += SIZE_BUFFER_MAX_CHUNK) {
+    ByteArray *chunk_new;
+    if (offset + SIZE_BUFFER_MAX_CHUNK < chunk->size()) {
+      chunk_new = new SimpleByteArray(chunk->data() + offset,
+                                      SIZE_BUFFER_MAX_CHUNK);
+    } else {
+      chunk_new = chunk;
+      chunk_new->set_offset(offset);
+    }
+    s = PutChunkValidSize(write_options, key, chunk_new, offset_chunk + offset, size_value);
+    if (!s.IsOK()) break;
+  }
+
+  return s;
+}
+
+
+Status KingDB::PutChunkValidSize(WriteOptions& write_options,
+                                 ByteArray *key,
+                                 ByteArray *chunk,
+                                 uint64_t offset_chunk,
+                                 uint64_t size_value) {
   if (se_->GetFreeSpace() < dbo_fs_free_space_reject_orders) {
     return Status::IOError("Not enough free space on the file system");
   }
-  LOG_TRACE("KingDB PutChunk()", "[%s] offset_chunk:%llu", key->ToString().c_str(), offset_chunk);
+  LOG_TRACE("KingDB::PutChunkValidSize()",
+            "[%s] offset_chunk:%llu",
+            key->ToString().c_str(),
+            offset_chunk);
+
   bool do_compression = true;
   uint64_t size_value_compressed = 0;
   uint64_t offset_chunk_compressed = offset_chunk;
   ByteArray *chunk_final = nullptr;
   SharedAllocatedByteArray *chunk_compressed = nullptr;
 
+  bool is_first_chunk = (offset_chunk == 0);
   bool is_last_chunk = (chunk->size() + offset_chunk == size_value);
-  LOG_TRACE("KingDB PutChunk()", "CompressionType:%d", db_options_.compression.type);
+  LOG_TRACE("KingDB::PutChunkValidSize()",
+            "CompressionType:%d",
+            db_options_.compression.type);
 
   if (   chunk->size() == 0
       || db_options_.compression.type == kNoCompression) {
     do_compression = false;
   }
 
-  if (do_compression) {
-    if (offset_chunk == 0) {
+  if (!do_compression) {
+    chunk_final = chunk;
+  } else {
+    if (is_first_chunk) {
       compressor_.ResetThreadLocalStorage();
     }
 
-    LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu", key->ToString().c_str(), compressor_.size_compressed());
+    LOG_TRACE("KingDB::PutChunkValidSize()",
+              "[%s] size_compressed:%llu",
+              key->ToString().c_str(), compressor_.size_compressed());
 
     offset_chunk_compressed = compressor_.size_compressed();
 
@@ -76,7 +118,12 @@ Status KingDB::PutChunk(WriteOptions& write_options,
     if (!s.IsOK()) return s;
     chunk_compressed = new SharedAllocatedByteArray(compressed, size_compressed);
 
-    LOG_TRACE("KingDB PutChunk()", "[%s] (%llu) compressed size %llu - offset_chunk_compressed %llu", key->ToString().c_str(), chunk->size(), chunk_compressed->size(), offset_chunk_compressed);
+    LOG_TRACE("KingDB::PutChunkValidSize()",
+              "[%s] (%llu) compressed size %llu - offset_chunk_compressed %llu",
+              key->ToString().c_str(),
+              chunk->size(),
+              chunk_compressed->size(),
+              offset_chunk_compressed);
 
     if (is_last_chunk) {
       size_value_compressed = compressor_.size_compressed();
@@ -84,20 +131,18 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 
     chunk_final = chunk_compressed;
     delete chunk;
-  } else {
-    chunk_final = chunk;
   }
 
   // Compute CRC32 checksum
   uint32_t crc32 = 0;
-  if (offset_chunk == 0) {
+  if (is_first_chunk) {
     crc32_.ResetThreadLocalStorage();
     crc32_.stream(key->data(), key->size());
   }
   crc32_.stream(chunk_final->data(), chunk_final->size());
   if (is_last_chunk) crc32 = crc32_.get();
 
-  LOG_TRACE("KingDB PutChunk()", "[%s] size_compressed:%llu crc32:0x%llx END", key->ToString().c_str(), size_value_compressed, crc32);
+  LOG_TRACE("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%llu crc32:0x%llx END", key->ToString().c_str(), size_value_compressed, crc32);
 
   return wb_->PutChunk(write_options,
                       key,

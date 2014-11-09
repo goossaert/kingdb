@@ -22,6 +22,9 @@
 
 #define MAX_RETRIES 1
 
+#define RANDOM_DIST_LOWER_BOUND 256*1024
+#define RANDOM_DIST_UPPER_BOUND 512*1024
+
 namespace kdb {
 
 class Client {
@@ -146,8 +149,8 @@ class ClientTask: public Task {
 
     std::seed_seq seq{1, 2, 3, 4, 5, 6, 7};
     std::mt19937 generator(seq);
-    std::uniform_int_distribution<int> random_dist(256*1024, 512*1024);
-
+    std::uniform_int_distribution<int> random_dist(RANDOM_DIST_LOWER_BOUND,
+                                                   RANDOM_DIST_UPPER_BOUND);
     for (auto i = 0; i < num_writes_; i++) {
       std::stringstream ss;
       ss << id << "-" << i;
@@ -171,7 +174,8 @@ class ClientTask: public Task {
     }
 
     std::mt19937 generator_remove(seq);
-    std::uniform_int_distribution<int> random_dist_remove(256*1024, 512*1024);
+    std::uniform_int_distribution<int> random_dist_remove(RANDOM_DIST_LOWER_BOUND,
+                                                          RANDOM_DIST_UPPER_BOUND);
     for (auto i = 0; i < num_removes_; i++) {
       std::stringstream ss;
       ss << id << "-" << i;
@@ -185,7 +189,8 @@ class ClientTask: public Task {
     }
 
     std::mt19937 generator2(seq);
-    std::uniform_int_distribution<int> random_dist2(256*1024, 512*1024);
+    std::uniform_int_distribution<int> random_dist2(RANDOM_DIST_LOWER_BOUND,
+                                                    RANDOM_DIST_UPPER_BOUND);
     for (auto i = 0; i < num_reads_; i++) {
       std::stringstream ss;
       ss << id << "-" << i;

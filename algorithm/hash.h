@@ -6,6 +6,8 @@
 #define KINGDB_HASH_H_
 
 #include <string>
+#include <cstdint>
+#include <limits>
 
 #include "util/logger.h"
 #include "util/options.h"
@@ -19,6 +21,7 @@ class Hash {
   Hash() {}
   virtual ~Hash() {}
   virtual uint64_t HashFunction(const char *data, uint32_t len) = 0;
+  virtual uint64_t MaxInputSize() = 0;
 };
 
 class MurmurHash3: public Hash {
@@ -26,6 +29,7 @@ class MurmurHash3: public Hash {
   MurmurHash3() {}
   virtual ~MurmurHash3() {}
   virtual uint64_t HashFunction(const char *data, uint32_t len);
+  virtual uint64_t MaxInputSize() { return std::numeric_limits<int32_t>::max(); }
 };
 
 class xxHash: public Hash {
@@ -33,11 +37,11 @@ class xxHash: public Hash {
   xxHash() {}
   virtual ~xxHash() {}
   virtual uint64_t HashFunction(const char *data, uint32_t len);
- private:
+  virtual uint64_t MaxInputSize() { return std::numeric_limits<int32_t>::max(); }
 };
 
 Hash* MakeHash(HashType ht);
 
-}
+} // namespace kdb
 
 #endif // KINGDB_HASH_H_

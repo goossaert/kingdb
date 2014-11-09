@@ -159,14 +159,13 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   if (IsStopRequested()) return Status::IOError("Cannot handle request: WriteBuffer is closing");
   LOG_DEBUG("LOCK", "1 lock");
   std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
-  //if (key.size() + value.size() > buffer_size_) {
-  //  return Status::InvalidArgument("Entry is too large.");
-  //}
+
   LOG_TRACE("WriteBuffer::WriteChunk()",
             "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d",
             key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
 
-  // not sure if I should add the item then test, or test then add the item
+  bool is_first_chunk = (offset_chunk == 0);
+  bool is_large = key->size() + size_value > SIZE_HSTABLE_TOTAL;
   buffers_[im_live_].push_back(Order{std::this_thread::get_id(),
                                      op,
                                      key,
@@ -174,8 +173,10 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
                                      offset_chunk,
                                      size_value,
                                      size_value_compressed,
-                                     crc32});
-  if (offset_chunk == 0) {
+                                     crc32,
+                                     is_large});
+
+  if (is_first_chunk) {
     sizes_[im_live_] += key->size();
   }
   sizes_[im_live_] += chunk->size();
@@ -310,6 +311,7 @@ void WriteBuffer::ProcessingLoop() {
     LOG_DEBUG("LOCK", "5 unlock");
 
     // Clear flush buffer
+    LOG_DEBUG("WriteBuffer::ProcessingLoop()", "clear flush buffer");
     for(auto &p: buffers_[im_copy_]) {
       delete p.key;
       delete p.chunk;

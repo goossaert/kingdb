@@ -31,13 +31,15 @@ Status CompressorLZ4::Compress(char *source,
     return Status::IOError("LZ4_compress_limitedOutput() failed");
   }
   uint32_t size_compressed = ret + 8;
-  uint32_t size_source_32 = size_source; // TODO: careful here, storing 64 bits into 32.
+  // NOTE: Yes, storing 64 bits into 32, but overflows will not happens as
+  //       size_source is limited to SIZE_BUFFER_MAX_CHUNK.
+  uint32_t size_source_32 = size_source;
   EncodeFixed32((*dest),     size_compressed);
   EncodeFixed32((*dest) + 4, size_source_32);
-  // NOTE: small entries don't need to have the compressed and source sizes in
-  // front of the frame, this is just a waste of storage space. Maybe have a
-  // special type of entry, like 'small' or 'self-contained', which would
-  // indicate that the frame doesn't have the sizes
+  // NOTE: small entries don't need to have the compressed and source sizes
+  //       in front of the frame, this is just a waste of storage space.
+  //       Maybe have a special type of entry, like 'small' or 'self-contained',
+  //       which would indicate that the frame doesn't have the sizes.
 
   LOG_TRACE("CompressorLZ4::Compress()", "size_compressed:%u size_source:%u", size_compressed, size_source_32);
   uint64_t size_compressed_total = ts_compress_.get() + size_compressed;

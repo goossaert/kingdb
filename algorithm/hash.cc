@@ -32,4 +32,4 @@ Hash* MakeHash(HashType ht) {
   }
 }
 
-}
+} // namespace kdb

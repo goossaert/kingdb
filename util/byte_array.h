@@ -33,16 +33,21 @@ class ByteArrayCommon: public ByteArray {
   ByteArrayCommon() {
     data_ = nullptr;
     size_ = 0;
+    off_ = 0;
   }
   virtual ~ByteArrayCommon() {}
-  virtual char* data() { return data_; }
-  virtual char* data_const() const { return data_; }
-  virtual uint64_t size() { return size_; }
-  virtual uint64_t size_const() const { return size_; }
+  virtual char* data() { return data_ + off_; }
+  virtual char* data_const() const { return data_ + off_; }
+  virtual uint64_t size() { return size_ - off_; }
+  virtual uint64_t size_const() const { return size_ - off_; }
   virtual bool is_compressed() { return size_compressed_ > 0; }
 
   virtual bool StartsWith(const char *substr, int n) {
     return (n <= size_ && strncmp(data_, substr, n) == 0);
+  }
+
+  virtual void set_offset(int off) {
+    off_ = off;
   }
 
   /*
@@ -71,6 +76,7 @@ class ByteArrayCommon: public ByteArray {
   char *data_;
   uint64_t size_;
   uint64_t size_compressed_;
+  uint64_t off_;
   uint32_t crc32_value_;
 };
 
@@ -89,13 +95,40 @@ class SimpleByteArray: public ByteArrayCommon {
   }
 
   virtual ~SimpleByteArray() {
+    //LOG_TRACE("SimpleByteArray::dtor()", "");
   }
+};
+
+
+// Like a smart pointer but for Byte Arrays
+class SmartByteArray: public ByteArrayCommon {
+ public:
+  SmartByteArray(ByteArray* ba, const char* data_in, uint64_t size_in) {
+    ba_ = ba;
+    data_ = const_cast<char*>(data_in);
+    size_ = size_in;
+  }
+
+  void AddOffset(int offset) {
+    data_ += offset;
+    size_ -= offset;
+  }
+
+  virtual ~SmartByteArray() {
+    //LOG_TRACE("SmartByteArray::dtor()", "");
+    delete ba_;
+  }
+
+ private:
+  ByteArray* ba_;
+
 };
 
 
 
 
-// TODO: what if filesize gets bigger than maxint?
+// TODO-31: what if filesize gets bigger than maxint?
+// TODO: move to file.h
 class Mmap {
  public:
   Mmap(std::string filepath, int filesize) {
@@ -263,6 +296,7 @@ class SharedAllocatedByteArray: public ByteArrayCommon {
   }
 
   virtual ~SharedAllocatedByteArray() {
+    //LOG_TRACE("SharedAllocatedByteArray::dtor()", "");
   }
 
   void SetOffset(uint64_t offset, uint64_t size) {

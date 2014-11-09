@@ -7,7 +7,6 @@
 
 namespace kdb {
 
-
 enum HashType {
   kMurmurHash3_64 = 0x0,
   kxxHash_64      = 0x1
@@ -60,6 +59,6 @@ struct WriteOptions {
 };
 
 
-}
+} // namespace kdb
 
 #endif // KINGDB_OPTIONS_H_

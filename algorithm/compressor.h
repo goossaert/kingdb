@@ -57,6 +57,10 @@ class CompressorLZ4 {
 
   uint64_t size_compressed() { return ts_compress_.get(); }
 
+  uint64_t MaxInputSize() {
+    return LZ4_MAX_INPUT_SIZE;
+  }
+
  private:
   ThreadStorage ts_compress_;
   ThreadStorage ts_uncompress_;

@@ -37,9 +37,14 @@ struct Order {
   uint64_t size_value;
   uint64_t size_value_compressed;
   uint32_t crc32;
+  bool is_large;
 
   bool IsFirstChunk() {
     return (offset_chunk == 0);
+  }
+
+  bool IsMiddleOrLastChunk() {
+    return !IsFirstChunk();
   }
 
   bool IsLastChunk() {
@@ -49,6 +54,10 @@ struct Order {
 
   bool IsSelfContained() {
     return IsFirstChunk() && IsLastChunk();
+  }
+
+  bool IsLarge() {
+    return is_large; 
   }
 };
 

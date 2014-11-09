@@ -270,7 +270,7 @@ class StorageEngine {
 
       /*
       for (auto& p: index_) {
-        LOG_TRACE("index_", "%s: %llu", p.first.c_str(), p.second);
+        LOG_TRACE("index_", "hash:[0x%08x] location:[%llu]", p.first, p.second);
       }
       */
 
@@ -757,6 +757,7 @@ class StorageEngine {
           //       implementation of 'uncombine'.
           uint32_t crc32 = crc32c::Value(mmap->datafile() + offset + size_header, entry_header.size_key + entry_header.size_value_used());
 
+          bool is_large = false;
           orders.push_back(Order{std::this_thread::get_id(),
                                  OrderType::Put,
                                  key,
@@ -764,7 +765,8 @@ class StorageEngine {
                                  0,
                                  entry_header.size_value,
                                  entry_header.size_value_compressed,
-                                 crc32});
+                                 crc32,
+                                 is_large});
         }
         offset += size_header + entry_header.size_key + entry_header.size_value_offset();
       }
