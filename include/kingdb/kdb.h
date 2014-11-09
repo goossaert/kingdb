@@ -10,6 +10,9 @@
 #include "util/order.h"
 #include "thread/event_manager.h"
 
+
+// parameter values to test large entries
+/*
 #define SIZE_BUFFER_WRITE     1024*1024*32 // used by the WriteBuffer
 #define SIZE_BUFFER_RECV      1024*16      // used by server to receive commands from clients
 #define SIZE_BUFFER_SEND      1024*1024*32 // used by server to prepare data to send to clients
@@ -19,8 +22,10 @@
                                            // as the algorihms used do not support sizes above that value
 #define SIZE_HSTABLE_HEADER   1024*8       // padding at top of hstables
 #define SIZE_HSTABLE_TOTAL    (SIZE_HSTABLE_HEADER + 1024*256)  // maximum size hstable can have for small items
+*/
 
 /*
+*/
 #define SIZE_BUFFER_WRITE     1024*1024*32 // used by the WriteBuffer
 #define SIZE_BUFFER_RECV      1024*256     // used by server to receive commands from clients
 #define SIZE_BUFFER_SEND      1024*1024*32 // used by server to prepare data to send to clients
@@ -30,7 +35,9 @@
                                            // as the algorihms used do not support sizes above that value
 #define SIZE_HSTABLE_HEADER   1024*8       // padding at top of hstables
 #define SIZE_HSTABLE_TOTAL    (SIZE_HSTABLE_HEADER + 1024*1024*32)  // maximum size hstable can have for small items
-*/
+
+
+
 
 #define SIZE_LARGE_TEST_ITEMS 1024*1024*64 // size of large items used for testing
 
