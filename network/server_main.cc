@@ -8,6 +8,7 @@
 #include "thread/threadpool.h"
 #include "util/options.h"
 #include "util/file.h"
+#include "util/config_parser.h"
 
 void show_usage(char *program_name) {
   printf("Example: %s --db-name mydb --port 3490 --backlog 150 --num-threads 150\n", program_name);
@@ -32,64 +33,112 @@ void termination_signal_handler(int signal) {
 }
 
 int main(int argc, char** argv) {
-  if (argc == 1) {
-    show_usage(argv[0]); 
-    exit(0);
-  }
 
-  if (argc % 2 == 0) {
-    show_usage(argv[0]); 
-    std::cerr << "Error: invalid number of arguments" << std::endl; 
+  kdb::Status s;
+  std::string dbname = "";
+  std::string log_level = "";
+  std::string configfile = "";
+  kdb::ServerOptions server_options;
+  kdb::DatabaseOptions db_options;
+
+  // Looking for '--configfile'
+  kdb::ConfigParser parser_configfile;
+  parser_configfile.error_if_unknown_parameters = false;
+  parser_configfile.AddParameter(new kdb::StringParameter(
+                                 "configfile", "", &configfile, false,
+                                 "Configuration file. If not specified, the path ./kingdb.conf and /etc/kingdb.conf will be tested."));
+
+  s = parser_configfile.ParseCommandLine(argc, argv);
+  if (!s.IsOK()) {
+    fprintf(stderr, "%s\n", s.ToString().c_str());
     exit(-1);
   }
-
-  kdb::FileUtil::increase_limit_open_files();
-
-  int port = 0;
-  int backlog = 0;
-  int num_threads = 0;
-  std::string dbname = "";
-  kdb::CompressionType ctype = kdb::kLZ4Compression;
-
-  if (argc > 2) {
-    for (int i = 1; i < argc; i += 2 ) {
-      if (strcmp(argv[i], "--port" ) == 0) {
-        port = atoi(argv[i+1]);
-      } else if (strcmp(argv[i], "--backlog" ) == 0) {
-        backlog = atoi(argv[i+1]);
-      } else if (strcmp(argv[i], "--num-threads" ) == 0) {
-        num_threads = atoi(argv[i+1]);
-      } else if (strcmp(argv[i], "--db-name" ) == 0) {
-        dbname = std::string(argv[i+1]);
-      } else if (strcmp(argv[i], "--log-level" ) == 0) {
-        if (kdb::Logger::set_current_level(argv[i+1]) < 0 ) {
-          fprintf(stderr, "Unknown log level: [%s]\n", argv[i+1]);
-          exit(-1); 
-        }
-      } else if (strcmp(argv[i], "--compression" ) == 0) {
-        std::string compression(argv[i+1]);
-        if (compression == "disabled") {
-          ctype = kdb::kNoCompression;
-        } else if (compression == "lz4") {
-          ctype = kdb::kLZ4Compression;
-        } else {
-          fprintf(stderr, "Unknown compression option: [%s]\n", argv[i+1]);
-          exit(-1); 
-        }
-      } else {
-        fprintf(stderr, "Unknown parameter [%s]\n", argv[i]);
-        exit(-1); 
-      }
+  
+  struct stat info;
+  if (configfile == "") {
+    if (stat("./kingdb.conf", &info) == 0) {
+      configfile = "./kingdb.conf";
+    } else if (stat("/etc/kingdb.conf", &info) == 0) {
+      configfile = "/etc/kingdb.conf";
+    }
+  } else {
+    if (stat(configfile.c_str(), &info) == 0) {
+      configfile = configfile;
+    } else {
+      fprintf(stderr, "Could not file configuration file [%s]\n", configfile.c_str());
+      exit(-1);
     }
   }
 
-  if (port == 0 || backlog == 0 || num_threads == 0 || dbname == "") {
+  // Now parsing all options
+  kdb::ConfigParser parser;
+
+  // General options
+  parser.AddParameter(new kdb::StringParameter(
+                      "configfile", "", &configfile, false,
+                      "Configuration file. If not specified, the path ./kingdb.conf and /etc/kingdb.conf will be tested."));
+  parser.AddParameter(new kdb::StringParameter(
+                      "log_level", "trace", &log_level, false,
+                      "Level of the logging, can be: emerg, alert, crit, error, warn, notice, info, debug, trace."));
+  parser.AddParameter(new kdb::StringParameter(
+                      "db.path", "", &dbname, true,
+                      "Path where the database can be found or will be created."));
+
+  kdb::ServerOptions::AddParametersToConfigParser(server_options, parser);
+  kdb::DatabaseOptions::AddParametersToConfigParser(db_options, parser);
+
+  if (configfile != "") {
+    s = parser.ParseFile(configfile); 
+    if (!s.IsOK()) {
+      fprintf(stderr, "%s\n", s.ToString().c_str());
+      exit(-1);
+    }
+  }
+
+  s = parser.ParseCommandLine(argc, argv);
+  if (!s.IsOK()) {
+    fprintf(stderr, "%s\n", s.ToString().c_str());
+    exit(-1);
+  }
+
+  if (!parser.FoundAllMandatoryParameters()) {
+    parser.PrintAllMissingMandatoryParameters();
+    exit(-1);
+  }
+
+  if (log_level != "" && kdb::Logger::set_current_level(log_level.c_str()) < 0) {
+    fprintf(stderr, "Unknown log level: [%s]\n", log_level.c_str());
+    exit(-1);
+  }
+
+  kdb::CompressionType ctype;
+  if (db_options.storage__compression_algorithm == "disabled") {
+    ctype = kdb::kNoCompression;
+  } else if (db_options.storage__compression_algorithm == "lz4") {
+    ctype = kdb::kLZ4Compression;
+  } else {
+    fprintf(stderr, "Unknown compression algorithm: [%s]\n", db_options.storage__compression_algorithm.c_str());
+    exit(-1);
+  }
+  db_options.compression = ctype;
+
+  kdb::HashType htype;
+  if (db_options.storage__hashing_algorithm == "xxhash_64") {
+    htype = kdb::kxxHash_64;
+  } else if (db_options.storage__hashing_algorithm == "murmurhash3_64") {
+    htype = kdb::kMurmurHash3_64;
+  } else {
+    fprintf(stderr, "Unknown hashing algorithm: [%s]\n", db_options.storage__hashing_algorithm.c_str());
+    exit(-1);
+  }
+  db_options.hash = htype;
+
+  kdb::FileUtil::increase_limit_open_files();
+
+  if (dbname == "") {
     fprintf(stderr, "Missing arguments\n");
     exit(-1); 
   }
-
-  kdb::DatabaseOptions options;
-  options.compression = ctype;
 
   signal(SIGINT, termination_signal_handler);
   signal(SIGTERM, termination_signal_handler);
@@ -98,7 +147,7 @@ int main(int argc, char** argv) {
   signal(SIGABRT, crash_signal_handler);
 
   kdb::Server server;
-  server.Start(options, dbname, port, backlog, num_threads);
+  server.Start(server_options, db_options, dbname);
   while (!stop_requested && !server.IsStopRequested()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }

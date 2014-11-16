@@ -23,7 +23,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   bool is_command_get = false;
   bool is_command_put = false;
   bool is_command_remove = false;
-  char *buffer_send = new char[SIZE_BUFFER_SEND];
+  char *buffer_send = new char[server_options_.size_buffer_send];
   SharedAllocatedByteArray *buffer = nullptr;
   SharedAllocatedByteArray *key = nullptr;
   int size_key = 0;
@@ -52,14 +52,14 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
     if (is_new_buffer) {
       LOG_TRACE("NetworkTask", "is_new_buffer");
       bytes_received_buffer = 0;
-      buffer = new SharedAllocatedByteArray(SIZE_BUFFER_RECV);
+      buffer = new SharedAllocatedByteArray(server_options_.size_buffer_recv);
       LOG_TRACE("NetworkTask", "allocated");
     }
 
     LOG_TRACE("NetworkTask", "Calling recv()");
     bytes_received_last = recv(sockfd_,
                                buffer->data() + bytes_received_buffer,
-                               SIZE_BUFFER_RECV - bytes_received_buffer,
+                               server_options_.size_buffer_recv - bytes_received_buffer,
                                0);
     if (bytes_received_last <= 0) {
       LOG_TRACE("NetworkTask", "recv()'d 0 bytes: breaking");
@@ -136,7 +136,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
     // Loop and get more data from the network if the buffer is not full and all the data
     // hasn't arrived yet
     if (   bytes_received_total < bytes_expected
-        && bytes_received_buffer < SIZE_BUFFER_RECV) {
+        && bytes_received_buffer < server_options_.size_buffer_recv) {
       // TODO: what if the \r\n is on the two last messages, i.e. \n is the
       // first character of the last message?
       LOG_TRACE("NetworkTask", "force looping to get the rest of the data");
@@ -158,7 +158,10 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
 
         if (s.IsOK()) {
           LOG_TRACE("NetworkTask", "GET: found");
-          sprintf(buffer_send, "VALUE %s 0 %llu\r\n", buffer->ToString().c_str(), value->size());
+          int ret = snprintf(buffer_send, server_options_.size_buffer_send, "VALUE %s 0 %llu\r\n", buffer->ToString().c_str(), value->size());
+          if (ret < 0 || ret >= server_options_.size_buffer_send) {
+            LOG_EMERG("NetworkTask", "Network send buffer is too small"); 
+          }
           LOG_TRACE("NetworkTask", "GET: buffer_send [%s]", buffer_send);
           if (send(sockfd_, buffer_send, strlen(buffer_send), 0) == -1) {
             LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
@@ -339,16 +342,12 @@ void* Server::GetSockaddrIn(struct sockaddr *sa)
 }
 
 
-Status Server::Start(DatabaseOptions& options,
-                     std::string& dbname,
-                     int port,
-                     int backlog,
-                     int num_threads) {
-  options_ = options;
+Status Server::Start(ServerOptions& server_options,
+                     DatabaseOptions& db_options,
+                     std::string& dbname) {
+  server_options_ = server_options;
+  db_options_ = db_options;
   dbname_ = dbname;
-  port_ = port;
-  backlog_ = backlog;
-  num_threads_ = num_threads;
   thread_network_ = std::thread(&Server::AcceptNetworkTraffic, this);
   return Status::OK();
 }
@@ -356,14 +355,14 @@ Status Server::Start(DatabaseOptions& options,
 void Server::AcceptNetworkTraffic() {
 
   // Create the database object and the thread pool
-  db_ = new kdb::KingDB(options_, dbname_);
+  db_ = new kdb::KingDB(db_options_, dbname_);
   Status s = db_->Open();
   if (!s.IsOK()) {
     LOG_EMERG("Server", s.ToString().c_str()); 
     stop_requested_ = true;
     return;
   }
-  tp_ = new ThreadPool(num_threads_);
+  tp_ = new ThreadPool(server_options_.num_threads);
   tp_->Start();
   LOG_TRACE("Server", "waiting for connections...");
 
@@ -376,7 +375,7 @@ void Server::AcceptNetworkTraffic() {
   ai_hints.ai_family = AF_UNSPEC;
   ai_hints.ai_socktype = SOCK_STREAM;
   ai_hints.ai_flags = AI_PASSIVE;
-  std::string str_port = std::to_string(port_);
+  std::string str_port = std::to_string(server_options_.interface__memcached_port);
   int ret;
   if ((ret = getaddrinfo(NULL, str_port.c_str(), &ai_hints, &ai_server)) != 0) {
     stop_requested_ = true;
@@ -409,7 +408,7 @@ void Server::AcceptNetworkTraffic() {
   }
   freeaddrinfo(ai_server);
 
-  if (listen(sockfd_listen, backlog_) == -1) {
+  if (listen(sockfd_listen, server_options_.listen_backlog) == -1) {
     stop_requested_ = true;
     return;// Status::IOError("Server - listen", strerror(errno));
   }
@@ -426,10 +425,6 @@ void Server::AcceptNetworkTraffic() {
   sockfd_notify_send_ = pipefd[1];
   fcntl(sockfd_notify_send_, F_SETFL, O_NONBLOCK);
 
-  struct timeval tv;
-  tv.tv_sec = 60;
-  tv.tv_usec = 0;
-
   fd_set sockfds_read;
   int sockfd_max = std::max(sockfd_notify_recv_, sockfd_listen) + 1;
 
@@ -445,7 +440,7 @@ void Server::AcceptNetworkTraffic() {
 
     LOG_TRACE("Server", "select()");
     size_sa = sizeof(sockaddr_client);
-    int ret_select = select(sockfd_max, &sockfds_read, NULL, NULL, NULL);// &tv);
+    int ret_select = select(sockfd_max, &sockfds_read, NULL, NULL, NULL);
     if (ret_select < 0) {
       LOG_TRACE("Server", "select() error %s", strerror(errno));
       stop_requested_ = true;
@@ -466,7 +461,7 @@ void Server::AcceptNetworkTraffic() {
               sizeof(address));
     LOG_TRACE("Server", "got connection from %s\n", address);
 
-    tp_->AddTask(new NetworkTask(sockfd_accept, db_));
+    tp_->AddTask(new NetworkTask(sockfd_accept, server_options_, db_));
   }
   LOG_TRACE("Server", "Exiting thread");
 }

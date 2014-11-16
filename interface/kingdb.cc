@@ -41,7 +41,7 @@ Status KingDB::PutChunk(WriteOptions& write_options,
                         ByteArray *chunk,
                         uint64_t offset_chunk,
                         uint64_t size_value) {
-  if (size_value <= SIZE_BUFFER_MAX_CHUNK) {
+  if (size_value <= db_options_.storage__maximum_chunk_size) {
     return PutChunkValidSize(write_options, key, chunk, offset_chunk, size_value);
   }
 
@@ -49,11 +49,11 @@ Status KingDB::PutChunk(WriteOptions& write_options,
   // and therefore it cannot be used in the loop test condition
   uint64_t size_chunk = chunk->size(); 
   Status s;
-  for (uint64_t offset = 0; offset < size_chunk; offset += SIZE_BUFFER_MAX_CHUNK) {
+  for (uint64_t offset = 0; offset < size_chunk; offset += db_options_.storage__maximum_chunk_size) {
     ByteArray *chunk_new;
-    if (offset + SIZE_BUFFER_MAX_CHUNK < chunk->size()) {
+    if (offset + db_options_.storage__maximum_chunk_size < chunk->size()) {
       chunk_new = new SimpleByteArray(chunk->data() + offset,
-                                      SIZE_BUFFER_MAX_CHUNK);
+                                      db_options_.storage__maximum_chunk_size);
     } else {
       chunk_new = chunk;
       chunk_new->set_offset(offset);
@@ -71,7 +71,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
                                  ByteArray *chunk,
                                  uint64_t offset_chunk,
                                  uint64_t size_value) {
-  if (se_->GetFreeSpace() < dbo_fs_free_space_reject_orders) {
+  if (se_->GetFreeSpace() < db_options_.storage__free_space_reject_orders) {
     return Status::IOError("Not enough free space on the file system");
   }
   LOG_TRACE("KingDB::PutChunkValidSize()",
@@ -154,9 +154,10 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 }
 
 
-Status KingDB::Remove(WriteOptions& write_options, ByteArray *key) {
+Status KingDB::Remove(WriteOptions& write_options,
+                      ByteArray *key) {
   LOG_TRACE("KingDB::Remove()", "[%s]", key->ToString().c_str());
-  if (se_->GetFreeSpace() < dbo_fs_free_space_reject_orders) {
+  if (se_->GetFreeSpace() < db_options_.storage__free_space_reject_orders) {
     return Status::IOError("Not enough free space on the file system");
   }
   return wb_->Remove(write_options, key);

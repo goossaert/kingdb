@@ -1,10 +1,13 @@
 #include "network/client.h"
 
+#include <util/config_parser.h>
+
 void show_usage(char *program_name) {
   printf("Example: %s --host 127.0.0.1:3490 --num-threads 120 --write 10000 --remove 5000 --read 10000\n", program_name);
 }
 
 int main(int argc, char **argv) {
+
   if (argc == 1) {
     show_usage(argv[0]); 
     exit(0);

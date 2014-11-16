@@ -40,9 +40,11 @@ namespace kdb {
 class NetworkTask: public Task {
  public:
   int sockfd_;
+  kdb::ServerOptions server_options_;
   kdb::KingDB *db_;
-  NetworkTask(int sockfd, kdb::KingDB* db) {
+  NetworkTask(int sockfd, kdb::ServerOptions server_options, kdb::KingDB* db) {
     sockfd_ = sockfd;
+    server_options_ = server_options;
     db_ = db;
   }
   virtual ~NetworkTask() {};
@@ -67,11 +69,9 @@ class Server {
         sockfd_notify_send_(0)
   {}
 
-  Status Start(DatabaseOptions& options,
-               std::string& dbname,
-               int port,
-               int backlog,
-               int num_threads);
+  Status Start(ServerOptions& server_options,
+               DatabaseOptions& db_options,
+               std::string& dbname);
   void AcceptNetworkTraffic();
   bool IsStopRequested() { return stop_requested_; }
   void Stop() {
@@ -98,11 +98,9 @@ class Server {
   bool stop_requested_;
   std::thread thread_network_;
 
-  DatabaseOptions options_;
+  ServerOptions server_options_;
+  DatabaseOptions db_options_;
   std::string dbname_;
-  int port_;
-  int backlog_;
-  int num_threads_;
 
   int sockfd_listen_;
   int sockfd_notify_recv_;

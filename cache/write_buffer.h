@@ -32,7 +32,7 @@ class WriteBuffer {
     num_readers_ = 0;
     can_swap_ = true;    // prevents the double-swapping
     force_swap_ = false; // forces swapping
-    buffer_size_ = SIZE_BUFFER_WRITE;
+    buffer_size_ = db_options_.write_buffer__size;
     thread_buffer_handler_ = std::thread(&WriteBuffer::ProcessingLoop, this);
     is_closed_ = false;
   }

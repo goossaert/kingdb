@@ -32,7 +32,7 @@ Status CompressorLZ4::Compress(char *source,
   }
   uint32_t size_compressed = ret + 8;
   // NOTE: Yes, storing 64 bits into 32, but overflows will not happens as
-  //       size_source is limited to SIZE_BUFFER_MAX_CHUNK.
+  //       size_source is limited to db.storage.maximum.chunk.size
   uint32_t size_source_32 = size_source;
   EncodeFixed32((*dest),     size_compressed);
   EncodeFixed32((*dest) + 4, size_source_32);

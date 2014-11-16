@@ -53,21 +53,21 @@ class KingDB: public Interface {
     uint64_t max_size_hash = hash->MaxInputSize();
     delete hash;
 
-    if (SIZE_BUFFER_MAX_CHUNK > std::numeric_limits<int32_t>::max()) {
-      return Status::IOError("SIZE_BUFFER_MAX_CHUNK cannot be greater than max int32. Fix your options.");
+    if (db_options_.storage__maximum_chunk_size > std::numeric_limits<int32_t>::max()) {
+      return Status::IOError("db.storage.maximum_chunk_size cannot be greater than max int32. Fix your options.");
     }
 
-    if (SIZE_BUFFER_MAX_CHUNK >= SIZE_HSTABLE_TOTAL) {
-      return Status::IOError("The value of a chunk cannot be larger than the minimum size of a large file (SIZE_BUFFER_MAX_CHUNK >= SIZE_HSTABLE_TOTAL). Fix your options.");
+    if (db_options_.storage__maximum_chunk_size >= db_options_.storage__hstable_size) {
+      return Status::IOError("The maximum size of a chunk cannot be larger than the minimum size of a large file (db.storage.maximum_chunk_size >= db_options_.storage__hstable_size). Fix your options.");
     }
 
-    if (SIZE_BUFFER_MAX_CHUNK > max_size_hash) {
-      return Status::IOError("SIZE_BUFFER_MAX_CHUNK cannot be greater than the maximum input size of the hash function you chose. Fix your options.");
+    if (db_options_.storage__maximum_chunk_size > max_size_hash) {
+      return Status::IOError("db.storage.maximum_chunk_size cannot be greater than the maximum input size of the hash function you chose. Fix your options.");
     }
 
     if (   db_options_.compression.type != kNoCompression
-        && SIZE_BUFFER_MAX_CHUNK > compressor_.MaxInputSize()) {
-      return Status::IOError("SIZE_BUFFER_MAX_CHUNK cannot be greater than the maximum input size of the compression function you chose. Fix your options.");
+        && db_options_.storage__maximum_chunk_size > compressor_.MaxInputSize()) {
+      return Status::IOError("db.storage.maximum_chunk_size cannot be greater than the maximum input size of the compression function you chose. Fix your options.");
     }
 
     std::unique_lock<std::mutex> lock(mutex_close_);
@@ -76,6 +76,10 @@ class KingDB: public Interface {
     Status s;
     struct stat info;
     bool db_exists = (stat(dbname_.c_str(), &info) == 0);
+
+    if(db_exists && !(info.st_mode & S_IFDIR)) {
+      return Status::IOError("A file with same name as the database already exists and is not a directory. Remove or rename this file to continue.", dbname_.c_str());
+    }
 
     if (   db_exists
         && db_options_.error_if_exists) {
@@ -86,10 +90,6 @@ class KingDB: public Interface {
         && db_options_.create_if_missing
         && mkdir(dbname_.c_str(), 0755) < 0) {
       return Status::IOError("Could not create database directory", strerror(errno));
-    }
-
-    if(!(info.st_mode & S_IFDIR)) {
-      return Status::IOError("A file with same name as the database already exists and is not a directory. Remove or rename this file to continue.", dbname_.c_str());
     }
 
     std::string filepath_dboptions = DatabaseOptions::GetPath(dbname_);

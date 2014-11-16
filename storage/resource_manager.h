@@ -139,11 +139,19 @@ class FileResourceManager {
       num_writes_in_progress_[fileid] = 0;
     }
     num_writes_in_progress_[fileid] += inc;
-    epoch_last_activity_[fileid] = std::time(0);
+    epoch_last_activity_[fileid] = GetEpochNow();
     return num_writes_in_progress_[fileid];
   }
 
-  time_t GetEpochLastActivity(uint32_t fileid) {
+  uint64_t GetEpochNow() {
+    // Returns epoch in milliseconds
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    uint64_t epoch = (uint64_t)(tv.tv_sec) * 1000 + (uint64_t)(tv.tv_usec) / 1000; 
+    return epoch;
+  }
+
+  uint64_t GetEpochLastActivity(uint32_t fileid) {
     std::unique_lock<std::mutex> lock(mutex_);
     return epoch_last_activity_[fileid];
   }
@@ -202,7 +210,7 @@ class FileResourceManager {
   std::map<uint32_t, uint64_t> num_writes_in_progress_;
   std::map<uint32_t, std::vector< std::pair<uint64_t, uint32_t> > > offarrays_;
   std::set<uint32_t> has_padding_in_values_;
-  std::map<uint32_t, time_t> epoch_last_activity_;
+  std::map<uint32_t, uint64_t> epoch_last_activity_;
   uint64_t dbsize_total_;
   uint64_t dbsize_uncompacted_;
 };

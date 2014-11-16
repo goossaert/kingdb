@@ -122,7 +122,7 @@ class StorageEngine {
   }
 
   void ProcessingLoopStatistics() {
-    std::chrono::seconds duration(60); // TODO-2
+    std::chrono::milliseconds duration(db_options_.compaction__check_interval);
     while (true) {
       std::unique_lock<std::mutex> lock(mutex_statistics_);
       fs_free_space_ = FileUtil::fs_free_space(dbname_.c_str());
@@ -138,25 +138,23 @@ class StorageEngine {
 
   void ProcessingLoopCompaction() {
     // 1. Have a ProcessingLoopStatistics() which pull the disk usage and
-    //    dbsize values every 60 seconds.
-    // 2. Add a new variable in ProcessingLoopCompaction 'fileid_lastcompacted'
-    // 3. If enough disk space:
-    //    - Do compaction if
-    //        COMPACTION_SIZE_UNCOMPACTED_HAS_SPACE > 0
-    //        &&
-    //        free disk space > COMPACTION_FS_FREE_SPACE_THRESHOLD
-    //        &&
-    //        dbsize_uncompacted > COMPACTION_SIZE_UNCOMPACTED_HAS_SPACE
-    //    - Do compaction if
-    //        COMPACTION_SIZE_UNCOMPACTED_NO_SPACE > 0
-    //        &&
-    //        free disk space <= COMPACTION_FS_FREE_SPACE_THRESHOLD
-    //        &&
-    //        dbsize_uncompacted > COMPACTION_SIZE_UNCOMPACTED_NO_SPACE
-    //    - Do compaction if
-    //        COMPACTION_TIMEOUT > 0
-    //        &&
-    //        current wait > COMPACTION_TIMEOUT
+    //    dbsize values every 'db.compaction.check_interval' milliseconds.
+    // 2. 'fileid_lastcompacted' hold the id of the last hstable that was
+    //    successfully compacted.
+    // 3. If the free disk space is > db.compaction.filesystem.survival_mode_threshold
+    //      mode = normal
+    //      batch_size = db.compaction.filesystem.normal_batch_size
+    //    else
+    //      mode = survival
+    //      batch_size = db.compaction.filesystem.survival_batch_size
+    //
+    //    If free disk space > db.compaction.filesystem.free_space_required
+    //       &&
+    //       sum all uncompacted files > batch_size
+    //      Do compaction by going to step 4
+    //    else:
+    //      Sleep for a duration of db.compaction.check_interval
+    //      Go to step 3
     // 4. Initialize: M = M_default
     // 5. In compaction:
     //    - Scan through uncompacted files until the sum of their sizes reaches M
@@ -166,17 +164,17 @@ class StorageEngine {
     //      files if any), and if still unsuccessful, declare compaction impossible
     // 6. If the compaction succeeded, update 'fileid_lastcompacted'
  
-    std::chrono::seconds duration(30); // TODO-2
+    std::chrono::milliseconds duration(db_options_.storage__statistics_polling_interval);
     uint32_t fileid_lastcompacted = 0;
     uint32_t fileid_out = 0;
 
     while (true) {
       uint64_t size_compaction = 0;
       uint64_t fs_free_space = GetFreeSpace();
-      if (fs_free_space > dbo_fs_free_space_threshold) {
-        size_compaction = dbo_size_compaction_uncompacted_has_space;
+      if (fs_free_space > db_options_.compaction__filesystem__survival_mode_threshold) {
+        size_compaction = db_options_.compaction__filesystem__normal_batch_size;
       } else {
-        size_compaction = dbo_size_compaction_uncompacted_no_space;
+        size_compaction = db_options_.compaction__filesystem__survival_batch_size;
       }
  
       // Only files that are no longer taking incoming updates can be compacted
@@ -184,15 +182,15 @@ class StorageEngine {
       
       uint64_t dbsize_uncompacted = hstable_manager_.file_resource_manager.GetDbSizeUncompacted();
       LOG_TRACE("ProcessingLoopCompaction",
-                "fileid_end:%u fs_free_space:%llu dbo_fs_free_space_sleep:%llu size_compaction:%llu dbsize_uncompacted:%llu",
+                "fileid_end:%u fs_free_space:%llu compaction.filesystem.free_space_required:%llu size_compaction:%llu dbsize_uncompacted:%llu",
                 fileid_end,
                 fs_free_space,
-                dbo_fs_free_space_sleep,
+                db_options_.compaction__filesystem__free_space_required,
                 size_compaction,
                 dbsize_uncompacted);
 
       if (   fileid_end > 0
-          && fs_free_space > dbo_fs_free_space_sleep
+          && fs_free_space > db_options_.compaction__filesystem__free_space_required
           && dbsize_uncompacted > size_compaction) {
         while (true) {
           fileid_out = 0;
@@ -459,19 +457,24 @@ class StorageEngine {
     if (IsStopRequested()) return Status::IOError("Stop was requested");
 
     std::map<uint32_t, uint64_t> fileids_to_filesizes;
-    char filepath[2048];
+    char filepath[FileUtil::maximum_path_size()];
     uint32_t fileid = 0;
     struct stat info;
     while ((entry = readdir(directory)) != NULL) {
       if (strcmp(entry->d_name, DatabaseOptions::GetFilename().c_str()) == 0) continue;
-      sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
+      int ret = snprintf(filepath, FileUtil::maximum_path_size(), "%s/%s", dbname.c_str(), entry->d_name);
+      if (ret < 0 || ret >= FileUtil::maximum_path_size()) {
+        LOG_EMERG("Compaction()",
+                  "Filepath buffer is too small, could not build the filepath string for file [%s]", entry->d_name); 
+        continue;
+      }
       fileid = HSTableManager::hex_to_num(entry->d_name);
       if (   hstable_manager_.file_resource_manager.IsFileCompacted(fileid)
           || stat(filepath, &info) != 0
           || !(info.st_mode & S_IFREG) 
           || fileid < fileid_start
           || fileid > fileid_end_target
-          || info.st_size <= SIZE_HSTABLE_HEADER) {
+          || info.st_size <= db_options_.internal__hstable_header_size) {
         continue;
       }
       fileids_to_filesizes[fileid] = info.st_size;
@@ -687,7 +690,7 @@ class StorageEngine {
       }
 
       // Process entries in the file
-      uint32_t offset = SIZE_HSTABLE_HEADER;
+      uint32_t offset = db_options_.internal__hstable_header_size;
       while (offset < offset_end) {
         LOG_TRACE("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
         struct EntryHeader entry_header;
@@ -844,7 +847,7 @@ class StorageEngine {
     //     been compacted, and making sure that the locations that have been
     //     added while the compaction was taking place are not removed
     LOG_TRACE("Compaction()", "Step 12: Update the storage engine index_");
-    int num_iterations_per_lock = 10;
+    int num_iterations_per_lock = db_options_.compaction__num_index_iterations_per_lock;
     int counter_iterations = 0;
     for (auto it = map_index_shifted.begin(); it != map_index_shifted.end(); it = map_index_shifted.upper_bound(it->first)) {
 

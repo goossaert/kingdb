@@ -15,7 +15,7 @@ void WriteBuffer::Flush() {
   // solution should be investigated.
   for (auto i = 0; i < 2; i++) {
     cv_flush_.notify_one();
-    cv_flush_done_.wait_for(lock_flush, std::chrono::milliseconds(5000));
+    cv_flush_done_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.write_buffer__close_timeout));
   }
   LOG_TRACE("WriteBuffer::Flush()", "end");
 }
@@ -165,7 +165,7 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
             key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
 
   bool is_first_chunk = (offset_chunk == 0);
-  bool is_large = key->size() + size_value > SIZE_HSTABLE_TOTAL;
+  bool is_large = key->size() + size_value > db_options_.storage__hstable_size;
   buffers_[im_live_].push_back(Order{std::this_thread::get_id(),
                                      op,
                                      key,
@@ -216,8 +216,8 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
 
   // test on size for debugging remove()
   if (buffers_[im_live_].size() > 256) {
-    // TODO-2: make this value optional -- a good default value would be the
-    //         number of client threads.
+    // TODO: make this value optional -- a good default value would be the
+    //       number of client threads.
     // NOTE: this is only here for when the database is used through a
     //       networking interface, in which case a better solution would be to not
     //       force a swap when the buffer reach a certain size, but just throttle the
@@ -264,8 +264,7 @@ void WriteBuffer::ProcessingLoop() {
     while (sizes_[im_copy_] == 0) {
       LOG_TRACE("WriteBuffer", "ProcessingLoop() - wait - %llu %llu", buffers_[im_copy_].size(), buffers_[im_live_].size());
       can_swap_ = true;
-      // TODO-2: parametrize the wait period
-      std::cv_status status = cv_flush_.wait_for(lock_flush, std::chrono::milliseconds(500));
+      std::cv_status status = cv_flush_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.write_buffer__flush_timeout));
       if (status == std::cv_status::no_timeout) {
         //LOG_INFO("WriteBuffer", "ProcessingLoop() - swapped no timeout");
         break;

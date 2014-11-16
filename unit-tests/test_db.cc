@@ -57,7 +57,7 @@ class DBTest {
   void EraseDB() {
     struct dirent *entry;
     DIR *dir;
-    char filepath[256];
+    char filepath[FileUtil::maximum_path_size()];
 
     struct stat info;
     if (stat(dbname_.c_str(), &info) != 0) return;

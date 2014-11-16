@@ -27,6 +27,8 @@
 #include "interface/iterator.h"
 
 
+#define SIZE_LARGE_TEST_ITEMS 1024*1024*64 // size of large items used for testing
+
 void handler(int sig) {
   int depth_max = 20;
   void *array[depth_max];

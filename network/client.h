@@ -20,6 +20,8 @@
 #include "thread/threadpool.h"
 #include "kingdb/kdb.h"
 
+#define SIZE_BUFFER_CLIENT    1024*1024*65 // used by client to get data from server
+#define SIZE_LARGE_TEST_ITEMS 1024*1024*64 // size of large items used for testing
 #define MAX_RETRIES 1
 
 #define RANDOM_DIST_LOWER_BOUND 256*1024

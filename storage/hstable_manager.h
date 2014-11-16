@@ -81,7 +81,7 @@ class HSTableManager {
     file_resource_manager.Reset();
     sequence_fileid_ = 0;
     sequence_timestamp_ = 0;
-    size_block_ = SIZE_HSTABLE_TOTAL;
+    size_block_ = db_options_.storage__hstable_size;
     has_file_ = false;
     buffer_has_items_ = false;
     is_closed_ = false;
@@ -170,14 +170,14 @@ class HSTableManager {
     uint32_t fileid_max = GetSequenceFileId();
     uint32_t fileid_stable = 0;
     uint32_t fileid_candidate = fileid_start;
-    time_t epoch_now = std::time(0);
+    uint64_t epoch_now = file_resource_manager.GetEpochNow();
       
     while (true) {
       if (fileid_candidate >= fileid_max) break;
       uint32_t num_writes = file_resource_manager.GetNumWritesInProgress(fileid_candidate);
-      time_t epoch = file_resource_manager.GetEpochLastActivity(fileid_candidate);
+      uint64_t epoch = file_resource_manager.GetEpochLastActivity(fileid_candidate);
       if (num_writes > 0) {
-        if (epoch > epoch_now - STREAMING_WRITE_TIMEOUT) {
+        if (epoch > epoch_now - db_options_.storage__streaming_timeout) {
           // The in-progress writes for this file haven't timed out yet, thus it
           // is not stable yet.
           break;
@@ -213,7 +213,7 @@ class HSTableManager {
 
     // Reserving space for header
     offset_start_ = 0;
-    offset_end_ = SIZE_HSTABLE_HEADER;
+    offset_end_ = db_options_.internal__hstable_header_size;
 
     // Filling in default header
     struct HSTableHeader lfh;
@@ -261,7 +261,7 @@ class HSTableManager {
       lseek(fd_, 0, SEEK_END);
     }
 
-    if (offset_end_ >= size_block_ || (force_new_file && offset_end_ > SIZE_HSTABLE_HEADER)) {
+    if (offset_end_ >= size_block_ || (force_new_file && offset_end_ > db_options_.internal__hstable_header_size)) {
       LOG_TRACE("HSTableManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
       file_resource_manager.SetFileSize(fileid_, offset_end_);
       CloseCurrentFile();
@@ -356,12 +356,12 @@ class HSTableManager {
     }
 
     // Write hstable header
-    char buffer[SIZE_HSTABLE_HEADER];
+    char buffer[db_options_.internal__hstable_header_size];
     struct HSTableHeader lfh;
     lfh.filetype  = kCompactedLargeType;
     lfh.timestamp = timestamp_largefile;
     HSTableHeader::EncodeTo(&lfh, buffer);
-    if (write(fd, buffer, SIZE_HSTABLE_HEADER) < 0) {
+    if (write(fd, buffer, db_options_.internal__hstable_header_size) < 0) {
       LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
 
@@ -390,16 +390,16 @@ class HSTableManager {
       LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
     }
 
-    uint64_t filesize = SIZE_HSTABLE_HEADER + size_header + order.key->size() + order.size_value;
+    uint64_t filesize = db_options_.internal__hstable_header_size + size_header + order.key->size() + order.size_value;
     ftruncate(fd, filesize);
     file_resource_manager.SetFileSize(fileid_largefile, filesize);
     close(fd);
     uint64_t fileid_shifted = fileid_largefile;
     fileid_shifted <<= 32;
-    uint64_t location = fileid_shifted | SIZE_HSTABLE_HEADER;
+    uint64_t location = fileid_shifted | db_options_.internal__hstable_header_size;
     LOG_TRACE("HSTableManager::WriteFirstChunkLargeOrder()", "fileid [%d] location: [%llu]", fileid_largefile, location);
     file_resource_manager.SetNumWritesInProgress(fileid_largefile, 1);
-    file_resource_manager.AddOffsetArray(fileid_largefile, std::pair<uint64_t, uint32_t>(hashed_key, SIZE_HSTABLE_HEADER));
+    file_resource_manager.AddOffsetArray(fileid_largefile, std::pair<uint64_t, uint32_t>(hashed_key, db_options_.internal__hstable_header_size));
     return location;
   }
 
@@ -474,7 +474,7 @@ class HSTableManager {
       }
  
       if (order.IsLarge() && entry_header.IsCompressed()) {
-        uint64_t filesize = SIZE_HSTABLE_HEADER + size_header + order.key->size() + order.size_value_compressed;
+        uint64_t filesize = db_options_.internal__hstable_header_size + size_header + order.key->size() + order.size_value_compressed;
         file_resource_manager.SetFileSize(fileid, filesize);
         ftruncate(fd, filesize);
       }
@@ -599,12 +599,12 @@ class HSTableManager {
       //       storing functions) still work?
 
       // There are three categories of entries:
-      //  - Small entries:  sizes within [0, SIZE_BUFFER_RECV)
-      //  - Medium entries: sizes within [SIZE_BUFFER_RECV, SIZE_HSTABLE_TOTAL)
-      //  - Large entries:  sizes greater than SIZE_HSTABLE_TOTAL
+      //  - Small entries:  sizes within [0, server.size_buffer_recv)
+      //  - Medium entries: sizes within [server.size_buffer_recv, hstable.maximum_size)
+      //  - Large entries:  sizes greater than hstable.maximum_size
       //
       // When using the storage engine through a network interface, medium and
-      // large entries are split into chunks of size at most SIZE_BUFFER_RECV,
+      // large entries are split into chunks of size at most server.size_buffer_recv,
       // making them "multi-chunk" entries.
       // Small entries do not need to be split, and are therefore "self-contained".
       // Chunks are held into "orders", which hold extra metadata needed
@@ -617,16 +617,16 @@ class HSTableManager {
       // When using the storage engine embedded in another program, orders can be
       // on any size, and because it is embedded, the data can be sent as is to
       // the storage engine, potentially in a very large buffer, larger than
-      // the size of SIZE_BUFFER_RECV contrained when on a network. Because the
+      // the size of server.size_buffer_recv contrained when on a network. Because the
       // logic in the storage engine expects first and last chunks, a large
       // order that is at the same time a first *and* a last chunk could cause
       // an issue: the order could be treated only as a first chunk,
       // and the operations triggered by the arrival of the last chunk
       // may not be done. To solve that problem, and because compression
       // and hash functions take input of limited sizes anyway, the constant
-      // SIZE_BUFFER_MAX_CHUNK has been introduced. As part of the
+      // 'maximum_chunk_size' has been introduced. As part of the
       // KingDB::PutChunk() method, the sizes of incoming orders are checked,
-      // and if they are larger than SIZE_BUFFER_MAX_CHUNK, they are split
+      // and if they are larger than 'maximum_chunk_size', they are split
       // into smaller chunks. This is done in such a way that any
       // self-contained large entry would be split, therefore guaranteeing
       // that that the operations done by both the first and last chunks
@@ -764,29 +764,41 @@ class HSTableManager {
     // file, the maximum timestamp is garanteed to be always increasing and no
     // overlapping will occur.
     std::map<std::string, uint32_t> timestamp_fileid_to_fileid;
-    char filepath[2048];
-    char buffer_key[128];
+    char filepath[FileUtil::maximum_path_size()];
+    char buffer_key[64]; // buffer used to order HSTables when loading a database,
+                         // shouldn't need more than 33 bytes, but rounded up
     uint32_t fileid_max = 0;
     uint64_t timestamp_max = 0;
     uint32_t fileid = 0;
     while ((entry = readdir(directory)) != NULL) {
       if (strcmp(entry->d_name, DatabaseOptions::GetFilename().c_str()) == 0) continue;
       if (strcmp(entry->d_name, prefix_compaction_.c_str()) == 0) continue;
-      sprintf(filepath, "%s/%s", dbname.c_str(), entry->d_name);
+      int ret = snprintf(filepath, FileUtil::maximum_path_size(), "%s/%s", dbname.c_str(), entry->d_name);
+      if (ret < 0 || ret >= FileUtil::maximum_path_size()) {
+        LOG_EMERG("HsTableManager::LoadDatabase()",
+                  "Filepath buffer is too small, could not build the filepath string for file [%s]", entry->d_name); 
+        continue;
+      }
       if (stat(filepath, &info) != 0 || !(info.st_mode & S_IFREG)) continue;
       fileid = HSTableManager::hex_to_num(entry->d_name);
       if (   fileids_ignore != nullptr
           && fileids_ignore->find(fileid) != fileids_ignore->end()) {
-        LOG_TRACE("HSTableManager::LoadDatabase()", "Skipping file in fileids_ignore:: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
+        LOG_TRACE("HSTableManager::LoadDatabase()",
+                  "Skipping file in fileids_ignore:: [%s] [%lld] [%u]\n",
+                  entry->d_name, info.st_size, fileid);
         continue;
       }
       if (fileid_end != 0 && fileid > fileid_end) {
-        LOG_TRACE("HSTableManager::LoadDatabase()", "Skipping file with id larger than fileid_end (%u): [%s] [%lld] [%u]\n", fileid, entry->d_name, info.st_size, fileid);
+        LOG_TRACE("HSTableManager::LoadDatabase()",
+                  "Skipping file with id larger than fileid_end (%u): [%s] [%lld] [%u]\n",
+                  fileid, entry->d_name, info.st_size, fileid);
         continue;
       }
-      LOG_TRACE("HSTableManager::LoadDatabase()", "file: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
-      if (info.st_size <= SIZE_HSTABLE_HEADER) {
-        LOG_TRACE("HSTableManager::LoadDatabase()", "file: [%s] only has a header or less, skipping\n", entry->d_name);
+      LOG_TRACE("HSTableManager::LoadDatabase()",
+                "file: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
+      if (info.st_size <= db_options_.internal__hstable_header_size) {
+        LOG_TRACE("HSTableManager::LoadDatabase()",
+                  "file: [%s] only has a header or less, skipping\n", entry->d_name);
         continue;
       }
 
@@ -794,7 +806,8 @@ class HSTableManager {
       struct HSTableHeader lfh;
       Status s = HSTableHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
       if (!s.IsOK()) {
-        LOG_TRACE("HSTableManager::LoadDatabase()", "file: [%s] has an invalid header, skipping\n", entry->d_name);
+        LOG_TRACE("HSTableManager::LoadDatabase()",
+                  "file: [%s] has an invalid header, skipping\n", entry->d_name);
         continue;
       }
 
@@ -886,7 +899,7 @@ class HSTableManager {
   Status RecoverFile(Mmap& mmap,
                      uint32_t fileid,
                      std::multimap<uint64_t, uint64_t>& index_se) {
-    uint32_t offset = SIZE_HSTABLE_HEADER;
+    uint32_t offset = db_options_.internal__hstable_header_size;
     std::vector< std::pair<uint64_t, uint32_t> > offarray_current;
     bool has_padding_in_values = false;
     bool has_invalid_entries   = false;
@@ -947,7 +960,7 @@ class HSTableManager {
     }
 
     // 3. Write a new index at the end of the file with whatever entries could be save
-    if (offset > SIZE_HSTABLE_HEADER) {
+    if (offset > db_options_.internal__hstable_header_size) {
       mmap.Close();
       int fd;
       if ((fd = open(mmap.filepath(), O_WRONLY, 0644)) < 0) {
@@ -975,7 +988,6 @@ class HSTableManager {
       return Status::IOError("Could not open lock directory", dirpath_locks_.c_str());
     }
 
-    char filepath[2048];
     uint32_t fileid = 0;
     struct stat info;
     while ((entry = readdir(directory)) != NULL) {

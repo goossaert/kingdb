@@ -8,6 +8,7 @@
 #include <sys/resource.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
+
 #include "util/status.h"
 
 namespace kdb {
@@ -20,7 +21,7 @@ class FileUtil {
     if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
       rl.rlim_cur = OPEN_MAX;
       if (setrlimit(RLIMIT_NOFILE, &rl) != 0) {
-        fprintf(stderr, "Could not increase the limit on open files for this process");
+        fprintf(stderr, "Could not increase the limit of open files for this process");
       }
     }
   }
@@ -98,11 +99,16 @@ class FileUtil {
     if ((directory = opendir(dirpath)) == NULL) {
       return Status::IOError("Could not open directory", dirpath);
     }
-    char filepath[2048];
+    char filepath[FileUtil::maximum_path_size()];
     Status s;
     struct stat info;
     while ((entry = readdir(directory)) != NULL) {
-      sprintf(filepath, "%s/%s", dirpath, entry->d_name);
+      int ret = snprintf(filepath, FileUtil::maximum_path_size(), "%s/%s", dirpath, entry->d_name);
+      if (ret < 0 || ret >= FileUtil::maximum_path_size()) {
+        LOG_EMERG("HsTableManager::LoadDatabase()",
+                  "Filepath buffer is too small, could not build the filepath string for file [%s]", entry->d_name); 
+        continue;
+      }
       if (   strncmp(entry->d_name, prefix.c_str(), prefix.size()) != 0
           || stat(filepath, &info) != 0
           || !(info.st_mode & S_IFREG)) {
@@ -114,6 +120,10 @@ class FileUtil {
     }
     closedir(directory);
     return Status::OK();
+  }
+
+  static uint64_t maximum_path_size() {
+    return 4096;
   }
 };
 
