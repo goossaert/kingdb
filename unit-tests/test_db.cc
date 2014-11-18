@@ -14,6 +14,7 @@
 #include <execinfo.h>
 #include <chrono>
 #include <sstream>
+#include <csignal>
 
 #include "interface/kingdb.h"
 #include "kingdb/kdb.h"

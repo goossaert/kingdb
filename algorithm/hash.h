@@ -8,6 +8,7 @@
 #include <string>
 #include <cstdint>
 #include <limits>
+#include <string.h>
 
 #include "util/logger.h"
 #include "util/options.h"

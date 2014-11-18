@@ -14,6 +14,7 @@
 #include <execinfo.h>
 #include <chrono>
 #include <sstream>
+#include <csignal>
 
 #include <gperftools/profiler.h>
 

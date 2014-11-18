@@ -19,7 +19,9 @@ class FileUtil {
   static void increase_limit_open_files() {
     struct rlimit rl;
     if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
-      rl.rlim_cur = OPEN_MAX;
+      // TODO: linux compatibility
+      //rl.rlim_cur = OPEN_MAX;
+      rl.rlim_cur = 4096;
       if (setrlimit(RLIMIT_NOFILE, &rl) != 0) {
         fprintf(stderr, "Could not increase the limit of open files for this process");
       }

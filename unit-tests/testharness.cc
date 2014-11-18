@@ -11,11 +11,6 @@
 
 #include "unit-tests/testharness.h"
 
-#include <string>
-#include <stdlib.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-
 namespace kdb {
 namespace test {
 

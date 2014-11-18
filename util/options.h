@@ -29,11 +29,13 @@ struct CompressionOptions {
 struct DatabaseOptions {
  public:
   DatabaseOptions()
-      : create_if_missing(true),
-        error_if_exists(false),
-        hash(kxxHash_64),
-        internal__hstable_header_size(8192),
-        compression(kLZ4Compression) {
+      : hash(kxxHash_64),
+        compression(kLZ4Compression),
+        internal__hstable_header_size(8192) {
+    DatabaseOptions &db_options = *this;
+    ConfigParser parser;
+    AddParametersToConfigParser(db_options, parser);
+    parser.LoadDefaultValues();
   }
 
   // Internal options (part of the file format, cannot be changed by users)

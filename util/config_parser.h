@@ -6,6 +6,7 @@
 #define KINGDB_CONFIG_PARSER_H_
 
 #include <sys/stat.h>
+#include <string.h>
 #include <fstream>
 #include <string>
 #include <regex>
@@ -258,6 +259,10 @@ class ConfigParser {
     for (auto& name: mandatories_) {
       fprintf(stderr, "%s\n", name.c_str()); 
     }
+  }
+
+  Status LoadDefaultValues() {
+    ParseCommandLine(0, nullptr);
   }
 
   Status ParseCommandLine(int argc, char **argv) {

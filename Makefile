@@ -1,9 +1,9 @@
 CC=g++
-CFLAGS=-O3 -g -Wall -std=c++11 -stdlib=libc++ -Wc++11-extensions -Wc++1y-extensions -Wl,-no-as-needed -c
-INCLUDES=-I/opt/local/include/ -I. -I./include/
-LDFLAGS=-g -lprofiler
-LDFLAGS_CLIENT=-g -L/opt/local/lib/ -lmemcached -lprofiler -fPIC
-SOURCES=interface/kingdb.cc util/logger.cc util/status.cc network/server.cc cache/write_buffer.cc algorithm/compressor.cc algorithm/murmurhash3.cc algorithm/xxhash.cc algorithm/crc32c.cc algorithm/lz4.cc algorithm/hash.cc algorithm/coding.cc unit-tests/testharness.cc
+CFLAGS=-O3 -g -Wall -std=c++11 -c
+INCLUDES=-I/usr/local/include/ -I/opt/local/include/ -I. -I./include/
+LDFLAGS=-g -lprofiler -pthread
+LDFLAGS_CLIENT=-g -L/usr/local/lib/ -L/opt/local/lib/ -pthread -lmemcached -lprofiler -fPIC
+SOURCES=interface/kingdb.cc util/logger.cc util/status.cc network/server.cc cache/write_buffer.cc algorithm/endian.cc algorithm/compressor.cc algorithm/murmurhash3.cc algorithm/xxhash.cc algorithm/crc32c.cc algorithm/lz4.cc algorithm/hash.cc algorithm/coding.cc unit-tests/testharness.cc
 SOURCES_MAIN=network/server_main.cc
 SOURCES_CLIENT=network/client_main.cc
 SOURCES_CLIENT_EMB=unit-tests/client_embedded.cc
@@ -22,23 +22,23 @@ TEST_COMPRESSION=test_compression
 TEST_DB=test_db
 LIBRARY=kingdb.a
 
-all: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT) $(CLIENT_EMB) $(TEST_COMPRESSION) $(TEST_DB)
+all: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(CLIENT) $(TEST_COMPRESSION) $(TEST_DB)
 
 $(EXECUTABLE): $(OBJECTS) $(OBJECTS_MAIN)
-	$(CC) $(LDFLAGS) $(OBJECTS) $(OBJECTS_MAIN) -o $@
+	$(CC) $(OBJECTS) $(OBJECTS_MAIN) -o $@ $(LDFLAGS) 
 
 $(CLIENT): $(OBJECTS) $(OBJECTS_CLIENT)
-	$(CC) $(LDFLAGS_CLIENT) $(OBJECTS) $(OBJECTS_CLIENT) -o $@
+	$(CC) $(OBJECTS) $(OBJECTS_CLIENT) -o $@ $(LDFLAGS_CLIENT)
 
 $(CLIENT_EMB): $(OBJECTS) $(OBJECTS_CLIENT_EMB)
-	$(CC) $(LDFLAGS_CLIENT) $(OBJECTS) $(OBJECTS_CLIENT_EMB) -o $@
+	$(CC) $(OBJECTS) $(OBJECTS_CLIENT_EMB) -o $@ $(LDFLAGS_CLIENT)
 #	$(CC) $(LDFLAGS_CLIENT) $(OBJECTS_CLIENT_EMB) $(LIBRARY) -o $@
 
 $(TEST_COMPRESSION): $(OBJECTS) $(OBJECTS_TEST_COMPRESSION)
-	$(CC) $(LDFLAGS_CLIENT) $(OBJECTS) $(OBJECTS_TEST_COMPRESSION) -o $@
+	$(CC) $(OBJECTS) $(OBJECTS_TEST_COMPRESSION) -o $@ $(LDFLAGS_CLIENT)
 
 $(TEST_DB): $(OBJECTS) $(OBJECTS_TEST_DB)
-	$(CC) $(LDFLAGS_CLIENT) $(OBJECTS) $(OBJECTS_TEST_DB) -o $@
+	$(CC) $(OBJECTS) $(OBJECTS_TEST_DB) -o $@ $(LDFLAGS_CLIENT)
 
 $(LIBRARY): $(OBJECTS)
 	rm -f $@

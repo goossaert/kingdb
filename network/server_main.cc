@@ -3,6 +3,7 @@
 // that can be found in the LICENSE file.
 //
 #include <execinfo.h>
+#include <csignal>
 
 #include "network/server.h"
 #include "thread/threadpool.h"

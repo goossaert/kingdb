@@ -74,7 +74,8 @@ class StorageEngine {
     }
     Status s = hstable_manager_.LoadDatabase(dbname, index_, fileids_ignore_, fileid_end, fileids_iterator_);
     if (!s.IsOK()) {
-      LOG_EMERG("StorageEngine", "Could not load database");
+      LOG_EMERG("StorageEngine", "Could not load database: [%s]", s.ToString().c_str());
+      Close();
     }
   }
 

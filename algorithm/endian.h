@@ -5,6 +5,8 @@
 #ifndef KINGDB_ENDIAN_H_
 #define KINGDB_ENDIAN_H_
 
+#include <stdint.h>
+
 namespace kdb {
 
 enum endian_t : uint32_t {
@@ -15,6 +17,9 @@ enum endian_t : uint32_t {
     kBytesUnknownEndian    = 0xffffffff
 };
 
+
+//TODO: linux compatibility
+/*
 constexpr endian_t getEndianness() {
   if ((0xffffffff & 1) == kBytesLittleEndian) {
     return kBytesLittleEndian;
@@ -27,9 +32,12 @@ constexpr endian_t getEndianness() {
   }
   return kBytesUnknownEndian;
 }
+*/
 
-static const bool kLittleEndian = (getEndianness() == kBytesLittleEndian);
-static const bool kBigEndian = (getEndianness() == kBytesBigEndian);
+endian_t getEndianness();
+
+extern const bool kLittleEndian;
+extern const bool kBigEndian;
 
 };
 

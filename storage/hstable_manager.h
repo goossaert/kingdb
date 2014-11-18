@@ -723,20 +723,24 @@ class HSTableManager {
     Status s;
     struct stat info;
 
-    if (   stat(dirpath_locks_.c_str(), &info) != 0
-        && mkdir(dirpath_locks_.c_str(), 0755) < 0) {
-      return Status::IOError("Could not create lock directory", strerror(errno));
-    }
-
-    if(!(info.st_mode & S_IFDIR)) {
-      return Status::IOError("A file with same name as the lock directory already exists and is not a directory. Remove or rename this file to continue.", dirpath_locks_.c_str());
-    }
-
     if (!is_read_only_) {
+      if (   stat(dirpath_locks_.c_str(), &info) != 0
+          && mkdir(dirpath_locks_.c_str(), 0755) < 0) {
+        return Status::IOError("Could not create lock directory", strerror(errno));
+      }
+
+      /*
+      if(!(info.st_mode & S_IFDIR)) {
+        return Status::IOError("A file with same name as the lock directory already exists and is not a directory. Remove or rename this file to continue.", dirpath_locks_.c_str());
+      }
+      */
+
       s = FileUtil::remove_files_with_prefix(dbname_.c_str(), prefix_compaction_);
       if (!s.IsOK()) return Status::IOError("Could not clean up previous compaction");
+
       s = RemoveAllLockedFiles(dbname_);
       if (!s.IsOK()) return Status::IOError("Could not clean up snapshots");
+
       s = FileUtil::remove_files_with_prefix(dirpath_locks_.c_str(), "");
       if (!s.IsOK()) return Status::IOError("Could not clean up locks");
     }
