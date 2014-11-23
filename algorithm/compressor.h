@@ -31,7 +31,7 @@ class CompressorLZ4 {
   }
 
   virtual ~CompressorLZ4() {
-    //LOG_EMERG("CompressorLZ4()::dtor", "call");
+    //log::emerg("CompressorLZ4()::dtor", "call");
   }
 
   void ResetThreadLocalStorage();

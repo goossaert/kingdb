@@ -16,7 +16,7 @@ namespace kdb {
 class StorageEngine {
  public:
   StorageEngine(std::string dbname) {
-    LOG_TRACE("StorageEngine:StorageEngine()", "dbname: %s", dbname.c_str());
+    log::trace("StorageEngine:StorageEngine()", "dbname: %s", dbname.c_str());
     dbname_ = dbname;
     thread_index_ = std::thread(&StorageEngine::ProcessingLoopIndex, this);
     thread_data_ = std::thread(&StorageEngine::ProcessingLoopData, this);
@@ -33,13 +33,13 @@ class StorageEngine {
     while(true) {
    
       // Wait for orders to process
-      LOG_TRACE("StorageEngine::ProcessingLoop()", "start");
-      //LOG_TRACE("SE", "WAIT: flush_buffer");
+      log::trace("StorageEngine::ProcessingLoop()", "start");
+      //log::trace("SE", "WAIT: flush_buffer");
       std::vector<Order> buffer = EventManager::flush_buffer.Wait();     
-      LOG_TRACE("StorageEngine::ProcessingLoop()", "got buffer");
+      log::trace("StorageEngine::ProcessingLoop()", "got buffer");
 
       // Wait for readers to exit
-      //LOG_TRACE("SE", "WAIT: write_lock");
+      //log::trace("SE", "WAIT: write_lock");
       mutex_write_.lock();
       while(true) {
         std::unique_lock<std::mutex> lock_read(mutex_read_);
@@ -75,18 +75,18 @@ class StorageEngine {
       std::this_thread::sleep_for(delay);
 
       EventManager::flush_buffer.Done();
-      //LOG_TRACE("SE", "WAIT: update_index");
+      //log::trace("SE", "WAIT: update_index");
       EventManager::update_index.StartAndBlockUntilDone(map_index);
-      LOG_TRACE("StorageEngine::ProcessingLoop()", "done");
+      log::trace("StorageEngine::ProcessingLoop()", "done");
     }
   }
 
   void ProcessingLoopIndex() {
     while(true) {
-      LOG_TRACE("StorageEngine::ProcessingLoop()", "start");
+      log::trace("StorageEngine::ProcessingLoop()", "start");
       std::map<std::string, uint64_t> buffer = EventManager::update_index.Wait();     
-      LOG_TRACE("StorageEngine::ProcessingLoop()", "got buffer");
-      //LOG_TRACE("INDEX", "WAIT: loop:mutex_index_");
+      log::trace("StorageEngine::ProcessingLoop()", "got buffer");
+      //log::trace("INDEX", "WAIT: loop:mutex_index_");
       mutex_index_.lock();
       for (auto& p: buffer) {
         if (p.second == 0) {
@@ -97,31 +97,31 @@ class StorageEngine {
       }
       mutex_index_.unlock();
       EventManager::update_index.Done();
-      LOG_TRACE("StorageEngine::ProcessingLoop()", "done");
+      log::trace("StorageEngine::ProcessingLoop()", "done");
       int temp = 1;
-      //LOG_TRACE("INDEX", "WAIT: loop:clear_buffer");
+      //log::trace("INDEX", "WAIT: loop:clear_buffer");
       EventManager::clear_buffer.StartAndBlockUntilDone(temp);
     }
   }
 
   Status Get(const std::string& key, std::string *value_out) {
-    //LOG_TRACE("INDEX", "WAIT: Get()-mutex_index_");
+    //log::trace("INDEX", "WAIT: Get()-mutex_index_");
     std::unique_lock<std::mutex> lock(mutex_index_);
-    LOG_TRACE("StorageEngine::GetEntry()", "%s", key.c_str());
+    log::trace("StorageEngine::GetEntry()", "%s", key.c_str());
     auto p = index_.find(key);
     if (p != index_.end()) {
       std::string key_temp;
       GetEntry(index_[key], &key_temp, value_out); 
-      LOG_TRACE("StorageEngine::GetEntry()", "key:[%s] key_temp:[%s] - value:[%s]", key.c_str(), key_temp.c_str(), value_out->c_str());
+      log::trace("StorageEngine::GetEntry()", "key:[%s] key_temp:[%s] - value:[%s]", key.c_str(), key_temp.c_str(), value_out->c_str());
       return Status::OK();
     }
-    LOG_TRACE("StorageEngine::GetEntry()", "%s - not found!", key.c_str());
+    log::trace("StorageEngine::GetEntry()", "%s - not found!", key.c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
   }
 
 
   Status GetEntry(uint64_t offset, std::string *key_out, std::string *value_out) {
-    LOG_TRACE("StorageEngine::GetEntry()", "start");
+    log::trace("StorageEngine::GetEntry()", "start");
     Status s = Status::OK();
     mutex_write_.lock();
     mutex_read_.lock();
@@ -131,12 +131,12 @@ class StorageEngine {
 
     auto p = data_.find(offset);
     if (p == data_.end()) {
-      LOG_TRACE("StorageEngine::GetEntry()", "not found!");
+      log::trace("StorageEngine::GetEntry()", "not found!");
       s = Status::NotFound("Unable to find the entry in the storage engine");
     } else {
       *key_out = data_[offset];
       *value_out = data_[offset+1];
-      LOG_TRACE("StorageEngine::GetEntry()", "%s - found [%s]", key_out->c_str(), value_out->c_str());
+      log::trace("StorageEngine::GetEntry()", "%s - found [%s]", key_out->c_str(), value_out->c_str());
     }
 
     mutex_read_.lock();

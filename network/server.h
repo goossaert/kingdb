@@ -62,11 +62,11 @@ class Server {
  public:
   Server()
       : stop_requested_(false),
-        tp_(nullptr),
-        db_(nullptr),
         sockfd_listen_(0),
         sockfd_notify_recv_(0),
-        sockfd_notify_send_(0)
+        sockfd_notify_send_(0),
+        db_(nullptr),
+        tp_(nullptr)
   {}
 
   Status Start(ServerOptions& server_options,
@@ -75,9 +75,15 @@ class Server {
   void AcceptNetworkTraffic();
   bool IsStopRequested() { return stop_requested_; }
   void Stop() {
-    LOG_TRACE("Server", "Stop()");
+    log::trace("Server", "Stop()");
     stop_requested_ = true;
-    if (sockfd_notify_send_ > 0) write(sockfd_notify_send_, "0", 1);
+    if (sockfd_notify_send_ > 0) {
+      if (write(sockfd_notify_send_, "0", 1) < 0) {
+        log::trace("Server",
+                  "Could not send the stop notification to the server thread: %s.",
+                  strerror(errno));
+      }
+    }
     thread_network_.join();
     if (tp_ != nullptr) {
       tp_->Stop();

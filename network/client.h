@@ -164,14 +164,14 @@ class ClientTask: public Task {
         if (s.IsOK()) {
           retry = MAX_RETRIES;
         } else {
-          LOG_INFO("ClientTask", "Put() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+          log::info("ClientTask", "Put() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
         }
         
         if (retry >= MAX_RETRIES - 1) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-        LOG_INFO("ClientTask", "retry key: [%s]", key.c_str());
+        log::info("ClientTask", "retry key: [%s]", key.c_str());
       }
-      LOG_INFO("ClientTask", "Put(%s, size:%llu) - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
+      log::info("ClientTask", "Put(%s, size:%llu) - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
       delete[] value;
     }
 
@@ -184,7 +184,7 @@ class ClientTask: public Task {
       std::string key = ss.str();
       s = client.Remove(key.c_str(), key.size());
       if (!s.IsOK()) {
-        LOG_INFO("ClientTask", "Remove() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+        log::info("ClientTask", "Remove() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
       } else {
         keys_removed.insert(key);
       }
@@ -209,23 +209,23 @@ class ClientTask: public Task {
         s = client.Get(key, &value, &size_value_get);
         if (!has_item) { 
           if (s.IsNotFound()) {
-            LOG_INFO("ClientTask", "Get() OK for removed key [%s]: %s", key.c_str(), s.ToString().c_str());
+            log::info("ClientTask", "Get() OK for removed key [%s]: %s", key.c_str(), s.ToString().c_str());
             retry = MAX_RETRIES;
           } else {
-            LOG_INFO("ClientTask", "Get() Error for removed key [%s]: %s", key.c_str(), s.ToString().c_str());
+            log::info("ClientTask", "Get() Error for removed key [%s]: %s", key.c_str(), s.ToString().c_str());
           }
         } else if (!s.IsOK()) {
-          LOG_INFO("ClientTask", "Get() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+          log::info("ClientTask", "Get() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
         } else {
           if (size_value != size_value_get) {
-            LOG_INFO("ClientTask", "Found error in sizes for %s: [%d] [%d]", key.c_str(), size_value, size_value_get); 
+            log::info("ClientTask", "Found error in sizes for %s: [%d] [%d]", key.c_str(), size_value, size_value_get); 
           } else {
-            LOG_INFO("ClientTask", "Size OK for %s: [%d] [%d]", key.c_str(), size_value, size_value_get); 
+            log::info("ClientTask", "Size OK for %s: [%d] [%d]", key.c_str(), size_value, size_value_get); 
             int ret = VerifyValue(key, size_value, value);
             if (ret < 0) {
-              LOG_INFO("ClientTask", "Found error in content for key [%s]", key.c_str());
+              log::info("ClientTask", "Found error in content for key [%s]", key.c_str());
             } else {
-              LOG_INFO("ClientTask", "Verified content of key [%s]", key.c_str());
+              log::info("ClientTask", "Verified content of key [%s]", key.c_str());
               retry = MAX_RETRIES;
             }
           }
@@ -233,7 +233,7 @@ class ClientTask: public Task {
         if (retry >= MAX_RETRIES - 1) break;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(5000));
-        LOG_INFO("ClientTask", "retry key: [%s]", key.c_str());
+        log::info("ClientTask", "retry key: [%s]", key.c_str());
       }
       delete[] value;
     }
@@ -242,7 +242,7 @@ class ClientTask: public Task {
     std::chrono::high_resolution_clock::time_point end = std::chrono::high_resolution_clock::now();
     uint64_t duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
     ss << "Done in " << duration << " ms";
-    LOG_INFO("ClientTask", "%s", ss.str().c_str());
+    log::info("ClientTask", "%s", ss.str().c_str());
     
     delete[] buffer_large;
   }

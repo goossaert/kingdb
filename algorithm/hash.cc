@@ -27,7 +27,7 @@ Hash* MakeHash(HashType ht) {
   } else if (ht == kxxHash_64) {
     return new xxHash();
   } else {
-    LOG_EMERG("Hash", "Unknown hashing function: [%d]", ht);
+    log::emerg("Hash", "Unknown hashing function: [%d]", ht);
     exit(-1);
   }
 }

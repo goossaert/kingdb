@@ -84,7 +84,7 @@ class FileUtil {
   static int64_t fs_free_space(const char *filepath) {
     struct statvfs stat;
     if (statvfs(filepath, &stat) != 0) {
-      LOG_TRACE("disk_free_space()", "statvfs() error");
+      log::trace("disk_free_space()", "statvfs() error");
       return -1;
     }
 
@@ -107,7 +107,7 @@ class FileUtil {
     while ((entry = readdir(directory)) != NULL) {
       int ret = snprintf(filepath, FileUtil::maximum_path_size(), "%s/%s", dirpath, entry->d_name);
       if (ret < 0 || ret >= FileUtil::maximum_path_size()) {
-        LOG_EMERG("HsTableManager::LoadDatabase()",
+        log::emerg("remove_files_with_prefix()",
                   "Filepath buffer is too small, could not build the filepath string for file [%s]", entry->d_name); 
         continue;
       }
@@ -117,7 +117,7 @@ class FileUtil {
         continue;
       }
       if (std::remove(filepath)) {
-        LOG_WARN("remove_files_with_prefix()", "Could not remove file [%s]", filepath);
+        log::warn("remove_files_with_prefix()", "Could not remove file [%s]", filepath);
       }
     }
     closedir(directory);

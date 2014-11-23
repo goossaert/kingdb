@@ -51,7 +51,7 @@ class StorageEngine {
         dirpath_locks_(dbname + "/locks"),
         hstable_manager_(db_options, dbname, "", prefix_compaction_, dirpath_locks_, kUncompactedRegularType, read_only),
         hstable_manager_compaction_(db_options, dbname, prefix_compaction_, prefix_compaction_, dirpath_locks_, kCompactedRegularType, read_only) {
-    LOG_TRACE("StorageEngine:StorageEngine()", "dbname: %s", dbname.c_str());
+    log::trace("StorageEngine:StorageEngine()", "dbname: %s", dbname.c_str());
     dbname_ = dbname;
     fileids_ignore_ = fileids_ignore;
     num_readers_ = 0;
@@ -74,7 +74,7 @@ class StorageEngine {
     }
     Status s = hstable_manager_.LoadDatabase(dbname, index_, fileids_ignore_, fileid_end, fileids_iterator_);
     if (!s.IsOK()) {
-      LOG_EMERG("StorageEngine", "Could not load database: [%s]", s.ToString().c_str());
+      log::emerg("StorageEngine", "Could not load database: [%s]", s.ToString().c_str());
       Close();
     }
   }
@@ -93,7 +93,7 @@ class StorageEngine {
     ReleaseWriteLock();
 
     if (!is_read_only_) {
-      LOG_TRACE("StorageEngine::Close()", "join start");
+      log::trace("StorageEngine::Close()", "join start");
       event_manager_->update_index.NotifyWait(); // notifies ProcessingLoopIndex()
       event_manager_->flush_buffer.NotifyWait(); // notifies ProcessingLoopData()
       cv_statistics_.notify_all();               // notifies ProcessingLoopStatistics()
@@ -102,8 +102,11 @@ class StorageEngine {
       thread_data_.join();
       thread_compaction_.join();
       thread_statistics_.join();
-      ReleaseAllSnapshots();
-      LOG_TRACE("StorageEngine::Close()", "join end");
+      Status s = ReleaseAllSnapshots();
+      if (!s.IsOK()) {
+        log::emerg("StorageEngine::Close()", s.ToString().c_str());
+      }
+      log::trace("StorageEngine::Close()", "join end");
     }
 
     if (fileids_ignore_ != nullptr) {
@@ -114,7 +117,7 @@ class StorageEngine {
       delete fileids_iterator_; 
     }
 
-    LOG_TRACE("StorageEngine::Close()", "done");
+    log::trace("StorageEngine::Close()", "done");
   }
 
   bool IsStopRequested() { return stop_requested_; }
@@ -182,7 +185,7 @@ class StorageEngine {
       uint32_t fileid_end = hstable_manager_.GetHighestStableFileId(fileid_lastcompacted + 1);
       
       uint64_t dbsize_uncompacted = hstable_manager_.file_resource_manager.GetDbSizeUncompacted();
-      LOG_TRACE("ProcessingLoopCompaction",
+      log::trace("ProcessingLoopCompaction",
                 "fileid_end:%u fs_free_space:%llu compaction.filesystem.free_space_required:%llu size_compaction:%llu dbsize_uncompacted:%llu",
                 fileid_end,
                 fs_free_space,
@@ -216,10 +219,10 @@ class StorageEngine {
   void ProcessingLoopData() {
     while(true) {
       // Wait for orders to process
-      LOG_TRACE("StorageEngine::ProcessingLoopData()", "start");
+      log::trace("StorageEngine::ProcessingLoopData()", "start");
       std::vector<Order> orders = event_manager_->flush_buffer.Wait();
       if (IsStopRequested()) return;
-      LOG_TRACE("StorageEngine::ProcessingLoopData()", "got %d orders", orders.size());
+      log::trace("StorageEngine::ProcessingLoopData()", "got %d orders", orders.size());
 
       // Process orders, and create update map for the index
       AcquireWriteLock();
@@ -234,19 +237,19 @@ class StorageEngine {
 
   void ProcessingLoopIndex() {
     while(true) {
-      LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "start");
+      log::trace("StorageEngine::ProcessingLoopIndex()", "start");
       std::multimap<uint64_t, uint64_t> index_updates = event_manager_->update_index.Wait();
       if (IsStopRequested()) return;
-      LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "got index_updates");
+      log::trace("StorageEngine::ProcessingLoopIndex()", "got index_updates");
       mutex_index_.lock();
 
       /*
       for (auto& p: index_updates) {
         if (p.second == 0) {
-          LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "remove [%s] num_items_index [%d]", p.first.c_str(), index_.size());
+          log::trace("StorageEngine::ProcessingLoopIndex()", "remove [%s] num_items_index [%d]", p.first.c_str(), index_.size());
           index_.erase(p.first);
         } else {
-          LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "put [%s]", p.first.c_str());
+          log::trace("StorageEngine::ProcessingLoopIndex()", "put [%s]", p.first.c_str());
           index_[p.first] = p.second;
         }
       }
@@ -263,19 +266,19 @@ class StorageEngine {
 
       for (auto& p: index_updates) {
         //uint64_t hashed_key = hash_->HashFunction(p.first.c_str(), p.first.size());
-        LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "hash [%llu] location [%llu]", p.first, p.second);
+        log::trace("StorageEngine::ProcessingLoopIndex()", "hash [%llu] location [%llu]", p.first, p.second);
         index->insert(std::pair<uint64_t,uint64_t>(p.first, p.second));
       }
 
       /*
       for (auto& p: index_) {
-        LOG_TRACE("index_", "hash:[0x%08x] location:[%llu]", p.first, p.second);
+        log::trace("index_", "hash:[0x%08x] location:[%llu]", p.first, p.second);
       }
       */
 
       mutex_index_.unlock();
       event_manager_->update_index.Done();
-      LOG_TRACE("StorageEngine::ProcessingLoopIndex()", "done");
+      log::trace("StorageEngine::ProcessingLoopIndex()", "done");
       int temp = 1;
       event_manager_->clear_buffer.StartAndBlockUntilDone(temp);
     }
@@ -300,7 +303,7 @@ class StorageEngine {
 
     mutex_read_.lock();
     num_readers_ -= 1;
-    LOG_TRACE("Get()", "num_readers_: %d", num_readers_);
+    log::trace("Get()", "num_readers_: %d", num_readers_);
     mutex_read_.unlock();
     cv_read_.notify_one();
 
@@ -317,7 +320,7 @@ class StorageEngine {
     // and location from the index and release the lock right away -- should not
     // be locking while calling GetEntry()
     
-    LOG_TRACE("StorageEngine::GetWithIndex()", "%s", key->ToString().c_str());
+    log::trace("StorageEngine::GetWithIndex()", "%s", key->ToString().c_str());
 
     // NOTE: Since C++11, the relative ordering of elements with equivalent keys
     //       in a multimap is preserved.
@@ -328,9 +331,9 @@ class StorageEngine {
     for (auto it = rbegin; it != rend; --it) {
       ByteArray *key_temp;
       Status s = GetEntry(it->second, &key_temp, value_out); 
-      LOG_TRACE("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[%llu] hashed_key_temp:[%llu] size_key:[%llu] size_key_temp:[%llu]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
+      log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[%llu] hashed_key_temp:[%llu] size_key:[%llu] size_key_temp:[%llu]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
       std::string temp(key_temp->data(), key_temp->size());
-      LOG_TRACE("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
+      log::trace("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
       if (*key_temp == *key) {
         delete key_temp;
         if (s.IsRemoveOrder()) {
@@ -342,7 +345,7 @@ class StorageEngine {
       delete key_temp;
       delete *value_out;
     }
-    LOG_TRACE("StorageEngine::GetWithIndex()", "%s - not found!", key->ToString().c_str());
+    log::trace("StorageEngine::GetWithIndex()", "%s - not found!", key->ToString().c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
   }
 
@@ -350,7 +353,7 @@ class StorageEngine {
   Status GetEntry(uint64_t location,
                   ByteArray **key_out,
                   ByteArray **value_out) {
-    LOG_TRACE("StorageEngine::GetEntry()", "start");
+    log::trace("StorageEngine::GetEntry()", "start");
     Status s = Status::OK();
     // TODO: check that the offset falls into the
     // size of the file, just in case a file was truncated but the index
@@ -365,7 +368,7 @@ class StorageEngine {
     //       mutexes back
     filesize = hstable_manager_.file_resource_manager.GetFileSize(fileid);
 
-    LOG_TRACE("StorageEngine::GetEntry()", "location:%llu fileid:%u offset_file:%u filesize:%llu", location, fileid, offset_file, filesize);
+    log::trace("StorageEngine::GetEntry()", "location:%llu fileid:%u offset_file:%u filesize:%llu", location, fileid, offset_file, filesize);
     std::string filepath = hstable_manager_.GetFilepath(fileid); // TODO: optimize here
 
     auto key_temp = new SharedMmappedByteArray(filepath, filesize);
@@ -389,7 +392,7 @@ class StorageEngine {
     value_temp->SetInitialCRC32(crc32_headerkey);
 
     if (!entry_header.IsEntryFull()) {
-      LOG_EMERG("StorageEngine::GetEntry()", "Entry is not of type FULL, which is not supported");
+      log::emerg("StorageEngine::GetEntry()", "Entry is not of type FULL, which is not supported");
       return Status::IOError("Entries of type not FULL are not supported");
     }
 
@@ -399,8 +402,8 @@ class StorageEngine {
       value_temp = nullptr;
     }
 
-    LOG_DEBUG("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeRemove());
-    LOG_TRACE("StorageEngine::GetEntry()", "Sizes: key_temp:%llu value_temp:%llu filesize:%llu", key_temp->size(), value_temp->size(), filesize);
+    log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeRemove());
+    log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%llu value_temp:%llu filesize:%llu", key_temp->size(), value_temp->size(), filesize);
 
     *key_out = key_temp;
     *value_out = value_temp;
@@ -448,7 +451,7 @@ class StorageEngine {
     // TODO: This is a quick hack to get the files for compaction, by going
     //       through all the files. Fix that to be only the latest non-handled
     //       uncompacted files
-    LOG_TRACE("Compaction()", "Step 1: Get files between fileids %u and %u", fileid_start, fileid_end_target);
+    log::trace("Compaction()", "Step 1: Get files between fileids %u and %u", fileid_start, fileid_end_target);
     std::multimap<uint64_t, uint64_t> index_compaction;
     DIR *directory;
     struct dirent *entry;
@@ -465,7 +468,7 @@ class StorageEngine {
       if (strcmp(entry->d_name, DatabaseOptions::GetFilename().c_str()) == 0) continue;
       int ret = snprintf(filepath, FileUtil::maximum_path_size(), "%s/%s", dbname.c_str(), entry->d_name);
       if (ret < 0 || ret >= FileUtil::maximum_path_size()) {
-        LOG_EMERG("Compaction()",
+        log::emerg("Compaction()",
                   "Filepath buffer is too small, could not build the filepath string for file [%s]", entry->d_name); 
         continue;
       }
@@ -504,7 +507,7 @@ class StorageEngine {
       Mmap mmap(filepath, filesize);
       s = hstable_manager_.LoadFile(mmap, fileid, index_compaction);
       if (!s.IsOK()) {
-        LOG_WARN("HSTableManager::Compaction()", "Could not load index in file [%s]", filepath.c_str());
+        log::warn("HSTableManager::Compaction()", "Could not load index in file [%s]", filepath.c_str());
         // TODO: handle the case where a file is found to be damaged during compaction
       }
       size_total += filesize;
@@ -515,7 +518,7 @@ class StorageEngine {
 
     // 2. Iterating over all unique hashed keys of index_compaction, and determine which
     // locations of the storage engine index 'index_' with similar hashes will need to be compacted.
-    LOG_TRACE("Compaction()", "Step 2: Get unique hashed keys");
+    log::trace("Compaction()", "Step 2: Get unique hashed keys");
     std::vector<std::pair<uint64_t, uint64_t>> index_compaction_se;
     for (auto it = index_compaction.begin(); it != index_compaction.end(); it = index_compaction.upper_bound(it->first)) {
       auto range = index_.equal_range(it->first);
@@ -529,7 +532,7 @@ class StorageEngine {
 
     // 3. For each entry, determine which location has to be kept, which has to be deleted,
     // and the overall set of file ids that needs to be compacted
-    LOG_TRACE("Compaction()", "Step 3: Determine locations");
+    log::trace("Compaction()", "Step 3: Determine locations");
     std::set<uint64_t> locations_delete;
     std::set<uint32_t> fileids_compaction;
     std::set<uint32_t> fileids_largefiles_keep;
@@ -580,14 +583,14 @@ class StorageEngine {
     // per cluster. All the non-smallest locations are stored as secondary
     // locations. Only regular entries are used: it would not make sense
     // to compact large entries anyway.
-    LOG_TRACE("Compaction()", "Step 4: Building clusters");
+    log::trace("Compaction()", "Step 4: Building clusters");
     std::map<uint64_t, std::vector<uint64_t>> hashedkeys_clusters;
     std::set<uint64_t> locations_secondary;
     for (auto it = hashedkeys_to_locations_regular_keep.begin(); it != hashedkeys_to_locations_regular_keep.end(); it = hashedkeys_to_locations_regular_keep.upper_bound(it->first)) {
       auto range = hashedkeys_to_locations_regular_keep.equal_range(it->first);
       std::vector<uint64_t> locations;
       for (auto it_bucket = range.first; it_bucket != range.second; ++it_bucket) {
-        LOG_TRACE("Compaction()", "Building clusters - location:%llu", it->second);
+        log::trace("Compaction()", "Building clusters - location:%llu", it->second);
         locations.push_back(it->second);
       }
       std::sort(locations.begin(), locations.end());
@@ -643,7 +646,7 @@ class StorageEngine {
 
 
     // 5b. Mmapping all the files involved in the compaction
-    LOG_TRACE("Compaction()", "Step 5: Mmap() all the files! ALL THE FILES!");
+    log::trace("Compaction()", "Step 5: Mmap() all the files! ALL THE FILES!");
     std::map<uint32_t, Mmap*> mmaps;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
       uint32_t fileid = *it;
@@ -651,7 +654,7 @@ class StorageEngine {
       struct stat info;
       std::string filepath = hstable_manager_.GetFilepath(fileid);
       if (stat(filepath.c_str(), &info) != 0 || !(info.st_mode & S_IFREG)) {
-        LOG_EMERG("Compaction()", "Error during compaction with file [%s]", filepath.c_str());
+        log::emerg("Compaction()", "Error during compaction with file [%s]", filepath.c_str());
       }
       Mmap *mmap = new Mmap(filepath.c_str(), info.st_size);
       mmaps[fileid] = mmap;
@@ -661,7 +664,7 @@ class StorageEngine {
 
     // 6. Now building a vector of orders, that will be passed to the
     //    hstable_manager_compaction_ object to persist them on disk
-    LOG_TRACE("Compaction()", "Step 6: Build order list");
+    log::trace("Compaction()", "Step 6: Build order list");
     std::vector<Order> orders;
     uint64_t timestamp_max = 0;
     for (auto it = fileids_compaction.begin(); it != fileids_compaction.end(); ++it) {
@@ -685,7 +688,7 @@ class StorageEngine {
           || footer.crc32 != crc32_computed) {
         // TODO: handle error
         offset_end = mmap->filesize();
-        LOG_TRACE("Compaction()", "Compaction - invalid footer");
+        log::trace("Compaction()", "Compaction - invalid footer");
       } else {
         offset_end = footer.offset_indexes;
       }
@@ -693,7 +696,7 @@ class StorageEngine {
       // Process entries in the file
       uint32_t offset = db_options_.internal__hstable_header_size;
       while (offset < offset_end) {
-        LOG_TRACE("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
+        log::trace("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
         struct EntryHeader entry_header;
         uint32_t size_header;
         Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
@@ -704,7 +707,7 @@ class StorageEngine {
             || entry_header.size_key == 0
             || offset + sizeof(struct EntryHeader) + entry_header.size_key > mmap->filesize()
             || offset + sizeof(struct EntryHeader) + entry_header.size_key + entry_header.size_value_offset() > mmap->filesize()) {
-          LOG_TRACE("Compaction()",
+          log::trace("Compaction()",
                     "Unexpected end of file - IsOK:%d, offset:%u, size_key:%llu, size_value_offset:%llu, mmap->filesize():%d\n",
                     s.IsOK(),
                     offset,
@@ -721,7 +724,7 @@ class StorageEngine {
         fileid_shifted <<= 32;
         uint64_t location = fileid_shifted | offset;
 
-        LOG_TRACE("Compaction()", "order list loop - check if we should keep it - fileid:%u offset:%u", fileid, offset);
+        log::trace("Compaction()", "order list loop - check if we should keep it - fileid:%u offset:%u", fileid, offset);
         if (   locations_delete.find(location) != locations_delete.end()
             || locations_secondary.find(location) != locations_secondary.end()) {
           offset += size_header + entry_header.size_key + entry_header.size_value_offset();
@@ -730,10 +733,10 @@ class StorageEngine {
  
         std::vector<uint64_t> locations;
         if (hashedkeys_clusters.find(location) == hashedkeys_clusters.end()) {
-          LOG_TRACE("Compaction()", "order list loop - does not have cluster");
+          log::trace("Compaction()", "order list loop - does not have cluster");
           locations.push_back(location);
         } else {
-          LOG_TRACE("Compaction()", "order list loop - has cluster of %d items", hashedkeys_clusters[location].size());
+          log::trace("Compaction()", "order list loop - has cluster of %d items", hashedkeys_clusters[location].size());
           locations = hashedkeys_clusters[location];
         }
 
@@ -742,16 +745,16 @@ class StorageEngine {
         for (auto& location: locations) {
           uint32_t fileid_location = (location & 0xFFFFFFFF00000000) >> 32;
           uint32_t offset_file = location & 0x00000000FFFFFFFF;
-          LOG_TRACE("Compaction()", "order list loop - location fileid:%u offset:%u", fileid_location, offset_file);
+          log::trace("Compaction()", "order list loop - location fileid:%u offset:%u", fileid_location, offset_file);
           Mmap *mmap_location = mmaps[fileid_location];
           struct EntryHeader entry_header;
           uint32_t size_header;
           Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
 
-          LOG_TRACE("Compaction()", "order list loop - create byte arrays");
+          log::trace("Compaction()", "order list loop - create byte arrays");
           ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header, entry_header.size_key);
           ByteArray *chunk = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header + entry_header.size_key, entry_header.size_value_used());
-          LOG_TRACE("Compaction()", "order list loop - push_back() orders");
+          log::trace("Compaction()", "order list loop - push_back() orders");
 
           // NOTE: Need to recompute the crc32 of the key and value, as entry_header.crc32
           //       contains information about the header, which is incorrect as the
@@ -779,7 +782,7 @@ class StorageEngine {
 
 
     // 7. Write compacted orders on secondary storage
-    LOG_TRACE("Compaction()", "Step 7: Write compacted files");
+    log::trace("Compaction()", "Step 7: Write compacted files");
     std::multimap<uint64_t, uint64_t> map_index;
     // All the resulting files will have the same timestamp, which is the
     // maximum of all the timestamps in the set of files that have been
@@ -797,18 +800,18 @@ class StorageEngine {
     // 8. Get fileid range from hstable_manager_
     uint32_t num_files_compacted = hstable_manager_compaction_.GetSequenceFileId();
     uint32_t offset_fileid = hstable_manager_.IncrementSequenceFileId(num_files_compacted) - num_files_compacted;
-    LOG_TRACE("Compaction()", "Step 8: num_files_compacted:%u offset_fileid:%u", num_files_compacted, offset_fileid);
+    log::trace("Compaction()", "Step 8: num_files_compacted:%u offset_fileid:%u", num_files_compacted, offset_fileid);
     if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
     // 9. Rename files
     for (auto fileid = 1; fileid <= num_files_compacted; fileid++) {
       uint32_t fileid_new = fileid + offset_fileid;
-      LOG_TRACE("Compaction()", "Renaming [%s] into [%s]", hstable_manager_compaction_.GetFilepath(fileid).c_str(),
+      log::trace("Compaction()", "Renaming [%s] into [%s]", hstable_manager_compaction_.GetFilepath(fileid).c_str(),
                                                            hstable_manager_.GetFilepath(fileid_new).c_str());
       if (std::rename(hstable_manager_compaction_.GetFilepath(fileid).c_str(),
                       hstable_manager_.GetFilepath(fileid_new).c_str()) != 0) {
-        LOG_EMERG("Compaction()", "Could not rename file: %s", strerror(errno));
+        log::emerg("Compaction()", "Could not rename file: %s", strerror(errno));
         // TODO: crash here
       }
       uint64_t filesize = hstable_manager_compaction_.file_resource_manager.GetFileSize(fileid);
@@ -819,7 +822,7 @@ class StorageEngine {
 
     
     // 10. Shift returned locations to match renamed files
-    LOG_TRACE("Compaction()", "Step 10: Shifting locations");
+    log::trace("Compaction()", "Step 10: Shifting locations");
     std::multimap<uint64_t, uint64_t> map_index_shifted;
     for (auto &p: map_index) {
       const uint64_t& hashedkey = p.first;
@@ -831,7 +834,7 @@ class StorageEngine {
       uint64_t fileid_shifted = fileid_new;
       fileid_shifted <<= 32;
       uint64_t location_new = fileid_shifted | offset_file;
-      LOG_TRACE("Compaction()", "Shifting [%llu] into [%llu] (fileid [%u] to [%u])", location, location_new, fileid, fileid_new);
+      log::trace("Compaction()", "Shifting [%llu] into [%llu] (fileid [%u] to [%u])", location, location_new, fileid, fileid_new);
 
       map_index_shifted.insert(std::pair<uint64_t, uint64_t>(hashedkey, location_new));
     }
@@ -847,7 +850,7 @@ class StorageEngine {
     // 12. Update the storage engine index_, by removing the locations that have
     //     been compacted, and making sure that the locations that have been
     //     added while the compaction was taking place are not removed
-    LOG_TRACE("Compaction()", "Step 12: Update the storage engine index_");
+    log::trace("Compaction()", "Step 12: Update the storage engine index_");
     int num_iterations_per_lock = db_options_.compaction__num_index_iterations_per_lock;
     int counter_iterations = 0;
     for (auto it = map_index_shifted.begin(); it != map_index_shifted.end(); it = map_index_shifted.upper_bound(it->first)) {
@@ -896,7 +899,7 @@ class StorageEngine {
 
     // 13. Put all the locations inserted after the compaction started
     //     stored in 'index_compaction_' into the main index 'index_'
-    LOG_TRACE("Compaction()", "Step 13: Transfer index_compaction_ into index_");
+    log::trace("Compaction()", "Step 13: Transfer index_compaction_ into index_");
     AcquireWriteLock();
     index_.insert(index_compaction_.begin(), index_compaction_.end()); 
     index_compaction_.clear();
@@ -908,16 +911,16 @@ class StorageEngine {
 
 
     // 14. Remove compacted files
-    LOG_TRACE("Compaction()", "Step 14: Remove compacted files");
+    log::trace("Compaction()", "Step 14: Remove compacted files");
     mutex_snapshot_.lock();
     if (snapshotids_to_fileids_.size() == 0) {
       // No snapshots are in progress, remove the files on the spot
       for (auto& fileid: fileids_compaction) {
         if (fileids_largefiles_keep.find(fileid) != fileids_largefiles_keep.end()) continue;
-        LOG_TRACE("Compaction()", "Removing [%s]", hstable_manager_.GetFilepath(fileid).c_str());
+        log::trace("Compaction()", "Removing [%s]", hstable_manager_.GetFilepath(fileid).c_str());
         // TODO: free memory associated with the removed file in the file resource manager
         if (std::remove(hstable_manager_.GetFilepath(fileid).c_str()) != 0) {
-          LOG_EMERG("Compaction()", "Could not remove file [%s]", hstable_manager_.GetFilepath(fileid).c_str());
+          log::emerg("Compaction()", "Could not remove file [%s]", hstable_manager_.GetFilepath(fileid).c_str());
         }
         hstable_manager_.file_resource_manager.ClearAllDataForFileId(fileid);
       }
@@ -938,7 +941,7 @@ class StorageEngine {
         std::string filepath_lock = hstable_manager_.GetLockFilepath(fileid);
         int fd;
         if ((fd = open(filepath_lock.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-          LOG_EMERG("StorageEngine::Compaction()", "Could not open file [%s]: %s", filepath_lock.c_str(), strerror(errno));
+          log::emerg("StorageEngine::Compaction()", "Could not open file [%s]: %s", filepath_lock.c_str(), strerror(errno));
         }
         close(fd);
       }
@@ -972,12 +975,12 @@ class StorageEngine {
 
     for (auto& fileid: snapshotids_to_fileids_[snapshot_id]) {
       if(num_references_to_unused_files_[fileid] == 1) {
-        LOG_TRACE("ReleaseSnapshot()", "Removing [%s]", hstable_manager_.GetFilepath(fileid).c_str());
+        log::trace("ReleaseSnapshot()", "Removing [%s]", hstable_manager_.GetFilepath(fileid).c_str());
         if (std::remove(hstable_manager_.GetFilepath(fileid).c_str()) != 0) {
-          LOG_EMERG("ReleaseSnapshot()", "Could not remove file [%s]", hstable_manager_.GetFilepath(fileid).c_str());
+          log::emerg("ReleaseSnapshot()", "Could not remove file [%s]", hstable_manager_.GetFilepath(fileid).c_str());
         }
         if (std::remove(hstable_manager_.GetLockFilepath(fileid).c_str()) != 0) {
-          LOG_EMERG("ReleaseSnapshot()", "Could not lock file [%s]", hstable_manager_.GetLockFilepath(fileid).c_str());
+          log::emerg("ReleaseSnapshot()", "Could not lock file [%s]", hstable_manager_.GetLockFilepath(fileid).c_str());
         }
         hstable_manager_.file_resource_manager.ClearAllDataForFileId(fileid);
         num_references_to_unused_files_.erase(fileid);
@@ -992,8 +995,10 @@ class StorageEngine {
 
   Status ReleaseAllSnapshots() {
     for (auto& p: snapshotids_to_fileids_) {
-      ReleaseSnapshot(p.first);
+      Status s = ReleaseSnapshot(p.first);
+      if (!s.IsOK()) return s;
     }
+    return Status::OK();
   }
 
   uint64_t GetSequenceSnapshot() {

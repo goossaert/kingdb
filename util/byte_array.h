@@ -95,7 +95,7 @@ class SimpleByteArray: public ByteArrayCommon {
   }
 
   virtual ~SimpleByteArray() {
-    //LOG_TRACE("SimpleByteArray::dtor()", "");
+    //log::trace("SimpleByteArray::dtor()", "");
   }
 };
 
@@ -115,7 +115,7 @@ class SmartByteArray: public ByteArrayCommon {
   }
 
   virtual ~SmartByteArray() {
-    //LOG_TRACE("SmartByteArray::dtor()", "");
+    //log::trace("SmartByteArray::dtor()", "");
     delete ba_;
   }
 
@@ -136,11 +136,11 @@ class Mmap {
     filesize_ = filesize;
     if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
       std::string msg = std::string("Count not open file [") + filepath + std::string("]");
-      LOG_EMERG("Mmap()::ctor()", "%s", msg.c_str());
+      log::emerg("Mmap()::ctor()", "%s", msg.c_str());
       //return Status::IOError(msg, strerror(errno));
     }
 
-    LOG_TRACE("Mmap::ctor()", "open file: ok");
+    log::trace("Mmap::ctor()", "open file: ok");
 
     datafile_ = static_cast<char*>(mmap(0,
                                        filesize, 
@@ -151,7 +151,7 @@ class Mmap {
     if (datafile_ == MAP_FAILED) {
       // TODO-3: fix how errors are managed here
       std::string message("Could not mmap() file: " + filepath);
-      LOG_EMERG(message.c_str(), strerror(errno));
+      log::emerg(message.c_str(), strerror(errno));
       exit(-1);
     }
   }
@@ -165,7 +165,7 @@ class Mmap {
       munmap(datafile_, filesize_);
       close(fd_);
       datafile_ = nullptr;
-      LOG_DEBUG("Mmap::~Mmap()", "released mmap on file: [%s]", filepath_.c_str());
+      log::debug("Mmap::~Mmap()", "released mmap on file: [%s]", filepath_.c_str());
     }
   }
 
@@ -216,7 +216,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     if (size_compressed_ == 0) { // if no compression
       crc32_.stream(data_, size_);
       if (crc32_.get() != crc32_value_) {
-        LOG_DEBUG("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
+        log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
         return Status::IOError("Bad CRC32");
       }
       *data_out = data_;
@@ -230,7 +230,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     char *frame;
     uint64_t size_frame;
 
-    LOG_TRACE("data_chunk()", "start");
+    log::trace("data_chunk()", "start");
     Status s = compressor_.Uncompress(data_,
                                       size_compressed_,
                                       data_out,
@@ -239,10 +239,10 @@ class SharedMmappedByteArray: public ByteArrayCommon {
                                       &size_frame);
 
     if (s.IsDone() && crc32_.get() != crc32_value_) {
-      LOG_DEBUG("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
+      log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
       return Status::IOError("Bad CRC32");
     } else if (!s.IsOK()) {
-      LOG_DEBUG("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
+      log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
       return s;
     }
 
@@ -296,7 +296,7 @@ class SharedAllocatedByteArray: public ByteArrayCommon {
   }
 
   virtual ~SharedAllocatedByteArray() {
-    //LOG_TRACE("SharedAllocatedByteArray::dtor()", "");
+    //log::trace("SharedAllocatedByteArray::dtor()", "");
   }
 
   void SetOffset(uint64_t offset, uint64_t size) {

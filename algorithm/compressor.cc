@@ -41,7 +41,7 @@ Status CompressorLZ4::Compress(char *source,
   //       Maybe have a special type of entry, like 'small' or 'self-contained',
   //       which would indicate that the frame doesn't have the sizes.
 
-  LOG_TRACE("CompressorLZ4::Compress()", "size_compressed:%u size_source:%u", size_compressed, size_source_32);
+  log::trace("CompressorLZ4::Compress()", "size_compressed:%u size_source:%u", size_compressed, size_source_32);
   uint64_t size_compressed_total = ts_compress_.get() + size_compressed;
   ts_compress_.put(size_compressed_total);
   *size_dest = size_compressed;
@@ -57,7 +57,7 @@ Status CompressorLZ4::Uncompress(char *source,
                                  uint64_t *size_frame_out
                                  ) {
   uint64_t offset_uncompress = ts_uncompress_.get();
-  LOG_TRACE("CompressorLZ4::Uncompress()", "in %llu %llu", offset_uncompress, size_source_total);
+  log::trace("CompressorLZ4::Uncompress()", "in %llu %llu", offset_uncompress, size_source_total);
   *dest = nullptr;
   if (offset_uncompress == size_source_total) return Status::Done();
 
@@ -69,7 +69,7 @@ Status CompressorLZ4::Uncompress(char *source,
   *size_dest = 0;
   *dest = new char[size_source];
   int size = size_compressed;
-  LOG_TRACE("CompressorLZ4::Uncompress()", "ptr:%p size:%d size_source:%d offset:%llu", source + offset_uncompress + 8, size, size_source, offset_uncompress);
+  log::trace("CompressorLZ4::Uncompress()", "ptr:%p size:%d size_source:%d offset:%llu", source + offset_uncompress + 8, size, size_source, offset_uncompress);
   int ret = LZ4_decompress_safe_partial(source + offset_uncompress + 8,
                                         *dest,
                                         size,
@@ -85,12 +85,12 @@ Status CompressorLZ4::Uncompress(char *source,
 
   *frame_out = source + offset_uncompress;
   *size_frame_out = size_compressed + 8;
-  LOG_TRACE("CompressorLZ4::Uncompress()", "crc32:0x%llx frame_ptr:%p frame_size:%llu", crc32_.get(), *frame_out, *size_frame_out);
+  log::trace("CompressorLZ4::Uncompress()", "crc32:0x%llx frame_ptr:%p frame_size:%llu", crc32_.get(), *frame_out, *size_frame_out);
 
   offset_uncompress += size_compressed + 8;
   ts_uncompress_.put(offset_uncompress);
 
-  LOG_TRACE("CompressorLZ4::Uncompress()", "out %llu %llu", offset_uncompress, size_source_total);
+  log::trace("CompressorLZ4::Uncompress()", "out %llu %llu", offset_uncompress, size_source_total);
   *size_dest = ret;
   return Status::OK();
 }

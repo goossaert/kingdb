@@ -51,7 +51,7 @@ struct EntryHeader {
   uint64_t hash;
 
   void print() {
-    LOG_TRACE("EntryHeader::print()", "flags:%u crc32:%u size_key:%llu size_value:%llu size_value_compressed:%llu hash:%llu", flags, crc32, size_key, size_value, size_value_compressed, hash);
+    log::trace("EntryHeader::print()", "flags:%u crc32:%u size_key:%llu size_value:%llu size_value_compressed:%llu hash:%llu", flags, crc32, size_key, size_value, size_value_compressed, hash);
   }
 
   void SetHasPadding(bool b) {
@@ -75,7 +75,7 @@ struct EntryHeader {
   }
 
   bool IsTypeRemove() {
-    LOG_TRACE("IsTypeRemove()", "flags %u", flags);
+    log::trace("IsTypeRemove()", "flags %u", flags);
     return (flags & kTypeRemove);
   }
   
@@ -115,7 +115,7 @@ struct EntryHeader {
   static Status DecodeFrom(const DatabaseOptions& db_options, const char* buffer_in, uint64_t num_bytes_max, struct EntryHeader *output, uint32_t *num_bytes_read) {
     /*
     // Dumb serialization for debugging
-    LOG_TRACE("EntryHeader::DecodeFrom", "start num_bytes_max:%llu - sizeof(EntryHeader):%d", num_bytes_max, sizeof(struct EntryHeader));
+    log::trace("EntryHeader::DecodeFrom", "start num_bytes_max:%llu - sizeof(EntryHeader):%d", num_bytes_max, sizeof(struct EntryHeader));
     char *buffer = const_cast<char*>(buffer_in);
     struct EntryHeader* entry_header = reinterpret_cast<struct EntryHeader*>(buffer);
     *output = *entry_header;
@@ -152,7 +152,7 @@ struct EntryHeader {
     GetFixed64(array.data(), &(output->hash));
 
     *num_bytes_read = num_bytes_max - array.size() + 8;
-    //LOG_TRACE("EntryHeader::DecodeFrom", "size:%u", *num_bytes_read);
+    //log::trace("EntryHeader::DecodeFrom", "size:%u", *num_bytes_read);
     return Status::OK();
   }
 
@@ -183,7 +183,7 @@ struct EntryHeader {
       ptr += length_value;
     }
     EncodeFixed64(ptr, input->hash);
-    //LOG_TRACE("EntryHeader::EncodeTo", "size:%u", ptr - buffer + 8);
+    //log::trace("EntryHeader::EncodeTo", "size:%u", ptr - buffer + 8);
     return (ptr - buffer + 8);
   }
 

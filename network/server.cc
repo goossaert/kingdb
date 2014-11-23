@@ -27,7 +27,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   SharedAllocatedByteArray *buffer = nullptr;
   SharedAllocatedByteArray *key = nullptr;
   int size_key = 0;
-  LOG_TRACE("NetworkTask", "ENTER");
+  log::trace("NetworkTask", "ENTER");
   // TODO-7: replace the memory allocation performed for 'key' and 'buffer' by a
   //         pool of pre-allocated buffers
   ReadOptions read_options;
@@ -36,9 +36,9 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   while (!IsStopRequested()) {
         
     // Receive the data
-    LOG_TRACE("NetworkTask", "looping...");
+    log::trace("NetworkTask", "looping...");
     if (is_new) {
-      LOG_TRACE("NetworkTask", "is_new");
+      log::trace("NetworkTask", "is_new");
       bytes_received_total = 0;
       bytes_expected = 0;
       size_value = 0;
@@ -50,19 +50,19 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
     }
 
     if (is_new_buffer) {
-      LOG_TRACE("NetworkTask", "is_new_buffer");
+      log::trace("NetworkTask", "is_new_buffer");
       bytes_received_buffer = 0;
       buffer = new SharedAllocatedByteArray(server_options_.size_buffer_recv);
-      LOG_TRACE("NetworkTask", "allocated");
+      log::trace("NetworkTask", "allocated");
     }
 
-    LOG_TRACE("NetworkTask", "Calling recv()");
+    log::trace("NetworkTask", "Calling recv()");
     bytes_received_last = recv(sockfd_,
                                buffer->data() + bytes_received_buffer,
                                server_options_.size_buffer_recv - bytes_received_buffer,
                                0);
     if (bytes_received_last <= 0) {
-      LOG_TRACE("NetworkTask", "recv()'d 0 bytes: breaking");
+      log::trace("NetworkTask", "recv()'d 0 bytes: breaking");
       break;
     }
 
@@ -70,7 +70,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
     bytes_received_total  += bytes_received_last;
     buffer->SetOffset(0, bytes_received_buffer);
 
-    LOG_TRACE("NetworkTask", "recv()'d %d bytes of data in buf - bytes_expected:%d bytes_received_buffer:%d bytes_received_total:%d", bytes_received_last, bytes_expected, bytes_received_buffer, bytes_received_total);
+    log::trace("NetworkTask", "recv()'d %d bytes of data in buf - bytes_expected:%d bytes_received_buffer:%d bytes_received_total:%d", bytes_received_last, bytes_expected, bytes_received_buffer, bytes_received_total);
 
     // TODO: simplify the nested if-else blocks below to remove
     //       indentation levels
@@ -84,7 +84,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         is_command_put = true;
       } else if (buffer->StartsWith("delete", 6)) {
         is_command_remove = true;
-        LOG_TRACE("NetworkTask", "got delete command");
+        log::trace("NetworkTask", "got delete command");
       } else if (buffer->StartsWith("quit", 4)) {
         break;
       }
@@ -105,7 +105,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         while (buffer->data()[offset_value] != '\n') offset_value++;
         offset_value++; // for the \n
 
-        LOG_TRACE("NetworkTask", "offset_value %llu", offset_value);
+        log::trace("NetworkTask", "offset_value %llu", offset_value);
 
         std::smatch matches;
         std::string str_buffer(buffer->data(), offset_value);
@@ -113,11 +113,11 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
           size_value = atoi(std::string(matches[2]).c_str());
           bytes_expected = offset_value + size_value + 2;
           std::string str_debug = std::string(matches[2]);
-          LOG_TRACE("NetworkTask", "[%s] expected [%s] [%llu]", key->ToString().c_str(), str_debug.c_str(), bytes_expected);
+          log::trace("NetworkTask", "[%s] expected [%s] [%llu]", key->ToString().c_str(), str_debug.c_str(), bytes_expected);
           // +2: because of the final \r\n
         } else {
           // should never happen, keeping it here until fully tested
-          LOG_EMERG("NetworkTask", "Could not match put command [%s]", str_buffer.c_str());
+          log::emerg("NetworkTask", "Could not match put command [%s]", str_buffer.c_str());
           exit(-1);
         }
       } else if (   bytes_received_last >= 2
@@ -126,7 +126,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         bytes_expected = bytes_received_last;
       } else {
         // should never happen, keeping it here until fully tested
-        LOG_EMERG("NetworkTask", "Don't know what to do with this new packet [%s]", buffer->ToString().c_str());
+        log::emerg("NetworkTask", "Don't know what to do with this new packet [%s]", buffer->ToString().c_str());
         exit(-1);
       }
     }
@@ -139,12 +139,12 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         && bytes_received_buffer < server_options_.size_buffer_recv) {
       // TODO: what if the \r\n is on the two last messages, i.e. \n is the
       // first character of the last message?
-      LOG_TRACE("NetworkTask", "force looping to get the rest of the data");
+      log::trace("NetworkTask", "force looping to get the rest of the data");
       is_new_buffer = false;
       continue;
     }
 
-    LOG_TRACE("NetworkTask", "not looping, storing current buffer");
+    log::trace("NetworkTask", "not looping, storing current buffer");
 
     if (is_command_get) {
       std::smatch matches;
@@ -157,14 +157,14 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         Status s = db_->Get(read_options, buffer, &value);
 
         if (s.IsOK()) {
-          LOG_TRACE("NetworkTask", "GET: found");
+          log::trace("NetworkTask", "GET: found");
           int ret = snprintf(buffer_send, server_options_.size_buffer_send, "VALUE %s 0 %llu\r\n", buffer->ToString().c_str(), value->size());
           if (ret < 0 || ret >= server_options_.size_buffer_send) {
-            LOG_EMERG("NetworkTask", "Network send buffer is too small"); 
+            log::emerg("NetworkTask", "Network send buffer is too small"); 
           }
-          LOG_TRACE("NetworkTask", "GET: buffer_send [%s]", buffer_send);
+          log::trace("NetworkTask", "GET: buffer_send [%s]", buffer_send);
           if (send(sockfd_, buffer_send, strlen(buffer_send), 0) == -1) {
-            LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+            log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
             break;
           }
 
@@ -178,11 +178,11 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
               // TODO: this won't work, as it has to be sent before
               //       the 'VALUE' command
               if (send(sockfd_, "SERVER_ERROR Bad CRC32\r\n", 24, 0) == -1) {
-                LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+                log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
               }
             } else {
               if (send(sockfd_, chunk, size_chunk, 0) == -1) {
-                LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+                log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
               }
             }
           } else {
@@ -194,45 +194,45 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
               if (s.IsDone()) break;
               if (!s.IsOK()) {
                 delete[] chunk;
-                LOG_TRACE("NetworkTask", "Error - data_chunk(): %s", s.ToString().c_str());
+                log::trace("NetworkTask", "Error - data_chunk(): %s", s.ToString().c_str());
                 break;
               }
               if (send(sockfd_, chunk, size_chunk, 0) == -1) {
                 delete[] chunk;
-                LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+                log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
                 break;
               }
               delete[] chunk;
             }
 
             if (!s.IsOK() && !s.IsDone()) {
-              LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
+              log::emerg("NetworkTask", "Error: send()", strerror(errno));
               //break;
             }
           }
 
           //if (s.IsOK() || s.IsDone()) {
             if (send(sockfd_, "\r\nEND\r\n", 7, 0) == -1) {
-              LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
+              log::emerg("NetworkTask", "Error: send()", strerror(errno));
               break;
             }
           //}
 
           /*
           if (send(sockfd_, value->data(), value->size(), 0) == -1) {
-            LOG_TRACE("NetworkTask", "Error: send() - %s", strerror(errno));
+            log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
             break;
           }
           if (send(sockfd_, "\r\nEND\r\n", 7, 0) == -1) {
-            LOG_EMERG("NetworkTask", "Error: send()", strerror(errno));
+            log::emerg("NetworkTask", "Error: send()", strerror(errno));
             break;
           }
           */
         } else {
-          LOG_TRACE("NetworkTask", "GET: [%s]", s.ToString().c_str());
+          log::trace("NetworkTask", "GET: [%s]", s.ToString().c_str());
           std::string msg = "NOT_FOUND\r\n";
           if (send(sockfd_, msg.c_str(), msg.length(), 0) == -1) {
-            LOG_EMERG("NetworkTask", "Error: send() - %s", strerror(errno));
+            log::emerg("NetworkTask", "Error: send() - %s", strerror(errno));
             break;
           }
         }
@@ -241,7 +241,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         delete value;
         delete buffer;
       } else {
-        LOG_EMERG("NetworkTask", "Could not match Get command");
+        log::emerg("NetworkTask", "Could not match Get command");
         break;
       }
     } else if (is_command_remove) {
@@ -253,19 +253,19 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         if (s.IsOK()) {
           // TODO: check for [noreply], which may be present (see Memcached
           // protocol specs)
-          LOG_TRACE("NetworkTask", "REMOVE: ok");
+          log::trace("NetworkTask", "REMOVE: ok");
           if (send(sockfd_, "DELETED\r\n", 9, 0) == -1) {
-            LOG_EMERG("NetworkTask", "Error - send() %s", strerror(errno));
+            log::emerg("NetworkTask", "Error - send() %s", strerror(errno));
             break;
           }
         } else {
-          LOG_EMERG("NetworkTask", "Remove() error: [%s]", s.ToString().c_str());
+          log::emerg("NetworkTask", "Remove() error: [%s]", s.ToString().c_str());
           break;
         }
         is_new = true;
         is_new_buffer = true;
       } else {
-        LOG_EMERG("NetworkTask", "Could not match Remove command");
+        log::emerg("NetworkTask", "Could not match Remove command");
         break;
       }
     } else if (is_command_put) {
@@ -296,14 +296,14 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         // solution. Once the bug is fixed, memory must be shared.
         ByteArray *key_current = new SharedAllocatedByteArray(key->size());
         memcpy(key_current->data(), key->data(), key->size());
-        LOG_TRACE("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk->size());
+        log::trace("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk->size());
         Status s = db_->PutChunk(write_options,
                                  key_current,
                                  chunk,
                                  offset_chunk,
                                  size_value);
         if (!s.IsOK()) {
-          LOG_TRACE("NetworkTask", "Error - Put(): %s", s.ToString().c_str());
+          log::trace("NetworkTask", "Error - Put(): %s", s.ToString().c_str());
         } else {
           buffer = nullptr;
         }
@@ -311,20 +311,20 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
 
       if (bytes_received_total == bytes_expected) {
         is_new = true;
-        LOG_TRACE("NetworkTask", "STORED key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected);
+        log::trace("NetworkTask", "STORED key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected);
         if (send(sockfd_, "STORED\r\n", 8, 0) == -1) {
-          LOG_EMERG("NetworkTask", "Error - send() %s", strerror(errno));
+          log::emerg("NetworkTask", "Error - send() %s", strerror(errno));
           break;
         }
       }
       is_new_buffer = true;
     } else {
       // for debugging
-      LOG_EMERG("NetworkTask", "Unknown case for buffer");
+      log::emerg("NetworkTask", "Unknown case for buffer");
       exit(-1);
     }
   }
-  LOG_TRACE("NetworkTask", "exit and close socket");
+  log::trace("NetworkTask", "exit and close socket");
 
   delete key;
   delete buffer;
@@ -358,13 +358,13 @@ void Server::AcceptNetworkTraffic() {
   db_ = new kdb::KingDB(db_options_, dbname_);
   Status s = db_->Open();
   if (!s.IsOK()) {
-    LOG_EMERG("Server", s.ToString().c_str()); 
+    log::emerg("Server", s.ToString().c_str()); 
     stop_requested_ = true;
     return;
   }
   tp_ = new ThreadPool(server_options_.num_threads);
   tp_->Start();
-  LOG_TRACE("Server", "waiting for connections...");
+  log::trace("Server", "waiting for connections...");
 
   // Ignoring SIGPIPE, which would crash the program when writing to
   // a broken socket -- doing this because MSG_NOSIGNAL doesn't work on Mac OS X
@@ -438,11 +438,11 @@ void Server::AcceptNetworkTraffic() {
     FD_SET(sockfd_notify_recv_, &sockfds_read);
     FD_SET(sockfd_listen, &sockfds_read);
 
-    LOG_TRACE("Server", "select()");
+    log::trace("Server", "select()");
     size_sa = sizeof(sockaddr_client);
     int ret_select = select(sockfd_max, &sockfds_read, NULL, NULL, NULL);
     if (ret_select < 0) {
-      LOG_TRACE("Server", "select() error %s", strerror(errno));
+      log::trace("Server", "select() error %s", strerror(errno));
       stop_requested_ = true;
       return;
     } else if (ret_select == 0) {
@@ -451,7 +451,7 @@ void Server::AcceptNetworkTraffic() {
 
     if (!FD_ISSET(sockfd_listen, &sockfds_read)) continue;
 
-    LOG_TRACE("Server", "accept()");
+    log::trace("Server", "accept()");
     sockfd_accept = accept(sockfd_listen, (struct sockaddr *)&sockaddr_client, &size_sa);
     if (sockfd_accept == -1) continue;
 
@@ -459,11 +459,11 @@ void Server::AcceptNetworkTraffic() {
               GetSockaddrIn((struct sockaddr *)&sockaddr_client),
               address,
               sizeof(address));
-    LOG_TRACE("Server", "got connection from %s\n", address);
+    log::trace("Server", "got connection from %s\n", address);
 
     tp_->AddTask(new NetworkTask(sockfd_accept, server_options_, db_));
   }
-  LOG_TRACE("Server", "Exiting thread");
+  log::trace("Server", "Exiting thread");
 }
 
 } // end of namespace kdb

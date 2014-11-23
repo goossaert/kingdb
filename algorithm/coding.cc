@@ -44,7 +44,10 @@ void GetFixed32(const char* buf, uint32_t* value) {
     memcpy(value, buf, sizeof(*value));
   } else {
     // NOTE: this code has not been tested yet
-    *value = buf[0] | buf[1] << 8 | buf[2] << 16 | buf[3] << 24;
+    *value =   (uint32_t)buf[0]
+             | (uint32_t)buf[1] << 8
+             | (uint32_t)buf[2] << 16
+             | (uint32_t)buf[3] << 24;
   }
 }
 
@@ -53,8 +56,14 @@ void GetFixed64(const char* buf, uint64_t* value) {
     memcpy(value, buf, sizeof(*value));
   } else {
     // NOTE: this code has not been tested yet
-    *value =   buf[0]       | buf[1] <<  8 | buf[2] << 16 | buf[3] << 24
-             | buf[4] << 32 | buf[5] << 40 | buf[6] << 48 | buf[7] << 56;
+    *value =   (uint64_t)buf[0]
+             | (uint64_t)buf[1] <<  8
+             | (uint64_t)buf[2] << 16
+             | (uint64_t)buf[3] << 24
+             | (uint64_t)buf[4] << 32
+             | (uint64_t)buf[5] << 40
+             | (uint64_t)buf[6] << 48
+             | (uint64_t)buf[7] << 56;
   }
 }
 

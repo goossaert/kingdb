@@ -23,11 +23,11 @@ class Iterator {
       : se_readonly_(se_readonly),
         read_options_(read_options),
         fileids_iterator_(fileids_iterator) {
-    LOG_TRACE("Iterator::ctor()", "start");
+    log::trace("Iterator::ctor()", "start");
   }
 
   ~Iterator() {
-    LOG_EMERG("Iterator::dtor()", "call");
+    log::emerg("Iterator::dtor()", "call");
     if (key_ != nullptr) {
       delete key_;
       delete value_;
@@ -37,7 +37,7 @@ class Iterator {
   }
 
   void Begin() {
-    LOG_TRACE("Iterator::Begin()", "start");
+    log::trace("Iterator::Begin()", "start");
     mutex_.lock();
     fileid_current_ = 0;
     has_file_ = false;
@@ -47,18 +47,18 @@ class Iterator {
     value_ = nullptr;
     mutex_.unlock();
     Next();
-    LOG_TRACE("Iterator::Begin()", "end");
+    log::trace("Iterator::Begin()", "end");
   }
 
   bool IsValid() {
-    LOG_TRACE("Iterator::IsValid()", "start");
+    log::trace("Iterator::IsValid()", "start");
     std::unique_lock<std::mutex> lock(mutex_);
-    LOG_TRACE("Iterator::IsValid()", "end");
+    log::trace("Iterator::IsValid()", "end");
     return is_valid_;
   }
 
   bool Next() {
-    LOG_TRACE("Iterator::Next()", "start");
+    log::trace("Iterator::Next()", "start");
     std::unique_lock<std::mutex> lock(mutex_);
     if (!is_valid_) return false;
     Status s;
@@ -70,14 +70,14 @@ class Iterator {
         key_ = nullptr;
         value_ = nullptr;
       }
-      LOG_TRACE("Iterator::Next()", "loop index_file:[%u] index_location:[%u]", index_fileid_, index_location_);
+      log::trace("Iterator::Next()", "loop index_file:[%u] index_location:[%u]", index_fileid_, index_location_);
       if (index_fileid_ >= fileids_iterator_->size()) {
         is_valid_ = false;
         break;
       }
 
       if (!has_file_) {
-        LOG_TRACE("Iterator::Next()", "initialize file");
+        log::trace("Iterator::Next()", "initialize file");
         fileid_current_ = fileids_iterator_->at(index_fileid_);
         filepath_current_ = se_readonly_->GetFilepath(fileid_current_);
         struct stat info;
@@ -109,9 +109,9 @@ class Iterator {
         has_file_ = true;
       }
 
-      LOG_TRACE("Iterator::Next()", "has file");
+      log::trace("Iterator::Next()", "has file");
       if (index_location_ >= locations_current_.size()) {
-        LOG_TRACE("Iterator::Next()", "index_location_ is out");
+        log::trace("Iterator::Next()", "index_location_ is out");
         has_file_ = false;
         index_fileid_ += 1;
         continue;
@@ -123,7 +123,7 @@ class Iterator {
       uint64_t location_current = locations_current_[index_location_];
       Status s = se_readonly_->GetEntry(location_current, &key, &value);
       if (!s.IsOK()) {
-        LOG_TRACE("Iterator::Next()", "GetEntry() failed");
+        log::trace("Iterator::Next()", "GetEntry() failed");
         delete key; 
         delete value;
         index_location_ += 1;
@@ -137,7 +137,7 @@ class Iterator {
       uint64_t location_out;
       s = se_readonly_->Get(key, &value_alt, &location_out);
       if (!s.IsOK()) {
-        LOG_TRACE("Iterator::Next()", "Get(): failed");
+        log::trace("Iterator::Next()", "Get(): failed");
         delete key;
         delete value;
         delete value_alt;
@@ -146,7 +146,7 @@ class Iterator {
       }
         
       if (location_current != location_out) {
-        LOG_TRACE("Iterator::Next()", "Get(): wrong location");
+        log::trace("Iterator::Next()", "Get(): wrong location");
         delete key;
         delete value;
         delete value_alt;
@@ -154,7 +154,7 @@ class Iterator {
         continue;
       }
 
-      LOG_TRACE("Iterator::Next()", "has a valid key/value pair");
+      log::trace("Iterator::Next()", "has a valid key/value pair");
       key_ = key;
       value_ = value;
       delete value_alt;
@@ -174,6 +174,8 @@ class Iterator {
   }
 
  private:
+  StorageEngine *se_readonly_;
+  ReadOptions read_options_;
   std::mutex mutex_;
   uint32_t fileid_current_;
   std::string filepath_current_;
@@ -181,8 +183,6 @@ class Iterator {
   std::vector<uint32_t>* fileids_iterator_;
   uint32_t index_location_;
   std::vector<uint64_t> locations_current_;
-  StorageEngine *se_readonly_;
-  ReadOptions read_options_;
   bool has_file_;
   bool is_valid_;
 

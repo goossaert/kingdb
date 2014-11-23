@@ -44,7 +44,7 @@ class DBTest {
     Status s = db_->Open();
     if (!s.IsOK()) {
       delete db_;
-      LOG_EMERG("Server", s.ToString().c_str()); 
+      log::emerg("Server", s.ToString().c_str()); 
     }
   }
 
@@ -72,11 +72,11 @@ class DBTest {
   }
 
   kdb::Status Get(const std::string& key, std::string *value_out) {
-
+    return Status::OK();
   }
 
   kdb::Status Put(const std::string& key, const std::string& value) {
-
+    return Status::OK();
   }
 
   kdb::KingDB* db_;

@@ -262,7 +262,7 @@ class ConfigParser {
   }
 
   Status LoadDefaultValues() {
-    ParseCommandLine(0, nullptr);
+    return ParseCommandLine(0, nullptr);
   }
 
   Status ParseCommandLine(int argc, char **argv) {

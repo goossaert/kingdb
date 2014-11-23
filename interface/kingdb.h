@@ -95,9 +95,9 @@ class KingDB: public Interface {
     std::string filepath_dboptions = DatabaseOptions::GetPath(dbname_);
     if (stat(filepath_dboptions.c_str(), &info) == 0) {
       // If there is a db_options file, try loading it
-      LOG_TRACE("KingDB::Open()", "Loading db_option file");
+      log::trace("KingDB::Open()", "Loading db_option file");
       if ((fd_dboptions_ = open(filepath_dboptions.c_str(), O_RDONLY, 0644)) < 0) {
-        LOG_EMERG("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
+        log::emerg("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
       }
 
       int ret = flock(fd_dboptions_, LOCK_EX | LOCK_NB);
@@ -114,9 +114,9 @@ class KingDB: public Interface {
       if (!s.IsOK()) return s;
     } else {
       // If there is no db_options file, write it
-      LOG_TRACE("KingDB::Open()", "Writing db_option file");
+      log::trace("KingDB::Open()", "Writing db_option file");
       if ((fd_dboptions_ = open(filepath_dboptions.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-        LOG_EMERG("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
+        log::emerg("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
       }
       char buffer[DatabaseOptionEncoder::GetFixedSize()];
       DatabaseOptionEncoder::EncodeTo(&db_options_, buffer);

@@ -26,15 +26,19 @@ class Logger {
   virtual ~Logger() { }
 
   static void Logv(bool thread_safe, int level, const char* logname, const char* format, ...) {
-    if (level>current_level()) return;
     va_list args;
     va_start(args, format);
+    Logv(thread_safe, level, logname, format, args);
+    va_end(args);
+  }
+
+  static void Logv(bool thread_safe, int level, const char* logname, const char* format, va_list args) {
+    if (level>current_level()) return;
     if (thread_safe) mutex_.lock();
     std::cerr << "[" << std::setw(16) << std::this_thread::get_id() << "] - ";
     std::cerr << logname << " - ";
     vfprintf(stderr, format, args);
     std::cerr << std::endl;
-    va_end(args);
     if (thread_safe) mutex_.unlock();
   }
 
@@ -82,6 +86,74 @@ class Logger {
  private:
   static int level_;
   static std::mutex mutex_;
+};
+
+
+class log {
+ public:
+  static void emerg(const char* logname, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    Logger::Logv(false, Logger::EMERG, logname, format, args);
+    va_end(args);
+  }
+
+  static void alert(const char* logname, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    Logger::Logv(false, Logger::ALERT, logname, format, args);
+    va_end(args);
+  }
+
+  static void crit(const char* logname, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    Logger::Logv(false, Logger::CRIT, logname, format, args);
+    va_end(args);
+  }
+
+  static void error(const char* logname, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    Logger::Logv(false, Logger::ERROR, logname, format, args);
+    va_end(args);
+  }
+
+  static void warn(const char* logname, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    Logger::Logv(false, Logger::WARN, logname, format, args);
+    va_end(args);
+  }
+
+  static void notice(const char* logname, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    Logger::Logv(false, Logger::NOTICE, logname, format, args);
+    va_end(args);
+  }
+
+  static void info(const char* logname, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    Logger::Logv(false, Logger::INFO, logname, format, args);
+    va_end(args);
+  }
+
+  static void debug(const char* logname, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    Logger::Logv(false, Logger::DEBUG, logname, format, args);
+    va_end(args);
+  }
+
+  static void trace(const char* logname, const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+    Logger::Logv(false, Logger::TRACE, logname, format, args);
+    va_end(args);
+  }
+
 };
 
 

@@ -29,9 +29,9 @@ struct CompressionOptions {
 struct DatabaseOptions {
  public:
   DatabaseOptions()
-      : hash(kxxHash_64),
-        compression(kLZ4Compression),
-        internal__hstable_header_size(8192) {
+      : internal__hstable_header_size(8192),
+        hash(kxxHash_64),
+        compression(kLZ4Compression) {
     DatabaseOptions &db_options = *this;
     ConfigParser parser;
     AddParametersToConfigParser(db_options, parser);

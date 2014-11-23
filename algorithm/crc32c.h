@@ -83,7 +83,7 @@ class CRC32 {
   }
 
   void stream(const char* data, size_t n) {
-    //LOG_TRACE("CRC32", "size: %zu", n);
+    //log::trace("CRC32", "size: %zu", n);
     uint64_t c = ts_.get();
     uint32_t c32 = c;
     uint32_t c_new = crc32c::Extend(c32, data, n);

@@ -58,12 +58,12 @@ class HSTableManager {
                  FileType filetype_default,
                  bool read_only=false)
       : db_options_(db_options),
-        filetype_default_(filetype_default),
         is_read_only_(read_only),
+        filetype_default_(filetype_default),
         prefix_(prefix),
         prefix_compaction_(prefix_compaction),
         dirpath_locks_(dirpath_locks) {
-    LOG_TRACE("HSTableManager::HSTableManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
+    log::trace("HSTableManager::HSTableManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
     dbname_ = dbname;
     hash_ = MakeHash(db_options.hash);
     Reset();
@@ -114,7 +114,7 @@ class HSTableManager {
   void SetSequenceFileId(uint32_t seq) {
     std::unique_lock<std::mutex> lock(mutex_sequence_fileid_);
     sequence_fileid_ = seq;
-    LOG_TRACE("HSTableManager::SetSequenceFileId", "seq:%u", seq);
+    log::trace("HSTableManager::SetSequenceFileId", "seq:%u", seq);
   }
 
   uint32_t GetSequenceFileId() {
@@ -124,7 +124,7 @@ class HSTableManager {
 
   uint32_t IncrementSequenceFileId(uint32_t inc) {
     std::unique_lock<std::mutex> lock(mutex_sequence_fileid_);
-    LOG_TRACE("HSTableManager::IncrementSequenceFileId", "sequence_fileid_:%u, inc:%u", sequence_fileid_, inc);
+    log::trace("HSTableManager::IncrementSequenceFileId", "sequence_fileid_:%u, inc:%u", sequence_fileid_, inc);
     sequence_fileid_ += inc;
     return sequence_fileid_;
   }
@@ -198,13 +198,13 @@ class HSTableManager {
   }
 
   void OpenNewFile() {
-    LOG_TRACE("HSTableManager::OpenNewFile()", "Opening file (before) [%s]: %u", filepath_.c_str(), GetSequenceFileId());
+    log::trace("HSTableManager::OpenNewFile()", "Opening file (before) [%s]: %u", filepath_.c_str(), GetSequenceFileId());
     IncrementSequenceFileId(1);
     IncrementSequenceTimestamp(1);
     filepath_ = GetFilepath(GetSequenceFileId());
-    LOG_TRACE("HSTableManager::OpenNewFile()", "Opening file [%s]: %u", filepath_.c_str(), GetSequenceFileId());
+    log::trace("HSTableManager::OpenNewFile()", "Opening file [%s]: %u", filepath_.c_str(), GetSequenceFileId());
     if ((fd_ = open(filepath_.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-      LOG_EMERG("HSTableManager::OpenNewFile()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
+      log::emerg("HSTableManager::OpenNewFile()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
       exit(-1); // TODO-3: gracefully handle open() errors
     }
     has_file_ = true;
@@ -224,7 +224,7 @@ class HSTableManager {
 
   void CloseCurrentFile() {
     if (!has_file_) return;
-    LOG_TRACE("HSTableManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
+    log::trace("HSTableManager::CloseCurrentFile()", "ENTER - fileid_:%d", fileid_);
 
     // The offarray should only be written if there are no more incoming writes to
     // the current file. If there are still writes in progress, the offarray should not
@@ -241,35 +241,42 @@ class HSTableManager {
   uint32_t FlushCurrentFile(int force_new_file=0, uint64_t padding=0) {
     if (!has_file_) return 0;
     uint32_t fileid_out = fileid_;
-    LOG_TRACE("HSTableManager::FlushCurrentFile()", "ENTER - fileid_:%d, has_file_:%d, buffer_has_items_:%d", fileid_, has_file_, buffer_has_items_);
+    log::trace("HSTableManager::FlushCurrentFile()", "ENTER - fileid_:%d, has_file_:%d, buffer_has_items_:%d", fileid_, has_file_, buffer_has_items_);
     if (has_file_ && buffer_has_items_) {
-      LOG_TRACE("HSTableManager::FlushCurrentFile()", "has_files && buffer_has_items_ - fileid_:%d", fileid_);
+      log::trace("HSTableManager::FlushCurrentFile()", "has_files && buffer_has_items_ - fileid_:%d", fileid_);
       if (write(fd_, buffer_raw_ + offset_start_, offset_end_ - offset_start_) < 0) {
-        LOG_TRACE("HSTableManager::FlushCurrentFile()", "Error write(): %s", strerror(errno));
+        log::emerg("HSTableManager::FlushCurrentFile()", "Error write(): %s", strerror(errno));
+        return 0;
       }
       file_resource_manager.SetFileSize(fileid_, offset_end_);
       offset_start_ = offset_end_;
       buffer_has_items_ = false;
-      LOG_TRACE("HSTableManager::FlushCurrentFile()", "items written - offset_end_:%d | size_block_:%d | force_new_file:%d", offset_end_, size_block_, force_new_file);
+      log::trace("HSTableManager::FlushCurrentFile()", "items written - offset_end_:%d | size_block_:%d | force_new_file:%d", offset_end_, size_block_, force_new_file);
     }
 
     if (padding) {
       offset_end_ += padding;
       offset_start_ = offset_end_;
       file_resource_manager.SetFileSize(fileid_, offset_end_);
-      ftruncate(fd_, offset_end_);
-      lseek(fd_, 0, SEEK_END);
+      if (ftruncate(fd_, offset_end_) < 0) {
+        log::emerg("HSTableManager::FlushCurrentFile()", "Error ftruncate(): %s", strerror(errno));
+        return 0;
+      }
+      if (lseek(fd_, 0, SEEK_END) < 0) {
+        log::emerg("HSTableManager::FlushCurrentFile()", "Error lseek(): %s", strerror(errno));
+        return 0;
+      }
     }
 
     if (offset_end_ >= size_block_ || (force_new_file && offset_end_ > db_options_.internal__hstable_header_size)) {
-      LOG_TRACE("HSTableManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
+      log::trace("HSTableManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
       file_resource_manager.SetFileSize(fileid_, offset_end_);
       CloseCurrentFile();
       //OpenNewFile();
     } else {
       //fileid_out = fileid_out - 1;
     }
-    LOG_TRACE("HSTableManager::FlushCurrentFile()", "done!");
+    log::trace("HSTableManager::FlushCurrentFile()", "done!");
     return fileid_out;
   }
 
@@ -277,11 +284,13 @@ class HSTableManager {
   Status FlushOffsetArray() {
     if (!has_file_) return Status::OK();
     uint32_t num = file_resource_manager.GetNumWritesInProgress(fileid_);
-    LOG_TRACE("HSTableManager::FlushOffsetArray()", "ENTER - fileid_:%d - num_writes_in_progress:%u", fileid_, num);
+    log::trace("HSTableManager::FlushOffsetArray()", "ENTER - fileid_:%d - num_writes_in_progress:%u", fileid_, num);
     if (file_resource_manager.GetNumWritesInProgress(fileid_) == 0) {
       uint64_t size_offarray;
       file_resource_manager.SetFileSize(fileid_, offset_end_);
-      ftruncate(fd_, offset_end_);
+      if (ftruncate(fd_, offset_end_) < 0) {
+        return Status::IOError("HSTableManager::FlushOffsetArray()", strerror(errno));
+      }
       Status s = WriteOffsetArray(fd_, file_resource_manager.GetOffsetArray(fileid_), &size_offarray, filetype_default_, file_resource_manager.HasPaddingInValues(fileid_), false);
       uint64_t filesize = file_resource_manager.GetFileSize(fileid_);
       file_resource_manager.SetFileSize(fileid_, filesize + size_offarray);
@@ -304,13 +313,13 @@ class HSTableManager {
       lffi.offset_entry = p.second;
       uint32_t length = HSTableFooterIndex::EncodeTo(&lffi, buffer_index_ + offset);
       offset += length;
-      LOG_TRACE("HSTableManager::WriteOffsetArray()", "hashed_key:[%llu] offset:[%08x]", p.first, p.second);
+      log::trace("HSTableManager::WriteOffsetArray()", "hashed_key:[%llu] offset:[%08x]", p.first, p.second);
     }
 
-    uint64_t position = lseek(fd, 0, SEEK_END);
-    // TODO-31: lseek() will not work to retrieve 'position' if the configs allow
-    // hstables to have sizes larger than (2^32)-1 -- lseek64() could be used,
-    // but is not standard on all unixes
+    int64_t position = lseek(fd, 0, SEEK_END);
+    if (position < 0) {
+      return Status::IOError("HSTableManager::WriteOffsetArray()", strerror(errno));
+    }
     struct HSTableFooter footer;
     footer.filetype = filetype;
     footer.offset_indexes = position;
@@ -325,14 +334,16 @@ class HSTableManager {
     EncodeFixed32(buffer_index_ + offset - 4, crc32);
 
     if (write(fd, buffer_index_, offset) < 0) {
-      LOG_TRACE("HSTableManager::WriteOffsetArray()", "Error write(): %s", strerror(errno));
+      log::trace("HSTableManager::WriteOffsetArray()", "Error write(): %s", strerror(errno));
     }
 
     // ftruncate() is necessary in case the file system space for the file was pre-allocated 
-    ftruncate(fd, position + offset);
+    if (ftruncate(fd, position + offset) < 0) {
+      return Status::IOError("HSTableManager::WriteOffsetArray()", strerror(errno));
+    }
 
     *size_out = offset;
-    LOG_TRACE("HSTableManager::WriteOffsetArray()", "offset_indexes:%u, num_entries:[%lu]", position, offarray_current.size());
+    log::trace("HSTableManager::WriteOffsetArray()", "offset_indexes:%u, num_entries:[%lu]", position, offarray_current.size());
     return Status::OK();
   }
 
@@ -348,11 +359,11 @@ class HSTableManager {
     uint64_t fileid_largefile = IncrementSequenceFileId(1);
     uint64_t timestamp_largefile = IncrementSequenceTimestamp(1);
     std::string filepath = GetFilepath(fileid_largefile);
-    LOG_TRACE("HSTableManager::WriteFirstChunkLargeOrder()", "filepath:[%s] key:[%s] tid:[0x%08llx]", filepath.c_str(), order.key->ToString().c_str(), order.tid);
+    log::trace("HSTableManager::WriteFirstChunkLargeOrder()", "filepath:[%s] key:[%s] tid:[0x%08llx]", filepath.c_str(), order.key->ToString().c_str(), order.tid);
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-      LOG_EMERG("HSTableManager::WriteFirstChunkLargeOrder()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
-      exit(-1); // TODO-3: gracefully handle open() errors
+      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
+      return 0;
     }
 
     // Write hstable header
@@ -362,7 +373,8 @@ class HSTableManager {
     lfh.timestamp = timestamp_largefile;
     HSTableHeader::EncodeTo(&lfh, buffer);
     if (write(fd, buffer, db_options_.internal__hstable_header_size) < 0) {
-      LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      return 0;
     }
 
     // Write entry header
@@ -378,26 +390,32 @@ class HSTableManager {
     uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
     key_to_headersize[order.tid][order.key->ToString()] = size_header;
     if (write(fd, buffer, size_header) < 0) {
-      LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      return 0;
     }
 
     // Write key and chunk
     // NOTE: Could also put the key and chunk in the buffer and do a single write
     if (write(fd, order.key->data(), order.key->size()) < 0) {
-      LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      return 0;
     }
     if (write(fd, order.chunk->data(), order.chunk->size()) < 0) {
-      LOG_TRACE("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      return 0;
     }
 
     uint64_t filesize = db_options_.internal__hstable_header_size + size_header + order.key->size() + order.size_value;
-    ftruncate(fd, filesize);
+    if (ftruncate(fd, filesize) < 0) {
+      log::emerg("HSTableManager::FlushLargeOrder()", "Error ftruncate(): %s", strerror(errno));
+      return 0;
+    }
     file_resource_manager.SetFileSize(fileid_largefile, filesize);
     close(fd);
     uint64_t fileid_shifted = fileid_largefile;
     fileid_shifted <<= 32;
     uint64_t location = fileid_shifted | db_options_.internal__hstable_header_size;
-    LOG_TRACE("HSTableManager::WriteFirstChunkLargeOrder()", "fileid [%d] location: [%llu]", fileid_largefile, location);
+    log::trace("HSTableManager::WriteFirstChunkLargeOrder()", "fileid [%d] location: [%llu]", fileid_largefile, location);
     file_resource_manager.SetNumWritesInProgress(fileid_largefile, 1);
     file_resource_manager.AddOffsetArray(fileid_largefile, std::pair<uint64_t, uint32_t>(hashed_key, db_options_.internal__hstable_header_size));
     return location;
@@ -415,16 +433,16 @@ class HSTableManager {
       return 0;
     }
 
-    LOG_TRACE("HSTableManager::WriteMiddleOrLastChunk()", "key [%s] filepath:[%s] offset_chunk:%llu", order.key->ToString().c_str(), filepath.c_str(), order.offset_chunk);
+    log::trace("HSTableManager::WriteMiddleOrLastChunk()", "key [%s] filepath:[%s] offset_chunk:%llu", order.key->ToString().c_str(), filepath.c_str(), order.offset_chunk);
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
-      LOG_EMERG("HSTableManager::WriteMiddleOrLastChunk()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
+      log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
       exit(-1); // TODO-3: gracefully handle open() errors
     }
 
     if (key_to_headersize.find(order.tid) == key_to_headersize.end() ||
         key_to_headersize[order.tid].find(order.key->ToString()) == key_to_headersize[order.tid].end()) {
-      LOG_TRACE("HSTableManager::WriteMiddleOrLastChunk()", "Missing in key_to_headersize[]");
+      log::trace("HSTableManager::WriteMiddleOrLastChunk()", "Missing in key_to_headersize[]");
     }
 
     uint32_t size_header = key_to_headersize[order.tid][order.key->ToString()];
@@ -434,13 +452,13 @@ class HSTableManager {
                order.chunk->data(),
                order.chunk->size(),
                offset_file + size_header + order.key->size() + order.offset_chunk) < 0) {
-      LOG_TRACE("HSTableManager::WriteMiddleOrLastChunk()", "Error pwrite(): %s", strerror(errno));
+      log::trace("HSTableManager::WriteMiddleOrLastChunk()", "Error pwrite(): %s", strerror(errno));
     }
 
     // If this is a last chunk, the header is written again to save the right size of compressed value,
     // and the crc32 is saved too
     if (order.IsLastChunk()) {
-      LOG_TRACE("HSTableManager::WriteMiddleOrLastChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:0x%08llx", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
+      log::trace("HSTableManager::WriteMiddleOrLastChunk()", "Write compressed size: [%s] - size:%llu, compressed size:%llu crc32:0x%08llx", order.key->ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct EntryHeader entry_header;
       entry_header.SetTypePut();
       entry_header.SetEntryFull();
@@ -466,27 +484,35 @@ class HSTableManager {
       entry_header.crc32 = crc32c::Combine(crc32_header, order.crc32, entry_header.size_key + entry_header.size_value_used());
       size_header_new = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
       if (size_header_new != size_header) {
-        LOG_EMERG("HSTableManager::WriteMiddleOrLastChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
+        log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
+        return 0;
       }
 
       if (pwrite(fd, buffer, size_header, offset_file) < 0) {
-        LOG_EMERG("HSTableManager::WriteMiddleOrLastChunk()", "Error pwrite(): %s", strerror(errno));
+        log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error pwrite(): %s", strerror(errno));
+        return 0;
       }
  
       if (order.IsLarge() && entry_header.IsCompressed()) {
         uint64_t filesize = db_options_.internal__hstable_header_size + size_header + order.key->size() + order.size_value_compressed;
         file_resource_manager.SetFileSize(fileid, filesize);
-        ftruncate(fd, filesize);
+        if (ftruncate(fd, filesize) < 0) {
+          log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error ftruncate(): %s", strerror(errno));
+          return 0;
+        }
       }
 
       uint32_t num_writes_in_progress = file_resource_manager.SetNumWritesInProgress(fileid, -1);
       if (fileid != fileid_ && num_writes_in_progress == 0) {
         // TODO: factorize this code with FlushOffsetArray()
-        LOG_TRACE("HSTableManager::WriteMiddleOrLastChunk()", "About to write Offset Array");
+        log::trace("HSTableManager::WriteMiddleOrLastChunk()", "About to write Offset Array");
         uint64_t size_offarray;
         FileType filetype = order.IsLarge() ? kCompactedLargeType : filetype_default_;
         uint64_t filesize_before = file_resource_manager.GetFileSize(fileid);
-        ftruncate(fd, filesize_before);
+        if (ftruncate(fd, filesize_before) < 0) {
+          log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error ftruncate(): %s", strerror(errno));
+          return 0;
+        }
         WriteOffsetArray(fd, file_resource_manager.GetOffsetArray(fileid), &size_offarray, filetype, file_resource_manager.HasPaddingInValues(fileid), false);
         uint64_t filesize = file_resource_manager.GetFileSize(fileid);
         file_resource_manager.SetFileSize(fileid, filesize + size_offarray);
@@ -496,7 +522,7 @@ class HSTableManager {
     }
 
     close(fd);
-    LOG_TRACE("HSTableManager::WriteMiddleOrLastChunk()", "all good");
+    log::trace("HSTableManager::WriteMiddleOrLastChunk()", "all good");
     return location;
   }
 
@@ -527,7 +553,7 @@ class HSTableManager {
         uint32_t crc32_header = crc32c::Value(buffer_raw_ + offset_end_ + 4, size_header - 4);
         entry_header.crc32 = crc32c::Combine(crc32_header, order.crc32, entry_header.size_key + entry_header.size_value_used());
         size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer_raw_ + offset_end_);
-        LOG_TRACE("HSTableManager::WriteFirstChunkOrSmallOrder()", "IsSelfContained():true - crc32 [0x%08x]", entry_header.crc32);
+        log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "IsSelfContained():true - crc32 [0x%08x]", entry_header.crc32);
       }
 
       memcpy(buffer_raw_ + offset_end_ + size_header, order.key->data(), order.key->size());
@@ -542,7 +568,7 @@ class HSTableManager {
 
       if (!order.IsSelfContained()) {
         key_to_headersize[order.tid][order.key->ToString()] = size_header;
-        LOG_TRACE("HSTableManager::WriteFirstChunkOrSmallOrder()", "BEFORE fileid_ %u", fileid_);
+        log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "BEFORE fileid_ %u", fileid_);
         file_resource_manager.SetNumWritesInProgress(fileid_, 1);
         FlushCurrentFile(0, order.size_value - order.chunk->size());
         // NOTE: A better way to do it would be to copy things into the buffer, and
@@ -556,11 +582,11 @@ class HSTableManager {
         //FlushCurrentFile();
         //ftruncate(fd_, offset_end_);
         //lseek(fd_, 0, SEEK_END);
-        LOG_TRACE("HSTableManager::WriteFirstChunkOrSmallOrder()", "AFTER fileid_ %u", fileid_);
+        log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "AFTER fileid_ %u", fileid_);
       }
-      LOG_TRACE("HSTableManager::WriteFirstChunkOrSmallOrder()", "Put [%s]", order.key->ToString().c_str());
+      log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "Put [%s]", order.key->ToString().c_str());
     } else { // order.type == OrderType::Remove
-      LOG_TRACE("HSTableManager::WriteFirstChunkOrSmallOrder()", "Remove [%s]", order.key->ToString().c_str());
+      log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "Remove [%s]", order.key->ToString().c_str());
       entry_header.SetTypeRemove();
       entry_header.SetEntryFull();
       entry_header.size_key = order.key->size();
@@ -585,7 +611,7 @@ class HSTableManager {
       if (!has_file_) OpenNewFile();
 
       if (offset_end_ > size_block_) {
-        LOG_TRACE("HSTableManager::WriteOrdersAndFlushFile()", "About to flush - offset_end_: %llu | size_key: %d | size_value: %d | size_block_: %llu", offset_end_, order.key->size(), order.size_value, size_block_);
+        log::trace("HSTableManager::WriteOrdersAndFlushFile()", "About to flush - offset_end_: %llu | size_key: %d | size_value: %d | size_block_: %llu", offset_end_, order.key->size(), order.size_value, size_block_);
         FlushCurrentFile(true, 0);
       }
 
@@ -660,9 +686,9 @@ class HSTableManager {
         if (location != 0) {
           WriteMiddleOrLastChunk(order, hashed_key, location);
         } else {
-          LOG_EMERG("HSTableManager", "Avoided catastrophic location error (in case 2) key:[%s] tid:[0x%08llx]", order.key->ToString().c_str(), order.tid); 
+          log::emerg("HSTableManager", "Avoided catastrophic location error (in case 2) key:[%s] tid:[0x%08llx]", order.key->ToString().c_str(), order.tid); 
           for (auto& p: key_to_location[order.tid]) {
-            LOG_EMERG("HSTableManager", "key:%s value:%llu", p.first.c_str(), p.second);
+            log::emerg("HSTableManager", "key:%s value:%llu", p.first.c_str(), p.second);
           }
         }
 
@@ -679,7 +705,7 @@ class HSTableManager {
       if (order.IsLarge() && order.IsFirstChunk()) { caseid = 1; }
       else if (order.IsMiddleOrLastChunk()) { caseid = 2; }
       else { caseid = 3; }
-      LOG_TRACE("HSTableManager::WriteOrdersAndFlushFile()",
+      log::trace("HSTableManager::WriteOrdersAndFlushFile()",
                 "%d. key: [%s] size_chunk:%llu offset_chunk: %llu",
                 caseid, order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk);
 
@@ -687,11 +713,11 @@ class HSTableManager {
       // If the order is self-contained or a last chunk,
       // add his location to the output map_index_out[]
       if (order.IsSelfContained() || order.IsLastChunk()) {
-        LOG_TRACE("HSTableManager::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%llu offset_chunk: %llu location:%llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk, location);
+        log::trace("HSTableManager::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%llu offset_chunk: %llu location:%llu", order.key->ToString().c_str(), order.chunk->size(), order.offset_chunk, location);
         if (location != 0) {
           map_index_out.insert(std::pair<uint64_t, uint64_t>(hashed_key, location));
         } else {
-          LOG_EMERG("HSTableManager", "Avoided catastrophic location error (post-processing last chunk)"); 
+          log::emerg("HSTableManager", "Avoided catastrophic location error (post-processing last chunk)"); 
         }
         if (key_to_location.find(order.tid) != key_to_location.end()) {
           key_to_location[order.tid].erase(order.key->ToString());
@@ -704,13 +730,13 @@ class HSTableManager {
       } else if (order.IsFirstChunk()) {
         if (location != 0 && order.type != OrderType::Remove) {
           key_to_location[order.tid][order.key->ToString()] = location;
-          LOG_TRACE("HSTableManager", "location saved: [%llu]", location); 
+          log::trace("HSTableManager", "location saved: [%llu]", location); 
         } else {
-          LOG_TRACE("HSTableManager", "Avoided catastrophic location error (post-processing first chunk)"); 
+          log::trace("HSTableManager", "Avoided catastrophic location error (post-processing first chunk)"); 
         }
       }
     }
-    LOG_TRACE("HSTableManager::WriteOrdersAndFlushFile()", "end flush");
+    log::trace("HSTableManager::WriteOrdersAndFlushFile()", "end flush");
     FlushCurrentFile(0, 0);
   }
 
@@ -779,7 +805,7 @@ class HSTableManager {
       if (strcmp(entry->d_name, prefix_compaction_.c_str()) == 0) continue;
       int ret = snprintf(filepath, FileUtil::maximum_path_size(), "%s/%s", dbname.c_str(), entry->d_name);
       if (ret < 0 || ret >= FileUtil::maximum_path_size()) {
-        LOG_EMERG("HsTableManager::LoadDatabase()",
+        log::emerg("HsTableManager::LoadDatabase()",
                   "Filepath buffer is too small, could not build the filepath string for file [%s]", entry->d_name); 
         continue;
       }
@@ -787,21 +813,21 @@ class HSTableManager {
       fileid = HSTableManager::hex_to_num(entry->d_name);
       if (   fileids_ignore != nullptr
           && fileids_ignore->find(fileid) != fileids_ignore->end()) {
-        LOG_TRACE("HSTableManager::LoadDatabase()",
+        log::trace("HSTableManager::LoadDatabase()",
                   "Skipping file in fileids_ignore:: [%s] [%lld] [%u]\n",
                   entry->d_name, info.st_size, fileid);
         continue;
       }
       if (fileid_end != 0 && fileid > fileid_end) {
-        LOG_TRACE("HSTableManager::LoadDatabase()",
+        log::trace("HSTableManager::LoadDatabase()",
                   "Skipping file with id larger than fileid_end (%u): [%s] [%lld] [%u]\n",
                   fileid, entry->d_name, info.st_size, fileid);
         continue;
       }
-      LOG_TRACE("HSTableManager::LoadDatabase()",
+      log::trace("HSTableManager::LoadDatabase()",
                 "file: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
       if (info.st_size <= db_options_.internal__hstable_header_size) {
-        LOG_TRACE("HSTableManager::LoadDatabase()",
+        log::trace("HSTableManager::LoadDatabase()",
                   "file: [%s] only has a header or less, skipping\n", entry->d_name);
         continue;
       }
@@ -810,7 +836,7 @@ class HSTableManager {
       struct HSTableHeader lfh;
       Status s = HSTableHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &lfh);
       if (!s.IsOK()) {
-        LOG_TRACE("HSTableManager::LoadDatabase()",
+        log::trace("HSTableManager::LoadDatabase()",
                   "file: [%s] has an invalid header, skipping\n", entry->d_name);
         continue;
       }
@@ -826,7 +852,7 @@ class HSTableManager {
       uint32_t fileid = p.second;
       if (fileids_iterator != nullptr) fileids_iterator->push_back(fileid);
       std::string filepath = GetFilepath(fileid);
-      LOG_TRACE("HSTableManager::LoadDatabase()", "Loading file:[%s] with key:[%s]", filepath.c_str(), p.first.c_str());
+      log::trace("HSTableManager::LoadDatabase()", "Loading file:[%s] with key:[%s]", filepath.c_str(), p.first.c_str());
       if (stat(filepath.c_str(), &info) != 0) continue;
       Mmap mmap(filepath.c_str(), info.st_size);
       uint64_t filesize;
@@ -837,13 +863,13 @@ class HSTableManager {
         if (is_file_large) file_resource_manager.SetFileLarge(fileid);
         if (is_file_compacted) file_resource_manager.SetFileCompacted(fileid);
       } else if (!s.IsOK() && !is_read_only_) {
-        LOG_WARN("HSTableManager::LoadDatabase()", "Could not load index in file [%s], entering recovery mode", filepath.c_str());
+        log::warn("HSTableManager::LoadDatabase()", "Could not load index in file [%s], entering recovery mode", filepath.c_str());
         s = RecoverFile(mmap, fileid, index_se);
         if (!s.IsOK()) {
-          LOG_WARN("HSTableManager::LoadDatabase()", "Recovery failed for file [%s]", filepath.c_str());
+          log::warn("HSTableManager::LoadDatabase()", "Recovery failed for file [%s]", filepath.c_str());
           mmap.Close();
           if (std::remove(filepath.c_str()) != 0) {
-            LOG_EMERG("HSTableManager::LoadDatabase()", "Could not remove file [%s]", filepath.c_str());
+            log::emerg("HSTableManager::LoadDatabase()", "Could not remove file [%s]", filepath.c_str());
           }
         }
       }
@@ -862,32 +888,40 @@ class HSTableManager {
                   uint64_t *filesize_out=nullptr,
                   bool *is_file_large_out=nullptr,
                   bool *is_file_compacted_out=nullptr) {
-    LOG_TRACE("LoadFile()", "Loading [%s] of size:%u, sizeof(HSTableFooter):%u", mmap.filepath(), mmap.filesize(), HSTableFooter::GetFixedSize());
+    log::trace("LoadFile()", "Loading [%s] of size:%u, sizeof(HSTableFooter):%u", mmap.filepath(), mmap.filesize(), HSTableFooter::GetFixedSize());
 
     struct HSTableFooter footer;
-    Status s = HSTableFooter::DecodeFrom(mmap.datafile() + mmap.filesize() - HSTableFooter::GetFixedSize(), HSTableFooter::GetFixedSize(), &footer);
-    if (!s.IsOK() || footer.magic_number != HSTableManager::get_magic_number()) {
-      LOG_TRACE("LoadFile()", "Skipping [%s] - magic_number:[%llu/%llu]", mmap.filepath(), footer.magic_number, get_magic_number());
+    Status s;
+    s = HSTableFooter::DecodeFrom(mmap.datafile() + mmap.filesize() - HSTableFooter::GetFixedSize(),
+                                  HSTableFooter::GetFixedSize(),
+                                  &footer);
+    if (!s.IsOK()) return s;
+    if (footer.magic_number != HSTableManager::get_magic_number()) {
+      log::trace("LoadFile()", "Skipping [%s] - magic_number:[%llu/%llu]", mmap.filepath(), footer.magic_number, get_magic_number());
       return Status::IOError("Invalid footer");
     }
     
     uint32_t crc32_computed = crc32c::Value(mmap.datafile() + footer.offset_indexes, mmap.filesize() - footer.offset_indexes - 4);
     if (crc32_computed != footer.crc32) {
-      LOG_TRACE("LoadFile()", "Skipping [%s] - Invalid CRC32:[%08x/%08x]", mmap.filepath(), footer.crc32, crc32_computed);
+      log::trace("LoadFile()", "Skipping [%s] - Invalid CRC32:[%08x/%08x]", mmap.filepath(), footer.crc32, crc32_computed);
       return Status::IOError("Invalid footer");
     }
     
-    LOG_TRACE("LoadFile()", "Footer OK");
+    log::trace("LoadFile()", "Footer OK");
     // The file has a clean footer, load all the offsets in the index
     uint64_t offset_index = footer.offset_indexes;
     struct HSTableFooterIndex lffi;
     for (auto i = 0; i < footer.num_entries; i++) {
-      uint32_t length_lffi;
-      HSTableFooterIndex::DecodeFrom(mmap.datafile() + offset_index, mmap.filesize() - offset_index, &lffi, &length_lffi);
+      uint32_t length_lffi = 0;
+      s = HSTableFooterIndex::DecodeFrom(mmap.datafile() + offset_index,
+                                         mmap.filesize() - offset_index,
+                                         &lffi,
+                                         &length_lffi);
+      if (!s.IsOK()) return s;
       uint64_t fileid_shifted = fileid;
       fileid_shifted <<= 32;
       index_se.insert(std::pair<uint64_t, uint64_t>(lffi.hashed_key, fileid_shifted | lffi.offset_entry));
-      LOG_TRACE("LoadFile()",
+      log::trace("LoadFile()",
                 "Add item to index -- hashed_key:[%llu] offset:[%u] -- offset_index:[%llu]",
                 lffi.hashed_key, lffi.offset_entry, offset_index);
       offset_index += length_lffi;
@@ -895,7 +929,7 @@ class HSTableManager {
     if (filesize_out) *filesize_out = mmap.filesize();
     if (is_file_large_out) *is_file_large_out = footer.IsTypeLarge() ? true : false;
     if (is_file_compacted_out) *is_file_compacted_out = footer.IsTypeCompacted() ? true : false;
-    LOG_TRACE("LoadFile()", "Loaded [%s] num_entries:[%llu]", mmap.filepath(), footer.num_entries);
+    log::trace("LoadFile()", "Loaded [%s] num_entries:[%llu]", mmap.filepath(), footer.num_entries);
 
     return Status::OK();
   }
@@ -958,7 +992,7 @@ class HSTableManager {
 
       if (entry_header.HasPadding()) has_padding_in_values = true;
       offset += size_header + entry_header.size_key + entry_header.size_value_offset();
-      LOG_TRACE("HSTableManager::RecoverFile",
+      log::trace("HSTableManager::RecoverFile",
                 "Scanned hash [%llu], next offset [%llu] - CRC32:%s stored=0x%08x computed=0x%08x",
                 entry_header.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry_header.crc32, crc32_.get());
     }
@@ -968,10 +1002,12 @@ class HSTableManager {
       mmap.Close();
       int fd;
       if ((fd = open(mmap.filepath(), O_WRONLY, 0644)) < 0) {
-        LOG_EMERG("HSTableManager::RecoverFile()", "Could not open file [%s]: %s", mmap.filepath(), strerror(errno));
+        log::emerg("HSTableManager::RecoverFile()", "Could not open file [%s]: %s", mmap.filepath(), strerror(errno));
         return Status::IOError("Could not open file for recovery", mmap.filepath());
       }
-      ftruncate(fd, offset);
+      if (ftruncate(fd, offset) < 0) {
+        return Status::IOError("HSTableManager::RecoverFile()", strerror(errno));
+      }
       uint64_t size_offarray;
       WriteOffsetArray(fd, offarray_current, &size_offarray, lfh.GetFileType(), has_padding_in_values, has_invalid_entries);
       file_resource_manager.SetFileSize(fileid, mmap.filesize() + size_offarray);
@@ -993,7 +1029,6 @@ class HSTableManager {
     }
 
     uint32_t fileid = 0;
-    struct stat info;
     while ((entry = readdir(directory)) != NULL) {
       if (strncmp(entry->d_name, ".", 1) == 0) continue;
       fileid = HSTableManager::hex_to_num(entry->d_name);
@@ -1004,7 +1039,7 @@ class HSTableManager {
 
     for (auto& fileid: fileids) {
       if (std::remove(GetFilepath(fileid).c_str()) != 0) {
-        LOG_EMERG("RemoveAllLockedFiles()", "Could not remove data file [%s]", GetFilepath(fileid).c_str());
+        log::emerg("RemoveAllLockedFiles()", "Could not remove data file [%s]", GetFilepath(fileid).c_str());
       }
     }
 

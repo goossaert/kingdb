@@ -24,9 +24,9 @@ class StorageEngine {
 
   void ProcessingLoop() {
     while(true) {
-      LOG_TRACE("StorageEngine::processing_loop()", "start");
+      log::trace("StorageEngine::processing_loop()", "start");
       std::vector<Order> buffer = EventManager::flush_buffer.Wait();     
-      LOG_TRACE("StorageEngine::processing_loop()", "got buffer");
+      log::trace("StorageEngine::processing_loop()", "got buffer");
       mutex_data_.lock();
       for (auto& order: buffer) {
         if (order.type == OrderType::Put) {
@@ -37,21 +37,21 @@ class StorageEngine {
       }
       mutex_data_.unlock();
       EventManager::flush_buffer.Done();
-      LOG_TRACE("StorageEngine::processing_loop()", "done");
+      log::trace("StorageEngine::processing_loop()", "done");
       //EventManager::update_index.StartAndBlockUntilDone(buffer);
     }
   }
 
   Status GetEntry(const std::string& key, std::string *value_out) {
     std::unique_lock<std::mutex> lock(mutex_data_);
-    LOG_TRACE("StorageEngine::GetEntry()", "%s", key.c_str());
+    log::trace("StorageEngine::GetEntry()", "%s", key.c_str());
     auto p = data_.find(key);
     if (p != data_.end()) {
       *value_out = data_[key];
-      LOG_TRACE("StorageEngine::GetEntry()", "%s - found [%s]", key.c_str(), value_out->c_str());
+      log::trace("StorageEngine::GetEntry()", "%s - found [%s]", key.c_str(), value_out->c_str());
       return Status::OK();
     }
-    LOG_TRACE("StorageEngine::GetEntry()", "%s - not found!", key.c_str());
+    log::trace("StorageEngine::GetEntry()", "%s - not found!", key.c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
   }
 

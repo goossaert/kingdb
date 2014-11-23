@@ -20,7 +20,7 @@ class DummyInterface: public Interface {
   virtual ~DummyInterface() {}
 
   virtual Status Get(const std::string& key, std::string *value_out) override {
-    LOG_TRACE("KingDB Get()", "[%s]", key.c_str());
+    log::trace("KingDB Get()", "[%s]", key.c_str());
     std::unique_lock<std::mutex> lock(mutex_);
     if (map_.find(key) == map_.end()) {
       return Status::NotFound("not found");
@@ -30,14 +30,14 @@ class DummyInterface: public Interface {
   }
 
   virtual Status Put(const std::string& key, const std::string& value) override {
-    LOG_TRACE("KingDB Put()", "[%s] [%s]", key.c_str(), value.c_str());
+    log::trace("KingDB Put()", "[%s] [%s]", key.c_str(), value.c_str());
     std::unique_lock<std::mutex> lock(mutex_);
     map_[key] = value;
     return Status::OK();
   }
 
   virtual Status Remove(const std::string& key) override {
-    LOG_TRACE("KingDB Remove()", "[%s]", key.c_str());
+    log::trace("KingDB Remove()", "[%s]", key.c_str());
     std::unique_lock<std::mutex> lock(mutex_);
     if (map_.find(key) == map_.end()) {
       return Status::NotFound("not found");

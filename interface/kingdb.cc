@@ -7,26 +7,26 @@
 namespace kdb {
 
 Status KingDB::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
-  LOG_TRACE("KingDB Get()", "[%s]", key->ToString().c_str());
+  log::trace("KingDB Get()", "[%s]", key->ToString().c_str());
   Status s = wb_->Get(read_options, key, value_out);
   if (s.IsRemoveOrder()) {
     return Status::NotFound("Unable to find entry");
   } else if (s.IsNotFound()) {
-    LOG_TRACE("KingDB Get()", "not found in buffer");
+    log::trace("KingDB Get()", "not found in buffer");
     s = se_->Get(key, value_out);
     if (s.IsNotFound()) {
-      LOG_TRACE("KingDB Get()", "not found in storage engine");
+      log::trace("KingDB Get()", "not found in storage engine");
       return s;
     } else if (s.IsOK()) {
-      LOG_TRACE("KingDB Get()", "found in storage engine");
+      log::trace("KingDB Get()", "found in storage engine");
       return s;
     } else {
-      LOG_TRACE("KingDB Get()", "unidentified error");
+      log::trace("KingDB Get()", "unidentified error");
       return s;
     }
   }
 
-  LOG_TRACE("KingDB Get()", "found in buffer");
+  log::trace("KingDB Get()", "found in buffer");
   return s;
 }
 
@@ -74,7 +74,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   if (se_->GetFreeSpace() < db_options_.storage__free_space_reject_orders) {
     return Status::IOError("Not enough free space on the file system");
   }
-  LOG_TRACE("KingDB::PutChunkValidSize()",
+  log::trace("KingDB::PutChunkValidSize()",
             "[%s] offset_chunk:%llu",
             key->ToString().c_str(),
             offset_chunk);
@@ -87,7 +87,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 
   bool is_first_chunk = (offset_chunk == 0);
   bool is_last_chunk = (chunk->size() + offset_chunk == size_value);
-  LOG_TRACE("KingDB::PutChunkValidSize()",
+  log::trace("KingDB::PutChunkValidSize()",
             "CompressionType:%d",
             db_options_.compression.type);
 
@@ -103,7 +103,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
       compressor_.ResetThreadLocalStorage();
     }
 
-    LOG_TRACE("KingDB::PutChunkValidSize()",
+    log::trace("KingDB::PutChunkValidSize()",
               "[%s] size_compressed:%llu",
               key->ToString().c_str(), compressor_.size_compressed());
 
@@ -118,7 +118,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     if (!s.IsOK()) return s;
     chunk_compressed = new SharedAllocatedByteArray(compressed, size_compressed);
 
-    LOG_TRACE("KingDB::PutChunkValidSize()",
+    log::trace("KingDB::PutChunkValidSize()",
               "[%s] (%llu) compressed size %llu - offset_chunk_compressed %llu",
               key->ToString().c_str(),
               chunk->size(),
@@ -142,7 +142,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   crc32_.stream(chunk_final->data(), chunk_final->size());
   if (is_last_chunk) crc32 = crc32_.get();
 
-  LOG_TRACE("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%llu crc32:0x%llx END", key->ToString().c_str(), size_value_compressed, crc32);
+  log::trace("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%llu crc32:0x%llx END", key->ToString().c_str(), size_value_compressed, crc32);
 
   return wb_->PutChunk(write_options,
                       key,
@@ -156,7 +156,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 
 Status KingDB::Remove(WriteOptions& write_options,
                       ByteArray *key) {
-  LOG_TRACE("KingDB::Remove()", "[%s]", key->ToString().c_str());
+  log::trace("KingDB::Remove()", "[%s]", key->ToString().c_str());
   if (se_->GetFreeSpace() < db_options_.storage__free_space_reject_orders) {
     return Status::IOError("Not enough free space on the file system");
   }
@@ -165,17 +165,17 @@ Status KingDB::Remove(WriteOptions& write_options,
 
 
 Interface* KingDB::NewSnapshot() {
-  LOG_TRACE("KingDB::NewSnapshot()", "start");
+  log::trace("KingDB::NewSnapshot()", "start");
   std::set<uint32_t>* fileids_ignore;
   uint32_t snapshot_id;
   Status s = se_->GetNewSnapshotData(&snapshot_id, &fileids_ignore);
   if (!s.IsOK()) return nullptr;
 
-  LOG_TRACE("KingDB::NewSnapshot()", "Flushing 0");
+  log::trace("KingDB::NewSnapshot()", "Flushing 0");
   wb_->Flush();
-  LOG_TRACE("KingDB::NewSnapshot()", "Flushing 1");
+  log::trace("KingDB::NewSnapshot()", "Flushing 1");
   uint32_t fileid_end = se_->FlushCurrentFileForSnapshot();
-  LOG_TRACE("KingDB::NewSnapshot()", "Flushing 2");
+  log::trace("KingDB::NewSnapshot()", "Flushing 2");
   StorageEngine *se_readonly = new StorageEngine(db_options_,
                                                  nullptr,
                                                  dbname_,
