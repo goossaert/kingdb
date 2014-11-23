@@ -105,7 +105,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         while (buffer->data()[offset_value] != '\n') offset_value++;
         offset_value++; // for the \n
 
-        log::trace("NetworkTask", "offset_value %llu", offset_value);
+        log::trace("NetworkTask", "offset_value %" PRIu64, offset_value);
 
         std::smatch matches;
         std::string str_buffer(buffer->data(), offset_value);
@@ -113,7 +113,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
           size_value = atoi(std::string(matches[2]).c_str());
           bytes_expected = offset_value + size_value + 2;
           std::string str_debug = std::string(matches[2]);
-          log::trace("NetworkTask", "[%s] expected [%s] [%llu]", key->ToString().c_str(), str_debug.c_str(), bytes_expected);
+          log::trace("NetworkTask", "[%s] expected [%s] [%" PRIu64 "]", key->ToString().c_str(), str_debug.c_str(), bytes_expected);
           // +2: because of the final \r\n
         } else {
           // should never happen, keeping it here until fully tested
@@ -158,7 +158,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
 
         if (s.IsOK()) {
           log::trace("NetworkTask", "GET: found");
-          int ret = snprintf(buffer_send, server_options_.size_buffer_send, "VALUE %s 0 %llu\r\n", buffer->ToString().c_str(), value->size());
+          int ret = snprintf(buffer_send, server_options_.size_buffer_send, "VALUE %s 0 %" PRIu64 "\r\n", buffer->ToString().c_str(), value->size());
           if (ret < 0 || ret >= server_options_.size_buffer_send) {
             log::emerg("NetworkTask", "Network send buffer is too small"); 
           }
@@ -296,7 +296,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         // solution. Once the bug is fixed, memory must be shared.
         ByteArray *key_current = new SharedAllocatedByteArray(key->size());
         memcpy(key_current->data(), key->data(), key->size());
-        log::trace("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu size_chunk:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk->size());
+        log::trace("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%" PRIu64 " bytes_received_total:%" PRIu64 " bytes_expected:%" PRIu64 " size_chunk:%" PRIu64, key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk->size());
         Status s = db_->PutChunk(write_options,
                                  key_current,
                                  chunk,
@@ -311,7 +311,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
 
       if (bytes_received_total == bytes_expected) {
         is_new = true;
-        log::trace("NetworkTask", "STORED key [%s] bytes_received_buffer:%llu bytes_received_total:%llu bytes_expected:%llu", key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected);
+        log::trace("NetworkTask", "STORED key [%s] bytes_received_buffer:%" PRIu64 " bytes_received_total:%" PRIu64 " bytes_expected:%" PRIu64, key->ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected);
         if (send(sockfd_, "STORED\r\n", 8, 0) == -1) {
           log::emerg("NetworkTask", "Error - send() %s", strerror(errno));
           break;

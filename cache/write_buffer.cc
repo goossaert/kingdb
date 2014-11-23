@@ -161,7 +161,7 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
 
   log::trace("WriteBuffer::WriteChunk()",
-            "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d",
+            "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d",
             key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
 
   bool is_first_chunk = (offset_chunk == 0);
@@ -184,7 +184,7 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   if (buffers_[im_live_].size()) {
     for(auto &p: buffers_[im_live_]) {   
       log::trace("WriteBuffer::WriteChunk()",
-                "Write() ITEM key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d",
+                "Write() ITEM key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_live_]:%d",
                 p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
     }
   } else {
@@ -262,7 +262,7 @@ void WriteBuffer::ProcessingLoop() {
     log::debug("LOCK", "2 lock");
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
     while (sizes_[im_copy_] == 0) {
-      log::trace("WriteBuffer", "ProcessingLoop() - wait - %llu %llu", buffers_[im_copy_].size(), buffers_[im_live_].size());
+      log::trace("WriteBuffer", "ProcessingLoop() - wait - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
       can_swap_ = true;
       std::cv_status status = cv_flush_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.write_buffer__flush_timeout));
       if (status == std::cv_status::no_timeout) {
@@ -286,7 +286,7 @@ void WriteBuffer::ProcessingLoop() {
       }
     }
 
-    log::trace("WriteBuffer", "ProcessingLoop() - start swap - %llu %llu", buffers_[im_copy_].size(), buffers_[im_live_].size());
+    log::trace("WriteBuffer", "ProcessingLoop() - start swap - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
  
     // Notify the storage engine that the buffer can be flushed
     log::trace("BM", "WAIT: Get()-flush_buffer");
@@ -318,11 +318,11 @@ void WriteBuffer::ProcessingLoop() {
     sizes_[im_copy_] = 0;
     buffers_[im_copy_].clear();
 
-    log::trace("WriteBuffer", "ProcessingLoop() - end swap - %llu %llu", buffers_[im_copy_].size(), buffers_[im_live_].size());
+    log::trace("WriteBuffer", "ProcessingLoop() - end swap - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
  
     if (buffers_[im_copy_].size()) {
       for(auto &p: buffers_[im_copy_]) {
-        log::trace("WriteBuffer", "ProcessingLoop() ITEM im_copy - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
+        log::trace("WriteBuffer", "ProcessingLoop() ITEM im_copy - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
       }
     } else {
       log::trace("WriteBuffer", "ProcessingLoop() ITEM no buffers_[im_copy_]");
@@ -330,7 +330,7 @@ void WriteBuffer::ProcessingLoop() {
 
     if (buffers_[im_live_].size()) {
       for(auto &p: buffers_[im_live_]) {
-        log::trace("WriteBuffer", "ProcessingLoop() ITEM im_live - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%llu sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
+        log::trace("WriteBuffer", "ProcessingLoop() ITEM im_live - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
       }
     } else {
       log::trace("WriteBuffer", "ProcessingLoop() ITEM no buffers_[im_live_]");

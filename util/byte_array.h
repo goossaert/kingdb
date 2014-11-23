@@ -216,7 +216,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     if (size_compressed_ == 0) { // if no compression
       crc32_.stream(data_, size_);
       if (crc32_.get() != crc32_value_) {
-        log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
+        log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
         return Status::IOError("Bad CRC32");
       }
       *data_out = data_;
@@ -239,10 +239,10 @@ class SharedMmappedByteArray: public ByteArrayCommon {
                                       &size_frame);
 
     if (s.IsDone() && crc32_.get() != crc32_value_) {
-      log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
+      log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
       return Status::IOError("Bad CRC32");
     } else if (!s.IsOK()) {
-      log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08llx computed:0x%08llx\n", crc32_value_, crc32_.get());
+      log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
       return s;
     }
 

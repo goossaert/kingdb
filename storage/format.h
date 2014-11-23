@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
+#include <inttypes.h>
 
 #include "util/logger.h"
 #include "util/status.h"
@@ -51,7 +52,7 @@ struct EntryHeader {
   uint64_t hash;
 
   void print() {
-    log::trace("EntryHeader::print()", "flags:%u crc32:%u size_key:%llu size_value:%llu size_value_compressed:%llu hash:%llu", flags, crc32, size_key, size_value, size_value_compressed, hash);
+    log::trace("EntryHeader::print()", "flags:%u crc32:%u size_key:%" PRIu64 " size_value:%" PRIu64 " size_value_compressed:%" PRIu64 " hash:%" PRIu64, flags, crc32, size_key, size_value, size_value_compressed, hash);
   }
 
   void SetHasPadding(bool b) {
@@ -115,7 +116,7 @@ struct EntryHeader {
   static Status DecodeFrom(const DatabaseOptions& db_options, const char* buffer_in, uint64_t num_bytes_max, struct EntryHeader *output, uint32_t *num_bytes_read) {
     /*
     // Dumb serialization for debugging
-    log::trace("EntryHeader::DecodeFrom", "start num_bytes_max:%llu - sizeof(EntryHeader):%d", num_bytes_max, sizeof(struct EntryHeader));
+    log::trace("EntryHeader::DecodeFrom", "start num_bytes_max:%" PRIu64 " - sizeof(EntryHeader):%d", num_bytes_max, sizeof(struct EntryHeader));
     char *buffer = const_cast<char*>(buffer_in);
     struct EntryHeader* entry_header = reinterpret_cast<struct EntryHeader*>(buffer);
     *output = *entry_header;

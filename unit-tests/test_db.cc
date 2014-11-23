@@ -170,7 +170,7 @@ TEST(DBTest, FileUtil) {
   std::chrono::milliseconds d = std::chrono::duration_cast<std::chrono::milliseconds>(duration);
   std::cout << d.count() << " ms" << std::endl;
 
-  fprintf(stderr, "Free size: %llu GB\n", FileUtil::fs_free_space("/tmp/") / (1024*1024*256));
+  fprintf(stderr, "Free size: %" PRIu64 " GB\n", FileUtil::fs_free_space("/tmp/") / (1024*1024*256));
 }
 
 

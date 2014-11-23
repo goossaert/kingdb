@@ -13,8 +13,10 @@
 #include <set>
 #include <algorithm>
 #include <cstdio>
+#include <inttypes.h>
 
 #include <unistd.h>
+#include <inttypes.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -186,7 +188,7 @@ class StorageEngine {
       
       uint64_t dbsize_uncompacted = hstable_manager_.file_resource_manager.GetDbSizeUncompacted();
       log::trace("ProcessingLoopCompaction",
-                "fileid_end:%u fs_free_space:%llu compaction.filesystem.free_space_required:%llu size_compaction:%llu dbsize_uncompacted:%llu",
+                "fileid_end:%u fs_free_space:%" PRIu64 " compaction.filesystem.free_space_required:%" PRIu64 " size_compaction:%" PRIu64 " dbsize_uncompacted:%" PRIu64,
                 fileid_end,
                 fs_free_space,
                 db_options_.compaction__filesystem__free_space_required,
@@ -266,13 +268,13 @@ class StorageEngine {
 
       for (auto& p: index_updates) {
         //uint64_t hashed_key = hash_->HashFunction(p.first.c_str(), p.first.size());
-        log::trace("StorageEngine::ProcessingLoopIndex()", "hash [%llu] location [%llu]", p.first, p.second);
+        log::trace("StorageEngine::ProcessingLoopIndex()", "hash [%" PRIu64 "] location [%" PRIu64 "]", p.first, p.second);
         index->insert(std::pair<uint64_t,uint64_t>(p.first, p.second));
       }
 
       /*
       for (auto& p: index_) {
-        log::trace("index_", "hash:[0x%08x] location:[%llu]", p.first, p.second);
+        log::trace("index_", "hash:[0x%08x] location:[%" PRIu64 "]", p.first, p.second);
       }
       */
 
@@ -331,7 +333,7 @@ class StorageEngine {
     for (auto it = rbegin; it != rend; --it) {
       ByteArray *key_temp;
       Status s = GetEntry(it->second, &key_temp, value_out); 
-      log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[%llu] hashed_key_temp:[%llu] size_key:[%llu] size_key_temp:[%llu]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
+      log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[%" PRIu64 "] hashed_key_temp:[%" PRIu64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
       std::string temp(key_temp->data(), key_temp->size());
       log::trace("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
       if (*key_temp == *key) {
@@ -368,7 +370,7 @@ class StorageEngine {
     //       mutexes back
     filesize = hstable_manager_.file_resource_manager.GetFileSize(fileid);
 
-    log::trace("StorageEngine::GetEntry()", "location:%llu fileid:%u offset_file:%u filesize:%llu", location, fileid, offset_file, filesize);
+    log::trace("StorageEngine::GetEntry()", "location:%" PRIu64 " fileid:%u offset_file:%u filesize:%" PRIu64, location, fileid, offset_file, filesize);
     std::string filepath = hstable_manager_.GetFilepath(fileid); // TODO: optimize here
 
     auto key_temp = new SharedMmappedByteArray(filepath, filesize);
@@ -403,7 +405,7 @@ class StorageEngine {
     }
 
     log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeRemove());
-    log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%llu value_temp:%llu filesize:%llu", key_temp->size(), value_temp->size(), filesize);
+    log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " filesize:%" PRIu64, key_temp->size(), value_temp->size(), filesize);
 
     *key_out = key_temp;
     *value_out = value_temp;
@@ -590,7 +592,7 @@ class StorageEngine {
       auto range = hashedkeys_to_locations_regular_keep.equal_range(it->first);
       std::vector<uint64_t> locations;
       for (auto it_bucket = range.first; it_bucket != range.second; ++it_bucket) {
-        log::trace("Compaction()", "Building clusters - location:%llu", it->second);
+        log::trace("Compaction()", "Building clusters - location:%" PRIu64, it->second);
         locations.push_back(it->second);
       }
       std::sort(locations.begin(), locations.end());
@@ -673,10 +675,10 @@ class StorageEngine {
       Mmap* mmap = mmaps[fileid];
 
       // Read the header to update the maximimum timestamp
-      struct HSTableHeader lfh;
-      s = HSTableHeader::DecodeFrom(mmap->datafile(), mmap->filesize(), &lfh);
+      struct HSTableHeader hstheader;
+      s = HSTableHeader::DecodeFrom(mmap->datafile(), mmap->filesize(), &hstheader);
       if (!s.IsOK()) return Status::IOError("Could not read file header during compaction"); // TODO: skip file instead of returning an error 
-      timestamp_max = std::max(timestamp_max, lfh.timestamp);
+      timestamp_max = std::max(timestamp_max, hstheader.timestamp);
 
       // Read the footer to get the offset where entries stop
       struct HSTableFooter footer;
@@ -708,7 +710,7 @@ class StorageEngine {
             || offset + sizeof(struct EntryHeader) + entry_header.size_key > mmap->filesize()
             || offset + sizeof(struct EntryHeader) + entry_header.size_key + entry_header.size_value_offset() > mmap->filesize()) {
           log::trace("Compaction()",
-                    "Unexpected end of file - IsOK:%d, offset:%u, size_key:%llu, size_value_offset:%llu, mmap->filesize():%d\n",
+                    "Unexpected end of file - IsOK:%d, offset:%u, size_key:%" PRIu64 ", size_value_offset:%" PRIu64 ", mmap->filesize():%d\n",
                     s.IsOK(),
                     offset,
                     entry_header.size_key,
@@ -834,7 +836,7 @@ class StorageEngine {
       uint64_t fileid_shifted = fileid_new;
       fileid_shifted <<= 32;
       uint64_t location_new = fileid_shifted | offset_file;
-      log::trace("Compaction()", "Shifting [%llu] into [%llu] (fileid [%u] to [%u])", location, location_new, fileid, fileid_new);
+      log::trace("Compaction()", "Shifting [%" PRIu64 "] into [%" PRIu64 "] (fileid [%u] to [%u])", location, location_new, fileid, fileid_new);
 
       map_index_shifted.insert(std::pair<uint64_t, uint64_t>(hashedkey, location_new));
     }

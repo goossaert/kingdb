@@ -64,7 +64,7 @@ int main() {
     if (chunk == num_chunks - 1) {
       size_chunk_current = size_value % size_chunk;
     }
-    fprintf(stderr, "step:%d size:%llu\n", chunk, size_chunk_current);
+    fprintf(stderr, "step:%d size:%" PRIu64 "\n", chunk, size_chunk_current);
 
     offset_chunk_compressed = lz4.size_compressed();
     kdb::Status s = lz4.Compress(raw + chunk * size_chunk,
@@ -76,14 +76,14 @@ int main() {
       exit(-1);
     }
 
-    fprintf(stderr, "step %d - %p size_compressed:%llu offset:%llu\n", chunk, comp, size_compressed, offset_chunk_compressed);
+    fprintf(stderr, "step %d - %p size_compressed:%" PRIu64 " offset:%" PRIu64 "\n", chunk, comp, size_compressed, offset_chunk_compressed);
     memcpy(compressed + offset_chunk_compressed, comp, size_compressed);
-    fprintf(stderr, "step %d - size_compressed:%llu\n", chunk, size_compressed);
+    fprintf(stderr, "step %d - size_compressed:%" PRIu64 "\n", chunk, size_compressed);
   }
 
   size_compressed = lz4.size_compressed();
 
-  fprintf(stderr, "--- stream compressed data (size:%llu):\n", size_compressed);
+  fprintf(stderr, "--- stream compressed data (size:%" PRIu64 "):\n", size_compressed);
   for (auto i = 0; i < size_compressed; i++) {
     fprintf(stderr, "%c", compressed[i]);
   }
@@ -104,7 +104,7 @@ int main() {
                                     &size_out,
                                     &frame,
                                     &size_frame);
-    fprintf(stderr, "stream uncompressed step: %d size:%llu\n", step, size_out);
+    fprintf(stderr, "stream uncompressed step: %d size:%" PRIu64 "\n", step, size_out);
     if (!s1.IsOK()) {
       fprintf(stderr, "%s\n", s1.ToString().c_str());
       break;
@@ -113,7 +113,7 @@ int main() {
     size_out_total += size_out;
     step += 1;
   }
-  fprintf(stderr, "stream uncompressed size: %llu\n", size_out_total);
+  fprintf(stderr, "stream uncompressed size: %" PRIu64 "\n", size_out_total);
 
   int ret = VerifyValue(key, size_value, uncompressed_full);
   if (ret == 0) {

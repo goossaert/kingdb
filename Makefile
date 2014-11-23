@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-O3 -g -Wall -std=c++11 -c
+CFLAGS=-O3 -g -std=c++11 -c
 INCLUDES=-I/usr/local/include/ -I/opt/local/include/ -I. -I./include/
 LDFLAGS=-g -lprofiler -lpthread
 LDFLAGS_CLIENT=-g -L/usr/local/lib/ -L/opt/local/lib/ -lpthread -lmemcached -lprofiler -fPIC

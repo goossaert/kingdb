@@ -171,7 +171,7 @@ class ClientTask: public Task {
         std::this_thread::sleep_for(std::chrono::milliseconds(10000));
         log::info("ClientTask", "retry key: [%s]", key.c_str());
       }
-      log::info("ClientTask", "Put(%s, size:%llu) - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
+      log::info("ClientTask", "Put(%s, size:%" PRIu64 ") - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
       delete[] value;
     }
 

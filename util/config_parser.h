@@ -5,6 +5,7 @@
 #ifndef KINGDB_CONFIG_PARSER_H_
 #define KINGDB_CONFIG_PARSER_H_
 
+#include <inttypes.h>
 #include <sys/stat.h>
 #include <string.h>
 #include <fstream>
@@ -168,7 +169,7 @@ class UnsignedInt64Parameter: public Parameter {
   virtual ~UnsignedInt64Parameter() {}
   virtual uint64_t Get() { return *ptr; }
   virtual Status Parse(const std::string& config, const std::string& value, const std::string& filepath, int line_number) {
-    int num_scanned = sscanf(value.c_str(), "%llu", ptr);
+    int num_scanned = sscanf(value.c_str(), "%" PRIu64, ptr);
     if (num_scanned != 1) {
       std::string str_line_number = "Invalid value for unsigned 64-bit integer parameter [" + config + "] in file [" + filepath + "] on line " + std::to_string(line_number);
       return Status::IOError("ConfigParser", str_line_number);

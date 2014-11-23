@@ -11,6 +11,7 @@
 #include <memory>
 #include <sys/file.h>
 #include <cstdint>
+#include <inttypes.h>
 #include <limits>
 
 #include "interface/interface.h"

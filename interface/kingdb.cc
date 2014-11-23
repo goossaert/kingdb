@@ -75,7 +75,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     return Status::IOError("Not enough free space on the file system");
   }
   log::trace("KingDB::PutChunkValidSize()",
-            "[%s] offset_chunk:%llu",
+            "[%s] offset_chunk:%" PRIu64,
             key->ToString().c_str(),
             offset_chunk);
 
@@ -104,7 +104,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     }
 
     log::trace("KingDB::PutChunkValidSize()",
-              "[%s] size_compressed:%llu",
+              "[%s] size_compressed:%" PRIu64,
               key->ToString().c_str(), compressor_.size_compressed());
 
     offset_chunk_compressed = compressor_.size_compressed();
@@ -119,7 +119,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     chunk_compressed = new SharedAllocatedByteArray(compressed, size_compressed);
 
     log::trace("KingDB::PutChunkValidSize()",
-              "[%s] (%llu) compressed size %llu - offset_chunk_compressed %llu",
+              "[%s] (%" PRIu64 ") compressed size %" PRIu64 " - offset_chunk_compressed %" PRIu64,
               key->ToString().c_str(),
               chunk->size(),
               chunk_compressed->size(),
@@ -142,7 +142,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   crc32_.stream(chunk_final->data(), chunk_final->size());
   if (is_last_chunk) crc32 = crc32_.get();
 
-  log::trace("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%llu crc32:0x%llx END", key->ToString().c_str(), size_value_compressed, crc32);
+  log::trace("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%" PRIu64 " crc32:0x%" PRIx64 " END", key->ToString().c_str(), size_value_compressed, crc32);
 
   return wb_->PutChunk(write_options,
                       key,

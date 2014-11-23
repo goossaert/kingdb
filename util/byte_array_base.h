@@ -22,7 +22,7 @@ class ByteArray {
   virtual Status data_chunk(char **data, uint64_t *size) = 0;
 
   bool operator ==(const ByteArray &right) const {
-    //fprintf(stderr, "ByteArray operator==() -- left: %p %llu [%s] right: %p %llu [%s]\n", data_, size_, std::string(data_, size_).c_str(), right.data_const(), right.size_const(), std::string(right.data_const(), right.size_const()).c_str());
+    //fprintf(stderr, "ByteArray operator==() -- left: %p %" PRIu64 " [%s] right: %p %" PRIu64 " [%s]\n", data_, size_, std::string(data_, size_).c_str(), right.data_const(), right.size_const(), std::string(right.data_const(), right.size_const()).c_str());
     return (   size_const() == right.size_const()
             && memcmp(data_const(), right.data_const(), size_const()) == 0);
   }

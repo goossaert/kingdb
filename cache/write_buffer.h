@@ -5,12 +5,14 @@
 #ifndef KINGDB_WRITE_BUFFER_H_
 #define KINGDB_WRITE_BUFFER_H_
 
+#include <inttypes.h>
 #include <thread>
 #include <map>
 #include <array>
 #include <string>
 #include <vector>
 #include <chrono>
+
 #include "kingdb/kdb.h"
 #include "util/order.h"
 #include "util/byte_array.h"
