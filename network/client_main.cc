@@ -58,6 +58,7 @@ int main(int argc, char **argv) {
   tp.Start();
   for (auto i = 0; i < num_threads; i++ ) {
     tp.AddTask(new kdb::ClientTask(host, num_writes, num_removes, num_reads));
+    if (i && i % 120 == 0) usleep(2 * 1000 * 1000);
   }
   tp.BlockUntilAllTasksHaveCompleted();
   return 0;

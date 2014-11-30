@@ -24,8 +24,10 @@
 #define SIZE_LARGE_TEST_ITEMS 1024*1024*64 // size of large items used for testing
 #define MAX_RETRIES 1
 
-#define RANDOM_DIST_LOWER_BOUND 256*1024
-#define RANDOM_DIST_UPPER_BOUND 512*1024
+//#define RANDOM_DIST_LOWER_BOUND 256*1024
+//#define RANDOM_DIST_UPPER_BOUND 512*1024
+#define RANDOM_DIST_LOWER_BOUND 10*1024
+#define RANDOM_DIST_UPPER_BOUND 12*1024
 
 namespace kdb {
 
@@ -164,12 +166,13 @@ class ClientTask: public Task {
         if (s.IsOK()) {
           retry = MAX_RETRIES;
         } else {
-          log::info("ClientTask", "Put() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+          log::debug("ClientTask", "Put() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+          //exit(-1);
         }
         
         if (retry >= MAX_RETRIES - 1) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-        log::info("ClientTask", "retry key: [%s]", key.c_str());
+        log::debug("ClientTask", "retry key: [%s]", key.c_str());
       }
       log::info("ClientTask", "Put(%s, size:%" PRIu64 ") - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
       delete[] value;

@@ -321,6 +321,8 @@ class HSTableManager {
     if (position < 0) {
       return Status::IOError("HSTableManager::WriteOffsetArray()", strerror(errno));
     }
+    log::trace("HSTableManager::WriteOffsetArray()", "file position:[%" PRIu64 "]", position);
+
     struct HSTableFooter footer;
     footer.filetype = filetype;
     footer.offset_indexes = position;
@@ -609,12 +611,12 @@ class HSTableManager {
   void WriteOrdersAndFlushFile(std::vector<Order>& orders, std::multimap<uint64_t, uint64_t>& map_index_out) {
     for (auto& order: orders) {
 
-      if (!has_file_) OpenNewFile();
-
       if (offset_end_ > size_block_) {
         log::trace("HSTableManager::WriteOrdersAndFlushFile()", "About to flush - offset_end_: %" PRIu64 " | size_key: %d | size_value: %d | size_block_: %" PRIu64, offset_end_, order.key->size(), order.size_value, size_block_);
         FlushCurrentFile(true, 0);
       }
+
+      if (!has_file_) OpenNewFile();
 
       uint64_t hashed_key = hash_->HashFunction(order.key->data(), order.key->size());
       // TODO-13: if the item is self-contained (unique chunk), then no need to
@@ -955,13 +957,8 @@ class HSTableManager {
       struct EntryHeader entry_header;
       uint32_t size_header;
       Status s = EntryHeader::DecodeFrom(db_options_, mmap.datafile() + offset, mmap.filesize() - offset, &entry_header, &size_header);
-      // NOTE: the uses of sizeof(struct EntryHeader) here make not sense, since this
-      // size is variable based on the local architecture
       if (   !s.IsOK()
-          || offset + sizeof(struct EntryHeader) >= mmap.filesize()
-          || entry_header.size_key == 0
-          || offset + sizeof(struct EntryHeader) + entry_header.size_key > mmap.filesize()
-          || offset + sizeof(struct EntryHeader) + entry_header.size_key + entry_header.size_value_offset() > mmap.filesize()) {
+          || !entry_header.AreSizesValid(offset, mmap.filesize())) {
         // End of file during recovery, thus breaking out of the while-loop
         break;
       }

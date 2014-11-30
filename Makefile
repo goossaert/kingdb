@@ -1,5 +1,4 @@
 CC=g++
-CFLAGS=-O3 -g -std=c++11 -c
 INCLUDES=-I/usr/local/include/ -I/opt/local/include/ -I. -I./include/
 LDFLAGS=-g -lprofiler -lpthread
 LDFLAGS_CLIENT=-g -L/usr/local/lib/ -L/opt/local/lib/ -lpthread -lmemcached -lprofiler -fPIC
@@ -22,7 +21,15 @@ TEST_COMPRESSION=test_compression
 TEST_DB=test_db
 LIBRARY=kingdb.a
 
+
+#CFLAGS=-O3 -g -std=c++11 -c
+CFLAGS=-std=c++11 -c
+
+all: CFLAGS += -O3
 all: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(CLIENT) $(TEST_COMPRESSION) $(TEST_DB)
+
+debug: CFLAGS += -DDEBUG -g
+debug: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(CLIENT) $(TEST_COMPRESSION) $(TEST_DB)
 
 $(EXECUTABLE): $(OBJECTS) $(OBJECTS_MAIN)
 	$(CC) $(OBJECTS) $(OBJECTS_MAIN) -o $@ $(LDFLAGS) 

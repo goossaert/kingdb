@@ -58,12 +58,13 @@ class ThreadPool {
   void ProcessingLoop() {
     while (!IsStopRequested()) {
       std::unique_lock<std::mutex> lock(mutex_);
-      if (queue_.size() == 0) {
+      if (queue_.empty()) {
         cv_.wait(lock);
-        if (IsStopRequested()) break;
+        if (IsStopRequested()) continue;
       }
       auto task = queue_.front();
       queue_.pop();
+      if (task == nullptr) continue;
       auto tid = std::this_thread::get_id();
       auto it_find = tid_to_id_.find(tid);
       if (it_find == tid_to_id_.end()) tid_to_id_[tid] = seq_id++;
@@ -71,7 +72,10 @@ class ThreadPool {
       task->RunInLock(tid);
       lock.unlock();
       task->Run(tid, tid_to_id_[tid]);
+
+      mutex_.lock();
       tid_to_task_.erase(tid);
+      mutex_.unlock();
       delete task;
     }
   }

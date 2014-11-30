@@ -181,6 +181,29 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   }
   sizes_[im_live_] += chunk->size();
 
+  // TODO-32: Because all writes and removes transit throught this method,
+  //          it is the perfect location to implement throttling. What has to
+  //          be done is:
+  //
+  //          - Identify the throughput at which updates can be written to
+  //            secondary storage.
+  //          - Identify the speed at which updates are currently incoming
+  //          - If currently incoming updates are faster than the speed at which
+  //            data can be persisted on secondary storage, then introduce
+  //            some calls to sleep() in order to throttle them.
+  //
+  //          Notes:
+  //
+  //          - If throttling is not implemented, the risk is to see the buffer
+  //            grow unbounded, which will cause "out-of-memory" errors, or
+  //            force the OS to use its swap.
+  //          - One could also look at the throughput at which uncompacted data
+  //            is compacted, but then large write bursts would be slowed down
+  //            unnecessarily: compaction might be slow, but as long as there
+  //            is free space on the disk, then the writes shouldn't be slowed
+  //            down. Throttling on compaction throughput is probably a bad idea.
+
+  /*
   if (buffers_[im_live_].size()) {
     for(auto &p: buffers_[im_live_]) {   
       log::trace("WriteBuffer::WriteChunk()",
@@ -190,9 +213,11 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   } else {
     log::trace("WriteBuffer::WriteChunk()", "Write() ITEM no buffers_[im_live_]");
   }
-  /*
   */
 
+  // The notes below are obsolete -- keeping them here until throttling is
+  // implemented.
+  //
   // NOTE: With multi-chunk entries, the last chunks may get stuck in the
   //       buffers without being flushed to secondary storage, and the storage
   //       engine will say that it doesn't has the item as the last chunk
@@ -215,6 +240,7 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   */
 
   // test on size for debugging remove()
+  /*
   if (buffers_[im_live_].size() > 256) {
     // TODO: make this value optional -- a good default value would be the
     //       number of client threads.
@@ -224,29 +250,33 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
     //       incoming requests.
     force_swap_ = true;
   }
-  /*
   */
 
   if (sizes_[im_live_] > buffer_size_ || force_swap_) {
     log::trace("WriteBuffer::WriteChunk()", "trying to swap");
     // TODO: play with the mutex_flush_, try to keep it before the
     // if(can_swap_) or inside the if(can_swap_)
-    log::debug("LOCK", "2 lock");
-    std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
-    if (can_swap_) {
-      log::trace("WriteBuffer::WriteChunk()", "can_swap_ == true");
-      log::debug("LOCK", "3 lock");
-      std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
-      log::trace("WriteBuffer::WriteChunk()", "Swap buffers");
-      can_swap_ = false;
-      force_swap_ = false;
-      std::swap(im_live_, im_copy_);
-      cv_flush_.notify_one();
-      log::debug("LOCK", "3 unlock");
+    //std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
+    if (mutex_flush_level2_.try_lock()) {
+      log::debug("LOCK", "2 lock");
+      if (can_swap_) {
+        log::trace("WriteBuffer::WriteChunk()", "can_swap_ == true");
+        log::debug("LOCK", "3 lock");
+        std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
+        log::trace("WriteBuffer::WriteChunk()", "Swap buffers");
+        can_swap_ = false;
+        force_swap_ = false;
+        std::swap(im_live_, im_copy_);
+        cv_flush_.notify_one();
+        log::debug("LOCK", "3 unlock");
+      } else {
+        log::trace("WriteBuffer::WriteChunk()", "can_swap_ == false");
+      }
+      mutex_flush_level2_.unlock();
+      log::debug("LOCK", "2 unlock");
     } else {
-      log::trace("WriteBuffer::WriteChunk()", "can_swap_ == false");
+      log::trace("WriteBuffer::WriteChunk()", "could not lock to swap");
     }
-    log::debug("LOCK", "2 unlock");
   } else {
     log::trace("WriteBuffer::WriteChunk()", "will not swap");
   }
@@ -320,6 +350,7 @@ void WriteBuffer::ProcessingLoop() {
 
     log::trace("WriteBuffer", "ProcessingLoop() - end swap - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
  
+    /*
     if (buffers_[im_copy_].size()) {
       for(auto &p: buffers_[im_copy_]) {
         log::trace("WriteBuffer", "ProcessingLoop() ITEM im_copy - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
@@ -335,6 +366,7 @@ void WriteBuffer::ProcessingLoop() {
     } else {
       log::trace("WriteBuffer", "ProcessingLoop() ITEM no buffers_[im_live_]");
     }
+    */
 
     can_swap_ = true;
     mutex_copy_write_level4_.unlock();

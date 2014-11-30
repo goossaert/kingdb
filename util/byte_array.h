@@ -30,16 +30,21 @@ namespace kdb {
 
 class ByteArrayCommon: public ByteArray {
  public:
-  ByteArrayCommon() {
-    data_ = nullptr;
-    size_ = 0;
-    off_ = 0;
+  ByteArrayCommon()
+      : data_(nullptr),
+        size_(0),
+        size_compressed_(0),
+        off_(0),
+        crc32_value_(0)
+  {
   }
   virtual ~ByteArrayCommon() {}
   virtual char* data() { return data_ + off_; }
   virtual char* data_const() const { return data_ + off_; }
   virtual uint64_t size() { return size_ - off_; }
   virtual uint64_t size_const() const { return size_ - off_; }
+  virtual uint64_t size_compressed() { return size_compressed_ - off_; }
+  virtual uint64_t size_compressed_const() const { return size_compressed_ - off_; }
   virtual bool is_compressed() { return size_compressed_ > 0; }
 
   virtual bool StartsWith(const char *substr, int n) {
@@ -127,11 +132,10 @@ class SmartByteArray: public ByteArrayCommon {
 
 
 
-// TODO-31: what if filesize gets bigger than maxint?
 // TODO: move to file.h
 class Mmap {
  public:
-  Mmap(std::string filepath, int filesize) {
+  Mmap(std::string filepath, int64_t filesize) {
     filepath_ = filepath;
     filesize_ = filesize;
     if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
@@ -170,11 +174,11 @@ class Mmap {
   }
 
   char* datafile() { return datafile_; }
-  int filesize() { return filesize_; }
+  int64_t filesize() { return filesize_; }
   const char* filepath() const { return filepath_.c_str(); } // for debugging
 
   int fd_;
-  int filesize_;
+  int64_t filesize_;
   char *datafile_;
   std::string filepath_; // just for debugging
 };
@@ -183,7 +187,7 @@ class Mmap {
 class SharedMmappedByteArray: public ByteArrayCommon {
  public:
   SharedMmappedByteArray() {}
-  SharedMmappedByteArray(std::string filepath, int filesize) {
+  SharedMmappedByteArray(std::string filepath, int64_t filesize) {
     mmap_ = std::shared_ptr<Mmap>(new Mmap(filepath, filesize));
     data_ = mmap_->datafile();
     size_ = 0;
@@ -213,7 +217,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
   }
 
   virtual Status data_chunk(char **data_out, uint64_t *size_out) {
-    if (size_compressed_ == 0) { // if no compression
+    if (!is_compressed()) {
       crc32_.stream(data_, size_);
       if (crc32_.get() != crc32_value_) {
         log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
@@ -238,11 +242,16 @@ class SharedMmappedByteArray: public ByteArrayCommon {
                                       &frame,
                                       &size_frame);
 
-    if (s.IsDone() && crc32_.get() != crc32_value_) {
-      log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-      return Status::IOError("Bad CRC32");
+    if (s.IsDone()) {
+      if (crc32_.get() == crc32_value_) {
+        log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+        return s;
+      } else {
+        log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+        return Status::IOError("Bad CRC32");
+      }
     } else if (!s.IsOK()) {
-      log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+      log::debug("SharedMmappedByteArray::data_chunk()", "Error CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
       return s;
     }
 

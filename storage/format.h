@@ -50,6 +50,7 @@ struct EntryHeader {
   uint64_t size_value;
   uint64_t size_value_compressed;
   uint64_t hash;
+  int32_t size_header_serialized;
 
   void print() {
     log::trace("EntryHeader::print()", "flags:%u crc32:%u size_key:%" PRIu64 " size_value:%" PRIu64 " size_value_compressed:%" PRIu64 " hash:%" PRIu64, flags, crc32, size_key, size_value, size_value_compressed, hash);
@@ -75,6 +76,11 @@ struct EntryHeader {
     // do nothing
   }
 
+  bool AreSizesValid(uint32_t offset_file, uint64_t filesize) {
+    return (   size_key > 0
+            && offset_file + size_header_serialized + size_key + size_value_offset() <= filesize);
+  }
+
   bool IsTypeRemove() {
     log::trace("IsTypeRemove()", "flags %u", flags);
     return (flags & kTypeRemove);
@@ -89,6 +95,7 @@ struct EntryHeader {
   }
 
   bool IsEntryFull() {
+    log::trace("IsEntryFull()", "flags %u", flags);
     return (flags & kEntryFull); 
   }
 
@@ -147,12 +154,15 @@ struct EntryHeader {
       int length = GetVarint64(&array, &(output->size_value_compressed));
       if (length == -1) return Status::IOError("Decoding error");
       array.AddOffset(length_value); // size_value_compressed is using length_value
+    } else {
+      output->size_value_compressed = 0;
     }
 
     if (array.size() < 8) return Status::IOError("Decoding error");
     GetFixed64(array.data(), &(output->hash));
 
     *num_bytes_read = num_bytes_max - array.size() + 8;
+    output->size_header_serialized = *num_bytes_read;
     //log::trace("EntryHeader::DecodeFrom", "size:%u", *num_bytes_read);
     return Status::OK();
   }
@@ -168,7 +178,7 @@ struct EntryHeader {
     // NOTE: it would be interesting to run an analysis and determine if it is
     // better to store the crc32 and hash using fixed encoding or varints. For
     // the hash, it will certainly be specific to each hash function.
-
+    //
     EncodeFixed32(buffer, input->crc32);
     char *ptr;
     ptr = EncodeVarint32(buffer + 4, input->flags);
@@ -178,9 +188,9 @@ struct EntryHeader {
     ptr = ptr_value;
     if (db_options.compression.type != kNoCompression) {
       // size_value_compressed is stored only if the database is using compression
-      if (input->size_value_compressed != 0) {
+      //if (input->size_value_compressed != 0) {
         EncodeVarint64(ptr, input->size_value_compressed);
-      }
+      //}
       ptr += length_value;
     }
     EncodeFixed64(ptr, input->hash);

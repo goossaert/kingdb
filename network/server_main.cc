@@ -62,13 +62,9 @@ int main(int argc, char** argv) {
     } else if (stat("/etc/kingdb.conf", &info) == 0) {
       configfile = "/etc/kingdb.conf";
     }
-  } else {
-    if (stat(configfile.c_str(), &info) == 0) {
-      configfile = configfile;
-    } else {
-      fprintf(stderr, "Could not file configuration file [%s]\n", configfile.c_str());
-      exit(-1);
-    }
+  } else if (stat(configfile.c_str(), &info) != 0) {
+    fprintf(stderr, "Could not file configuration file [%s]\n", configfile.c_str());
+    exit(-1);
   }
 
   // Now parsing all options
@@ -141,11 +137,13 @@ int main(int argc, char** argv) {
     exit(-1); 
   }
 
+#ifndef DEBUG
   signal(SIGINT, termination_signal_handler);
   signal(SIGTERM, termination_signal_handler);
 
   signal(SIGSEGV, crash_signal_handler);
   signal(SIGABRT, crash_signal_handler);
+#endif
 
   kdb::Server server;
   server.Start(server_options, db_options, dbname);

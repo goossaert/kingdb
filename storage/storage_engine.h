@@ -243,7 +243,6 @@ class StorageEngine {
       std::multimap<uint64_t, uint64_t> index_updates = event_manager_->update_index.Wait();
       if (IsStopRequested()) return;
       log::trace("StorageEngine::ProcessingLoopIndex()", "got index_updates");
-      mutex_index_.lock();
 
       /*
       for (auto& p: index_updates) {
@@ -266,11 +265,30 @@ class StorageEngine {
       }
       mutex_compaction_.unlock();
 
+
+      int num_iterations_per_lock = db_options_.storage__num_index_iterations_per_lock;
+      int counter_iterations = 0;
+
       for (auto& p: index_updates) {
+        if (counter_iterations == 0) {
+          AcquireWriteLock();
+        }
+        counter_iterations += 1;
+
         //uint64_t hashed_key = hash_->HashFunction(p.first.c_str(), p.first.size());
-        log::trace("StorageEngine::ProcessingLoopIndex()", "hash [%" PRIu64 "] location [%" PRIu64 "]", p.first, p.second);
+        //log::trace("StorageEngine::ProcessingLoopIndex()", "hash [%" PRIu64 "] location [%" PRIu64 "]", p.first, p.second);
+        //mutex_index_.lock();
         index->insert(std::pair<uint64_t,uint64_t>(p.first, p.second));
+        //mutex_index_.unlock();
+
+        // Throttling the index updates, and allows other processes
+        // to acquire the write lock if they need it
+        if (counter_iterations >= num_iterations_per_lock) {
+          ReleaseWriteLock();
+          counter_iterations = 0;
+        }
       }
+      ReleaseWriteLock();
 
       /*
       for (auto& p: index_) {
@@ -278,7 +296,6 @@ class StorageEngine {
       }
       */
 
-      mutex_index_.unlock();
       event_manager_->update_index.Done();
       log::trace("StorageEngine::ProcessingLoopIndex()", "done");
       int temp = 1;
@@ -299,9 +316,13 @@ class StorageEngine {
     has_compaction_index = is_compaction_in_progress_;
     mutex_compaction_.unlock();
 
-    Status s = Status::NotFound("");
-    if (has_compaction_index) s = GetWithIndex(index_compaction_, key, value_out, location_out);
-    if (!s.IsOK()) s = GetWithIndex(index_, key, value_out, location_out);
+    Status s;
+    if (!has_compaction_index) {
+      s = GetWithIndex(index_, key, value_out, location_out);
+    } else {
+      s = GetWithIndex(index_compaction_, key, value_out, location_out);
+      if (!s.IsOK()) s = GetWithIndex(index_, key, value_out, location_out);
+    }
 
     mutex_read_.lock();
     num_readers_ -= 1;
@@ -317,7 +338,7 @@ class StorageEngine {
                       ByteArray* key,
                       ByteArray** value_out,
                       uint64_t *location_out=nullptr) {
-    std::unique_lock<std::mutex> lock(mutex_index_);
+    //std::unique_lock<std::mutex> lock(mutex_index_);
     // TODO-26: should not be locking here, instead, should store the hashed key
     // and location from the index and release the lock right away -- should not
     // be locking while calling GetEntry()
@@ -331,12 +352,14 @@ class StorageEngine {
     auto rbegin = --range.second;
     auto rend  = --range.first;
     for (auto it = rbegin; it != rend; --it) {
-      ByteArray *key_temp;
-      Status s = GetEntry(it->second, &key_temp, value_out); 
-      log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[%" PRIu64 "] hashed_key_temp:[%" PRIu64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
-      std::string temp(key_temp->data(), key_temp->size());
-      log::trace("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
-      if (*key_temp == *key) {
+      ByteArray *key_temp = nullptr;
+      Status s = GetEntry(it->second, &key_temp, value_out);
+      log::trace("StorageEngine::GetWithIndex()", "key ptr:[%p]", key);
+      //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[%" PRIu64 "] hashed_key_temp:[%" PRIu64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
+      //std::string temp(key_temp->data(), key_temp->size());
+      //log::trace("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
+      if (key_temp != nullptr && *key_temp == *key) {
+        // NOTE: should this be testing (s.IsOK() || s.IsRemoveOrder()) ?
         delete key_temp;
         if (s.IsRemoveOrder()) {
           s = Status::NotFound("Unable to find the entry in the storage engine (remove order)");
@@ -385,6 +408,11 @@ class StorageEngine {
     s = EntryHeader::DecodeFrom(db_options_, value_temp->datafile() + offset_file, filesize - offset_file, &entry_header, &size_header);
     if (!s.IsOK()) return s;
 
+    if (   !entry_header.AreSizesValid(offset_file, filesize)
+        || !entry_header.IsEntryFull()) {
+      return Status::IOError("Entry has invalid header");
+    }
+
     key_temp->SetOffset(offset_file + size_header, entry_header.size_key);
     value_temp->SetOffset(offset_file + size_header + entry_header.size_key, entry_header.size_value);
     value_temp->SetSizeCompressed(entry_header.size_value_compressed);
@@ -393,11 +421,6 @@ class StorageEngine {
     uint32_t crc32_headerkey = crc32c::Value(value_temp->datafile() + offset_file + 4, size_header + entry_header.size_key - 4);
     value_temp->SetInitialCRC32(crc32_headerkey);
 
-    if (!entry_header.IsEntryFull()) {
-      log::emerg("StorageEngine::GetEntry()", "Entry is not of type FULL, which is not supported");
-      return Status::IOError("Entries of type not FULL are not supported");
-    }
-
     if (entry_header.IsTypeRemove()) {
       s = Status::RemoveOrder();
       delete value_temp;
@@ -405,7 +428,7 @@ class StorageEngine {
     }
 
     log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeRemove());
-    log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " filesize:%" PRIu64, key_temp->size(), value_temp->size(), filesize);
+    log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " size_value_compressed:%" PRIu64 " filesize:%" PRIu64, key_temp->size(), value_temp->size(), value_temp->size_compressed(), filesize);
 
     *key_out = key_temp;
     *value_out = value_temp;
@@ -705,10 +728,7 @@ class StorageEngine {
 
         // NOTE: No need to verify the checksum. See notes in RecoverFile().
         if (   !s.IsOK()
-            || offset + sizeof(struct EntryHeader) >= mmap->filesize()
-            || entry_header.size_key == 0
-            || offset + sizeof(struct EntryHeader) + entry_header.size_key > mmap->filesize()
-            || offset + sizeof(struct EntryHeader) + entry_header.size_key + entry_header.size_value_offset() > mmap->filesize()) {
+            || !entry_header.AreSizesValid(offset, mmap->filesize())) {
           log::trace("Compaction()",
                     "Unexpected end of file - IsOK:%d, offset:%u, size_key:%" PRIu64 ", size_value_offset:%" PRIu64 ", mmap->filesize():%d\n",
                     s.IsOK(),
@@ -853,7 +873,7 @@ class StorageEngine {
     //     been compacted, and making sure that the locations that have been
     //     added while the compaction was taking place are not removed
     log::trace("Compaction()", "Step 12: Update the storage engine index_");
-    int num_iterations_per_lock = db_options_.compaction__num_index_iterations_per_lock;
+    int num_iterations_per_lock = db_options_.storage__num_index_iterations_per_lock;
     int counter_iterations = 0;
     for (auto it = map_index_shifted.begin(); it != map_index_shifted.end(); it = map_index_shifted.upper_bound(it->first)) {
 
@@ -1068,7 +1088,7 @@ class StorageEngine {
   std::multimap<uint64_t, uint64_t> index_;
   std::multimap<uint64_t, uint64_t> index_compaction_;
   std::thread thread_index_;
-  std::mutex mutex_index_;
+  //std::mutex mutex_index_;
 
   // Compaction
   HSTableManager hstable_manager_compaction_;

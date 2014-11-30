@@ -6,7 +6,7 @@
 
 namespace kdb {
 
-int Logger::level_ = Logger::INFO;
+int Logger::level_ = Logger::kLogLevelINFO;
 std::mutex Logger::mutex_;
 
 }

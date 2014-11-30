@@ -48,23 +48,23 @@ class Logger {
     std::string l(l_in);
     std::transform(l.begin(), l.end(), l.begin(), ::tolower);
     if (l == "emerg") {
-      set_current_level(EMERG);
+      set_current_level(kLogLevelEMERG);
     } else if (l == "alert") {
-      set_current_level(ALERT);
+      set_current_level(kLogLevelALERT);
     } else if (l == "crit") {
-      set_current_level(CRIT);
+      set_current_level(kLogLevelCRIT);
     } else if (l == "error") {
-      set_current_level(ERROR);
+      set_current_level(kLogLevelERROR);
     } else if (l == "warn") {
-      set_current_level(WARN);
+      set_current_level(kLogLevelWARN);
     } else if (l == "notice") {
-      set_current_level(NOTICE);
+      set_current_level(kLogLevelNOTICE);
     } else if (l == "info") {
-      set_current_level(INFO);
+      set_current_level(kLogLevelINFO);
     } else if (l == "debug") {
-      set_current_level(DEBUG);
+      set_current_level(kLogLevelDEBUG);
     } else if (l == "trace") {
-      set_current_level(TRACE);
+      set_current_level(kLogLevelTRACE);
     } else {
       return -1;
     }
@@ -72,15 +72,15 @@ class Logger {
   }
 
   enum Loglevel {
-    EMERG=0,
-    ALERT=1,
-    CRIT=2,
-    ERROR=3,
-    WARN=4,
-    NOTICE=5,
-    INFO=6,
-    DEBUG=7,
-    TRACE=8
+    kLogLevelEMERG=0,
+    kLogLevelALERT=1,
+    kLogLevelCRIT=2,
+    kLogLevelERROR=3,
+    kLogLevelWARN=4,
+    kLogLevelNOTICE=5,
+    kLogLevelINFO=6,
+    kLogLevelDEBUG=7,
+    kLogLevelTRACE=8
   };
 
  private:
@@ -94,78 +94,78 @@ class log {
   static void emerg(const char* logname, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    Logger::Logv(false, Logger::EMERG, logname, format, args);
+    Logger::Logv(false, Logger::kLogLevelEMERG, logname, format, args);
     va_end(args);
   }
 
   static void alert(const char* logname, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    Logger::Logv(false, Logger::ALERT, logname, format, args);
+    Logger::Logv(true, Logger::kLogLevelALERT, logname, format, args);
     va_end(args);
   }
 
   static void crit(const char* logname, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    Logger::Logv(false, Logger::CRIT, logname, format, args);
+    Logger::Logv(true, Logger::kLogLevelCRIT, logname, format, args);
     va_end(args);
   }
 
   static void error(const char* logname, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    Logger::Logv(false, Logger::ERROR, logname, format, args);
+    Logger::Logv(true, Logger::kLogLevelERROR, logname, format, args);
     va_end(args);
   }
 
   static void warn(const char* logname, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    Logger::Logv(false, Logger::WARN, logname, format, args);
+    Logger::Logv(true, Logger::kLogLevelWARN, logname, format, args);
     va_end(args);
   }
 
   static void notice(const char* logname, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    Logger::Logv(false, Logger::NOTICE, logname, format, args);
+    Logger::Logv(true, Logger::kLogLevelNOTICE, logname, format, args);
     va_end(args);
   }
 
   static void info(const char* logname, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    Logger::Logv(false, Logger::INFO, logname, format, args);
+    Logger::Logv(true, Logger::kLogLevelINFO, logname, format, args);
     va_end(args);
   }
 
   static void debug(const char* logname, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    Logger::Logv(false, Logger::DEBUG, logname, format, args);
+    Logger::Logv(true, Logger::kLogLevelDEBUG, logname, format, args);
     va_end(args);
   }
 
   static void trace(const char* logname, const char* format, ...) {
     va_list args;
     va_start(args, format);
-    Logger::Logv(false, Logger::TRACE, logname, format, args);
+    Logger::Logv(true, Logger::kLogLevelTRACE, logname, format, args);
     va_end(args);
   }
 
 };
 
 
-#define LOG_EMERG(logname, fmt, ...) Logger::Logv(false, Logger::EMERG, logname, fmt, ##__VA_ARGS__)
-#define LOG_ALERT(logname, fmt, ...) Logger::Logv(true, Logger::ALERT, logname, fmt, ##__VA_ARGS__)
-#define LOG_CRIT(logname, fmt, ...) Logger::Logv(true, Logger::CRIT, logname, fmt, ##__VA_ARGS__)
-#define LOG_ERROR(logname, fmt, ...) Logger::Logv(true, Logger::ERROR, logname, fmt, ##__VA_ARGS__)
-#define LOG_WARN(logname, fmt, ...) Logger::Logv(true, Logger::WARN, logname, fmt, ##__VA_ARGS__)
-#define LOG_NOTICE(logname, fmt, ...) Logger::Logv(true, Logger::NOTICE, logname, fmt, ##__VA_ARGS__)
-#define LOG_INFO(logname, fmt, ...) Logger::Logv(true, Logger::INFO, logname, fmt, ##__VA_ARGS__)
-#define LOG_DEBUG(logname, fmt, ...) Logger::Logv(true, Logger::DEBUG, logname, fmt, ##__VA_ARGS__)
-#define LOG_TRACE(logname, fmt, ...) Logger::Logv(true, Logger::TRACE, logname, fmt, ##__VA_ARGS__)
+#define LOG_EMERG(logname, fmt, ...) Logger::Logv(false, Logger::kLogLevelEMERG, logname, fmt, ##__VA_ARGS__)
+#define LOG_ALERT(logname, fmt, ...) Logger::Logv(true, Logger::kLogLevelALERT, logname, fmt, ##__VA_ARGS__)
+#define LOG_CRIT(logname, fmt, ...) Logger::Logv(true, Logger::kLogLevelCRIT, logname, fmt, ##__VA_ARGS__)
+#define LOG_ERROR(logname, fmt, ...) Logger::Logv(true, Logger::kLogLevelERROR, logname, fmt, ##__VA_ARGS__)
+#define LOG_WARN(logname, fmt, ...) Logger::Logv(true, Logger::kLogLevelWARN, logname, fmt, ##__VA_ARGS__)
+#define LOG_NOTICE(logname, fmt, ...) Logger::Logv(true, Logger::kLogLevelNOTICE, logname, fmt, ##__VA_ARGS__)
+#define LOG_INFO(logname, fmt, ...) Logger::Logv(true, Logger::kLogLevelINFO, logname, fmt, ##__VA_ARGS__)
+#define LOG_DEBUG(logname, fmt, ...) Logger::Logv(true, Logger::kLogLevelDEBUG, logname, fmt, ##__VA_ARGS__)
+#define LOG_TRACE(logname, fmt, ...) Logger::Logv(true, Logger::kLogLevelTRACE, logname, fmt, ##__VA_ARGS__)
 
 }
 

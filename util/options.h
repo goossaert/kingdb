@@ -61,9 +61,9 @@ struct DatabaseOptions {
   uint64_t storage__statistics_polling_interval;
   uint64_t storage__free_space_reject_orders;
   uint64_t storage__maximum_chunk_size;
+  uint64_t storage__num_index_iterations_per_lock;
 
   uint64_t compaction__check_interval;
-  uint64_t compaction__num_index_iterations_per_lock;
   uint64_t compaction__filesystem__survival_mode_threshold;
   uint64_t compaction__filesystem__normal_batch_size;
   uint64_t compaction__filesystem__survival_batch_size;
@@ -116,14 +116,14 @@ struct DatabaseOptions {
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.statistics_polling_interval", "60 seconds", &db_options.storage__statistics_polling_interval, false,
                          "In milliseconds, the frequency at which statistics are polled in the Storage Engine (free disk space, etc.)."));
+    parser.AddParameter(new kdb::UnsignedInt64Parameter(
+                         "db.storage.num_index_iterations_per_lock", "10", &db_options.storage__num_index_iterations_per_lock, false,
+                         "Number of entries merged into the Storage Engine index for each locking of the dedicated mutex. This parameter throttles index updates."));
 
     // Compaction options
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.compaction.check_interval", "30 seconds", &db_options.compaction__check_interval, false,
                          "In milliseconds, the frequency at which the compaction conditions are checked."));
-    parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.compaction.num_index_iterations_per_lock", "10", &db_options.compaction__check_interval, false,
-                         "Number of entries merged from the compaction index into the Storage Engine index for each locking of the index's mutex."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.compaction.filesystem.free_space_required", "128MB", &db_options.compaction__filesystem__free_space_required, false,
                          "Minimum free space on the file system required for a compaction process to be started."));
