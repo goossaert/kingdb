@@ -111,6 +111,7 @@ class KingDB: public Interface {
       }
 
       Mmap mmap(filepath_dboptions, info.st_size);
+      if (!mmap.is_valid()) return Status::IOError("Mmap() constructor failed");
       s = DatabaseOptionEncoder::DecodeFrom(mmap.datafile(), mmap.filesize(), &db_options_);
       if (!s.IsOK()) return s;
     } else {

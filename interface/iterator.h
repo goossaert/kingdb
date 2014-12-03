@@ -86,6 +86,7 @@ class Iterator {
           continue;
         }
         Mmap mmap(filepath_current_.c_str(), info.st_size);
+        if (!mmap.is_valid()) break;
         uint64_t dummy_filesize;
         bool dummy_is_file_large;
         std::multimap<uint64_t, uint64_t> index_temp;

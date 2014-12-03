@@ -63,7 +63,8 @@ class HSTableManager {
         filetype_default_(filetype_default),
         prefix_(prefix),
         prefix_compaction_(prefix_compaction),
-        dirpath_locks_(dirpath_locks) {
+        dirpath_locks_(dirpath_locks),
+        wait_until_can_open_new_files_(false) {
     log::trace("HSTableManager::HSTableManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
     dbname_ = dbname;
     hash_ = MakeHash(db_options.hash);
@@ -204,10 +205,17 @@ class HSTableManager {
     IncrementSequenceTimestamp(1);
     filepath_ = GetFilepath(GetSequenceFileId());
     log::trace("HSTableManager::OpenNewFile()", "Opening file [%s]: %u", filepath_.c_str(), GetSequenceFileId());
-    if ((fd_ = open(filepath_.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-      log::emerg("HSTableManager::OpenNewFile()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
-      exit(-1); // TODO-3: gracefully handle open() errors
+    while (true) {
+      if ((fd_ = open(filepath_.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
+        log::emerg("HSTableManager::OpenNewFile()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
+        wait_until_can_open_new_files_ = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+        continue;
+      }
+      wait_until_can_open_new_files_ = false;
+      break;
     }
+
     has_file_ = true;
     fileid_ = GetSequenceFileId();
     timestamp_ = GetSequenceTimestamp();
@@ -221,6 +229,10 @@ class HSTableManager {
     hstheader.filetype  = filetype_default_;
     hstheader.timestamp = timestamp_;
     HSTableHeader::EncodeTo(&hstheader, buffer_raw_);
+  }
+
+  bool CanOpenNewFiles() {
+    return !wait_until_can_open_new_files_;
   }
 
   void CloseCurrentFile() {
@@ -440,7 +452,7 @@ class HSTableManager {
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
       log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
-      exit(-1); // TODO-3: gracefully handle open() errors
+      return 0;
     }
 
     if (key_to_headersize.find(order.tid) == key_to_headersize.end() ||
@@ -836,6 +848,7 @@ class HSTableManager {
       }
 
       Mmap mmap(filepath, info.st_size);
+      if (!mmap.is_valid()) return Status::IOError("Mmap constructor failed");
       struct HSTableHeader hstheader;
       Status s = HSTableHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &hstheader);
       if (!s.IsOK()) {
@@ -858,6 +871,7 @@ class HSTableManager {
       log::trace("HSTableManager::LoadDatabase()", "Loading file:[%s] with key:[%s]", filepath.c_str(), p.first.c_str());
       if (stat(filepath.c_str(), &info) != 0) continue;
       Mmap mmap(filepath.c_str(), info.st_size);
+      if (!mmap.is_valid()) return Status::IOError("Mmap constructor failed");
       uint64_t filesize;
       bool is_file_large, is_file_compacted;
       s = LoadFile(mmap, fileid, index_se, &filesize, &is_file_large, &is_file_compacted);
@@ -1079,6 +1093,7 @@ class HSTableManager {
   std::string prefix_;
   std::string prefix_compaction_;
   std::string dirpath_locks_;
+  bool wait_until_can_open_new_files_;
 
  public:
   FileResourceManager file_resource_manager;

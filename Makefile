@@ -31,6 +31,11 @@ all: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(CLIENT) $(TEST_COMPRESS
 debug: CFLAGS += -DDEBUG -g
 debug: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(CLIENT) $(TEST_COMPRESSION) $(TEST_DB)
 
+threadsanitize: CFLAGS += -DDEBUG -g -fsanitize=thread -O2 -pie -fPIC
+threadsanitize: LDFLAGS += -pie -ltsan
+threadsanitize: LDFLAGS_CLIENT += -pie -ltsan
+threadsanitize: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(CLIENT) $(TEST_COMPRESSION) $(TEST_DB)
+
 $(EXECUTABLE): $(OBJECTS) $(OBJECTS_MAIN)
 	$(CC) $(OBJECTS) $(OBJECTS_MAIN) -o $@ $(LDFLAGS) 
 

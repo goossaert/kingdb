@@ -118,7 +118,8 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         } else {
           // should never happen, keeping it here until fully tested
           log::emerg("NetworkTask", "Could not match put command [%s]", str_buffer.c_str());
-          exit(-1);
+          break;
+          //exit(-1);
         }
       } else if (   bytes_received_last >= 2
                  && buffer->data()[bytes_received_last-2] == '\r'
@@ -127,7 +128,8 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       } else {
         // should never happen, keeping it here until fully tested
         log::emerg("NetworkTask", "Don't know what to do with this new packet [%s]", buffer->ToString().c_str());
-        exit(-1);
+        break;
+        //exit(-1);
       }
     }
 
@@ -321,7 +323,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
     } else {
       // for debugging
       log::emerg("NetworkTask", "Unknown case for buffer");
-      exit(-1);
+      //exit(-1);
     }
   }
   log::trace("NetworkTask", "exit and close socket");

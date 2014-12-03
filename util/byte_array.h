@@ -131,17 +131,17 @@ class SmartByteArray: public ByteArrayCommon {
 
 
 
-
 // TODO: move to file.h
 class Mmap {
  public:
-  Mmap(std::string filepath, int64_t filesize) {
-    filepath_ = filepath;
-    filesize_ = filesize;
+  Mmap(std::string filepath, int64_t filesize)
+      : filepath_(filepath),
+        filesize_(filesize),
+        is_valid_(false) {
     if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
       std::string msg = std::string("Count not open file [") + filepath + std::string("]");
       log::emerg("Mmap()::ctor()", "%s", msg.c_str());
-      //return Status::IOError(msg, strerror(errno));
+      return;
     }
 
     log::trace("Mmap::ctor()", "open file: ok");
@@ -153,11 +153,12 @@ class Mmap {
                                        fd_,
                                        0));
     if (datafile_ == MAP_FAILED) {
-      // TODO-3: fix how errors are managed here
       std::string message("Could not mmap() file: " + filepath);
       log::emerg(message.c_str(), strerror(errno));
-      exit(-1);
+      return
     }
+
+    is_valid_ = true;
   }
 
   virtual ~Mmap() {
@@ -176,6 +177,8 @@ class Mmap {
   char* datafile() { return datafile_; }
   int64_t filesize() { return filesize_; }
   const char* filepath() const { return filepath_.c_str(); } // for debugging
+  bool is_valid_;
+  bool is_valid() { return is_valid_; }
 
   int fd_;
   int64_t filesize_;

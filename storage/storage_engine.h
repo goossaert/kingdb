@@ -142,6 +142,15 @@ class StorageEngine {
     return fs_free_space_;
   }
 
+  Status FileSystemStatus() {
+    if (GetFreeSpace() < db_options_.storage__free_space_reject_orders) {
+      return Status::IOError("Not enough free space on the file system");
+    } else if (!hstable_manager_.CanOpenNewFiles()) {
+      return Status::IOError("Cannot open new files");
+    }
+    return Status::OK();
+  }
+
   void ProcessingLoopCompaction() {
     // 1. Have a ProcessingLoopStatistics() which pull the disk usage and
     //    dbsize values every 'db.compaction.check_interval' milliseconds.
@@ -530,6 +539,7 @@ class StorageEngine {
       *fileid_out = fileid;
       std::string filepath = hstable_manager_.GetFilepath(fileid);
       Mmap mmap(filepath, filesize);
+      if (!mmap.is_valid()) return Status::IOError("Mmap constructor failed");
       s = hstable_manager_.LoadFile(mmap, fileid, index_compaction);
       if (!s.IsOK()) {
         log::warn("HSTableManager::Compaction()", "Could not load index in file [%s]", filepath.c_str());
@@ -682,6 +692,10 @@ class StorageEngine {
         log::emerg("Compaction()", "Error during compaction with file [%s]", filepath.c_str());
       }
       Mmap *mmap = new Mmap(filepath.c_str(), info.st_size);
+      if (!mmap->is_valid()) {
+        delete mmap;
+        continue;
+      }
       mmaps[fileid] = mmap;
     }
     if (IsStopRequested()) return Status::IOError("Stop was requested");

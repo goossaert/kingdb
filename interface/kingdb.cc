@@ -71,9 +71,9 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
                                  ByteArray *chunk,
                                  uint64_t offset_chunk,
                                  uint64_t size_value) {
-  if (se_->GetFreeSpace() < db_options_.storage__free_space_reject_orders) {
-    return Status::IOError("Not enough free space on the file system");
-  }
+  Status s;
+  s = se_->FileSystemStatus();
+  if (!s.IsOK()) return s;
   log::trace("KingDB::PutChunkValidSize()",
             "[%s] offset_chunk:%" PRIu64,
             key->ToString().c_str(),
@@ -111,7 +111,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 
     uint64_t size_compressed;
     char *compressed;
-    Status s = compressor_.Compress(chunk->data(),
+    s = compressor_.Compress(chunk->data(),
                                     chunk->size(),
                                     &compressed,
                                     &size_compressed);
@@ -157,9 +157,8 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 Status KingDB::Remove(WriteOptions& write_options,
                       ByteArray *key) {
   log::trace("KingDB::Remove()", "[%s]", key->ToString().c_str());
-  if (se_->GetFreeSpace() < db_options_.storage__free_space_reject_orders) {
-    return Status::IOError("Not enough free space on the file system");
-  }
+  Status s = se_->FileSystemStatus();
+  if (!s.IsOK()) return s;
   return wb_->Remove(write_options, key);
 }
 
