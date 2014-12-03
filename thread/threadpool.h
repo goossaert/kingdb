@@ -63,20 +63,25 @@ class ThreadPool {
         if (IsStopRequested()) continue;
       }
       auto task = queue_.front();
-      queue_.pop();
-      if (task == nullptr) continue;
+      if (task == nullptr) {
+        queue_.pop(); // calls 'delete task'
+        continue;
+      }
       auto tid = std::this_thread::get_id();
       auto it_find = tid_to_id_.find(tid);
-      if (it_find == tid_to_id_.end()) tid_to_id_[tid] = seq_id++;
+      uint64_t id = 0;
+      if (it_find == tid_to_id_.end()) id = seq_id++;
+      tid_to_id_[tid] = id;
       tid_to_task_[tid] = task;
       task->RunInLock(tid);
       lock.unlock();
-      task->Run(tid, tid_to_id_[tid]);
+      task->Run(tid, id);
 
       mutex_.lock();
+      tid_to_task_[tid] = nullptr; // prevents erase() from calling delete on the task
       tid_to_task_.erase(tid);
+      queue_.pop(); // calls 'delete task'
       mutex_.unlock();
-      delete task;
     }
   }
 
@@ -97,10 +102,12 @@ class ThreadPool {
 
   void Stop() {
     stop_requested_ = true;
+    mutex_.lock();
     for (auto& tid_task: tid_to_task_) {
       Task* task = tid_task.second;
       task->Stop();
     }
+    mutex_.unlock();
     cv_.notify_all();
     for (auto& t: threads_) {
       t.join();
