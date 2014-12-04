@@ -5,6 +5,7 @@
 #ifndef KINGDB_THREADSTORAGE_H_
 #define KINGDB_THREADSTORAGE_H_
 
+#include "util/debug.h"
 #include <mutex>
 #include <thread>
 #include <map>

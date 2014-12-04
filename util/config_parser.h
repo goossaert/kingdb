@@ -5,6 +5,8 @@
 #ifndef KINGDB_CONFIG_PARSER_H_
 #define KINGDB_CONFIG_PARSER_H_
 
+#include "util/debug.h"
+
 #include <inttypes.h>
 #include <sys/stat.h>
 #include <string.h>

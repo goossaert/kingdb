@@ -5,6 +5,7 @@
 #ifndef KINGDB_WRITE_BUFFER_H_
 #define KINGDB_WRITE_BUFFER_H_
 
+#include "util/debug.h"
 #include <inttypes.h>
 #include <thread>
 #include <map>

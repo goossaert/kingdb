@@ -5,6 +5,8 @@
 #ifndef KINGDB_FILE_H_
 #define KINGDB_FILE_H_
 
+#include "util/debug.h"
+
 #include <sys/resource.h>
 #include <sys/statvfs.h>
 #include <unistd.h>

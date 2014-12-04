@@ -5,6 +5,7 @@
 #ifndef KINGDB_HASH_H_
 #define KINGDB_HASH_H_
 
+#include "util/debug.h"
 #include <string>
 #include <cstdint>
 #include <limits>

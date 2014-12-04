@@ -5,6 +5,7 @@
 #ifndef KINGDB_FORMAT_H_
 #define KINGDB_FORMAT_H_
 
+#include "util/debug.h"
 #include <thread>
 #include <unistd.h>
 #include <sys/types.h>

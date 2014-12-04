@@ -5,6 +5,7 @@
 #ifndef KINGDB_THREADPOOL_H_
 #define KINGDB_THREADPOOL_H_
 
+#include "util/debug.h"
 #include <thread>
 #include <mutex>
 #include <condition_variable>

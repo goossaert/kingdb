@@ -5,6 +5,8 @@
 #ifndef KINGDB_BYTE_ARRAY_BASE_H_
 #define KINGDB_BYTE_ARRAY_BASE_H_
 
+#include "util/debug.h"
+
 namespace kdb {
 
 class ByteArray {

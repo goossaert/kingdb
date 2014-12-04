@@ -5,6 +5,7 @@
 #ifndef KINGDB_OPTIONS_H_
 #define KINGDB_OPTIONS_H_
 
+#include "util/debug.h"
 #include "config_parser.h"
 
 namespace kdb {

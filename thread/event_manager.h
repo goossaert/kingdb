@@ -5,6 +5,7 @@
 #ifndef KINGDB_EVENT_MANAGER_H_
 #define KINGDB_EVENT_MANAGER_H_
 
+#include "util/debug.h"
 #include <thread>
 #include <condition_variable>
 #include <vector>

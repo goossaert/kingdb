@@ -5,6 +5,7 @@
 #ifndef KINGDB_SERVER_H_
 #define KINGDB_SERVER_H_
 
+#include "util/debug.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>

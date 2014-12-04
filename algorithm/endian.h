@@ -5,6 +5,7 @@
 #ifndef KINGDB_ENDIAN_H_
 #define KINGDB_ENDIAN_H_
 
+#include "util/debug.h"
 #include <stdint.h>
 
 namespace kdb {

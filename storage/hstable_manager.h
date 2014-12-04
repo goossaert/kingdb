@@ -5,6 +5,7 @@
 #ifndef KINGDB_HSTABLE_MANAGER_H_
 #define KINGDB_HSTABLE_MANAGER_H_
 
+#include "util/debug.h"
 #include <thread>
 #include <mutex>
 #include <chrono>

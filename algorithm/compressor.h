@@ -5,6 +5,8 @@
 #ifndef KINGDB_COMPRESSOR_H_
 #define KINGDB_COMPRESSOR_H_
 
+#include "util/debug.h"
+
 #include <algorithm>
 #include <map>
 #include <inttypes.h>

@@ -5,6 +5,7 @@
 #ifndef KINGDB_STORAGE_ENGINE_H_
 #define KINGDB_STORAGE_ENGINE_H_
 
+#include "util/debug.h"
 #include <thread>
 #include <mutex>
 #include <chrono>

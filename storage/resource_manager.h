@@ -5,6 +5,7 @@
 #ifndef KINGDB_RESOURCE_MANAGER_H_
 #define KINGDB_RESOURCE_MANAGER_H_
 
+#include "util/debug.h"
 #include <thread>
 #include <mutex>
 #include <chrono>

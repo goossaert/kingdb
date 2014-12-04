@@ -5,6 +5,8 @@
 #ifndef KINGDB_ORDER_H_
 #define KINGDB_ORDER_H_
 
+#include "util/debug.h"
+
 #include <set>
 
 #include <thread>

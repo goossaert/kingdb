@@ -5,6 +5,7 @@
 #ifndef KINGDB_BYTE_ARRAY_H_
 #define KINGDB_BYTE_ARRAY_H_
 
+#include "util/debug.h"
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -155,7 +156,7 @@ class Mmap {
     if (datafile_ == MAP_FAILED) {
       std::string message("Could not mmap() file: " + filepath);
       log::emerg(message.c_str(), strerror(errno));
-      return
+      return;
     }
 
     is_valid_ = true;

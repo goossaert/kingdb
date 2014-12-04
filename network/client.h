@@ -5,6 +5,7 @@
 #ifndef KINGDB_CLIENT_H_
 #define KINGDB_CLIENT_H_
 
+#include "util/debug.h"
 #include <string>
 #include <sstream>
 #include <vector>

@@ -17,6 +17,8 @@
 #ifndef KINGDB_CODING_H_
 #define KINGDB_CODING_H_
 
+#include "util/debug.h"
+
 #include <stdint.h>
 #include <string.h>
 #include <string>

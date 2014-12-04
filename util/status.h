@@ -12,6 +12,7 @@
 #ifndef KINGDB_STATUS_H_
 #define KINGDB_STATUS_H_
 
+#include "util/debug.h"
 #include <string>
 
 namespace kdb {

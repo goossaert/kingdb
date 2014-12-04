@@ -5,6 +5,8 @@
 #ifndef KINGDB_LOGGER_H_
 #define KINGDB_LOGGER_H_
 
+#include "util/debug.h"
+
 #include <algorithm>
 #include <stdio.h>
 #include <sys/time.h>

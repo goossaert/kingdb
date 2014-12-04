@@ -16,6 +16,7 @@
 #ifndef KINGDB_CRC32_H_
 #define KINGDB_CRC32_H_
 
+#include "util/debug.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
