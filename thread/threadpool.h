@@ -64,10 +64,8 @@ class ThreadPool {
         if (IsStopRequested()) continue;
       }
       auto task = queue_.front();
-      if (task == nullptr) {
-        queue_.pop(); // calls 'delete task'
-        continue;
-      }
+      queue_.pop();
+      if (task == nullptr) continue;
       auto tid = std::this_thread::get_id();
       auto it_find = tid_to_id_.find(tid);
       uint64_t id = 0;
@@ -76,12 +74,11 @@ class ThreadPool {
       tid_to_task_[tid] = task;
       task->RunInLock(tid);
       lock.unlock();
+
       task->Run(tid, id);
 
       mutex_.lock();
-      tid_to_task_[tid] = nullptr; // prevents erase() from calling delete on the task
       tid_to_task_.erase(tid);
-      queue_.pop(); // calls 'delete task'
       mutex_.unlock();
     }
   }
