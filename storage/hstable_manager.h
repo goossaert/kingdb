@@ -89,6 +89,8 @@ class HSTableManager {
     buffer_has_items_ = false;
     is_closed_ = false;
     is_locked_sequence_timestamp_ = false;
+    offset_start_ = 0;
+    offset_end_ = 0;
   }
 
   void Close() {
@@ -97,8 +99,11 @@ class HSTableManager {
     is_closed_ = true;
     FlushCurrentFile();
     CloseCurrentFile();
-    delete[] buffer_raw_;
-    delete[] buffer_index_;
+    delete hash_;
+    if (!is_read_only_) {
+      delete[] buffer_raw_;
+      delete[] buffer_index_;
+    }
   }
 
   std::string GetPrefix() {

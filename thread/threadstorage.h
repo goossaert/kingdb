@@ -15,7 +15,7 @@ namespace kdb {
 // TODO: Change this for a "thread_local static" -- when LLVM will support it
 // TODO: Templatize this class so it can be used to create whatever type is
 //       needed, and replace the unique mutex by an array of mutexes to avoid
-//       lock contention -- they would be multiple maps as well.
+//       lock contention -- there would be multiple maps as well.
 // TODO-22: What if some threads are crashing? How to cleanup the content of the
 //          storage when that happens? -- any other part of the system for which
 //          crashing threads would cause resource/memory leaks?

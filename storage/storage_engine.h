@@ -120,6 +120,8 @@ class StorageEngine {
       delete fileids_iterator_; 
     }
 
+    delete hash_;
+
     log::trace("StorageEngine::Close()", "done");
   }
 
@@ -298,7 +300,7 @@ class StorageEngine {
           counter_iterations = 0;
         }
       }
-      ReleaseWriteLock();
+      if (counter_iterations) ReleaseWriteLock();
 
       /*
       for (auto& p: index_) {
@@ -930,7 +932,7 @@ class StorageEngine {
         counter_iterations = 0;
       }
     }
-    ReleaseWriteLock();
+    if (counter_iterations) ReleaseWriteLock();
     if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 

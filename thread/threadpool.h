@@ -36,21 +36,24 @@ class ThreadPool {
  // TODO: Verify that the Stop() method on the tasks makes the workers stop as
  //       expected.
  // TODO: Protect accesses to tid_to_id_ and tid_to_task_ with mutexes
+ // TODO: Is it possible that some threads die and never get re-created? Thus
+ //       the pool of threads could go down to none, and no processeing would
+ //       happen.
  public:
   int num_threads_; 
+  uint64_t seq_id;
+  bool stop_requested_;
   std::queue<Task*> queue_;
   std::condition_variable cv_;
   std::mutex mutex_;
   std::vector<std::thread> threads_;
   std::map<std::thread::id, uint64_t> tid_to_id_;
   std::map<std::thread::id, Task*> tid_to_task_;
-  uint64_t seq_id;
-  bool stop_requested_;
 
-  ThreadPool(int num_threads) {
-    num_threads_ = num_threads;
-    seq_id = 0;
-    stop_requested_ = false;
+  ThreadPool(int num_threads)
+      : num_threads_(num_threads),
+        seq_id(0),
+        stop_requested_(false) {
   }
 
   ~ThreadPool() {
@@ -63,7 +66,8 @@ class ThreadPool {
         cv_.wait(lock);
         if (IsStopRequested()) continue;
       }
-      auto task = queue_.front();
+      if (queue_.empty()) continue;
+      Task* task = queue_.front();
       queue_.pop();
       if (task == nullptr) continue;
       auto tid = std::this_thread::get_id();
@@ -78,8 +82,10 @@ class ThreadPool {
       task->Run(tid, id);
 
       mutex_.lock();
+      if (!IsStopRequested()) delete task;
       tid_to_task_.erase(tid);
       mutex_.unlock();
+
     }
   }
 
@@ -100,20 +106,26 @@ class ThreadPool {
 
   void Stop() {
     stop_requested_ = true;
-    mutex_.lock();
-    for (auto& tid_task: tid_to_task_) {
-      Task* task = tid_task.second;
-      task->Stop();
-    }
-    mutex_.unlock();
     cv_.notify_all();
     for (auto& t: threads_) {
       t.join();
     }
+    mutex_.lock();
+    for (auto& tid_task: tid_to_task_) {
+      Task* task = tid_task.second;
+      task->Stop();
+      delete task;
+    }
+    while (!queue_.empty()) {
+      Task *task = queue_.front();
+      queue_.pop();
+      delete task;
+    }
+    mutex_.unlock();
   }
 
   void BlockUntilAllTasksHaveCompleted() {
-    while (queue_.size() > 0) { // TODO: protect accesses to queue_ with a mutex
+    while (!queue_.empty()) { // TODO: protect accesses to queue_ with a mutex
       std::this_thread::sleep_for(std::chrono::milliseconds(500));
     }
     Stop();

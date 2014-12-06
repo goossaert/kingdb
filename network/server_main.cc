@@ -138,12 +138,12 @@ int main(int argc, char** argv) {
   }
 
 #ifndef DEBUG
+#endif
   signal(SIGINT, termination_signal_handler);
   signal(SIGTERM, termination_signal_handler);
 
   signal(SIGSEGV, crash_signal_handler);
   signal(SIGABRT, crash_signal_handler);
-#endif
 
   kdb::Server server;
   server.Start(server_options, db_options, dbname);

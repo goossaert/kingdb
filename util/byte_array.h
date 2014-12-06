@@ -205,6 +205,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     compressor_.ResetThreadLocalStorage();
     crc32_.ResetThreadLocalStorage();
   }
+  virtual ~SharedMmappedByteArray() {}
 
   void SetOffset(uint64_t offset, uint64_t size) {
     offset_ = offset;

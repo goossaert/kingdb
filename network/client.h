@@ -21,24 +21,40 @@
 #include "thread/threadpool.h"
 #include "kingdb/kdb.h"
 
-#define SIZE_BUFFER_CLIENT    1024*1024*65 // used by client to get data from server
-#define SIZE_LARGE_TEST_ITEMS 1024*1024*64 // size of large items used for testing
-#define MAX_RETRIES 1
+#define SIZE_BUFFER_CLIENT    1024*1024*1 // used by client to get data from server
+#define SIZE_LARGE_TEST_ITEMS 1024*1024*1 // size of large items used for testing
+#define MAX_RETRIES 2
 
 //#define RANDOM_DIST_LOWER_BOUND 256*1024
 //#define RANDOM_DIST_UPPER_BOUND 512*1024
 #define RANDOM_DIST_LOWER_BOUND 10*1024
 #define RANDOM_DIST_UPPER_BOUND 12*1024
+//#define RANDOM_DIST_LOWER_BOUND 1*1024
+//#define RANDOM_DIST_UPPER_BOUND (1*1024 + 200)
 
 namespace kdb {
 
 class Client {
  public:
-  Client(std::string database) {
+  Client(std::string database)
+      : memc(nullptr)
+  {
     memc = memcached(database.c_str(), database.length());
+    //uint64_t value;
+    //value = memcached_behavior_get(memc, MEMCACHED_BEHAVIOR_CONNECT_TIMEOUT); 
+    //printf("MEMCACHED_BEHAVIOR_CONNECT_TIMEOUT: %" PRIu64 "\n", value);
+    memcached_behavior_set(memc, MEMCACHED_BEHAVIOR_CONNECT_TIMEOUT, 30000); 
+    memcached_behavior_set(memc, MEMCACHED_BEHAVIOR_POLL_TIMEOUT, 30000); 
+    memcached_behavior_set(memc, MEMCACHED_BEHAVIOR_RETRY_TIMEOUT, 100); 
   }
   ~Client() {
-    memcached_free(memc);
+    if (memc != nullptr) {
+      memcached_free(memc);
+    }
+  }
+
+  bool IsValid() {
+    return (memc != nullptr);
   }
 
   uint64_t hash_function(const std::string& key) {
@@ -128,13 +144,14 @@ class Client {
 
 class ClientTask: public Task {
  public:
-  ClientTask(std::string database, int num_writes, int num_removes, int num_reads) {
-    database_ = database;
-    num_writes_ = num_writes;
-    num_removes_ = num_removes;
-    num_reads_ = num_reads;
+  ClientTask(std::string database, int num_writes, int num_removes, int num_reads)
+      : database_(database),
+        num_writes_(num_writes),
+        num_removes_(num_removes),
+        num_reads_(num_reads)
+  {
   }
-  virtual ~ClientTask() {};
+  virtual ~ClientTask() {}
 
   virtual void RunInLock(std::thread::id tid) {
     //std::cout << "Thread " << tid << std::endl;
@@ -142,6 +159,10 @@ class ClientTask: public Task {
 
   virtual void Run(std::thread::id tid, uint64_t id) {
     Client client(database_);
+    if (!client.IsValid()) {
+      log::emerg("ClientTask", "Could not load the client"); 
+      return;
+    }
     int size = SIZE_LARGE_TEST_ITEMS;
     char *buffer_large = new char[size+1];
     for (auto i = 0; i < size; i++) {
@@ -167,12 +188,12 @@ class ClientTask: public Task {
         if (s.IsOK()) {
           retry = MAX_RETRIES;
         } else {
-          log::debug("ClientTask", "Put() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+          log::alert("ClientTask", "Put() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
           //exit(-1);
         }
         
         if (retry >= MAX_RETRIES - 1) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));
         log::debug("ClientTask", "retry key: [%s]", key.c_str());
       }
       log::info("ClientTask", "Put(%s, size:%" PRIu64 ") - [%s]", ss.str().c_str(), size_value, s.ToString().c_str());
@@ -190,6 +211,7 @@ class ClientTask: public Task {
       if (!s.IsOK()) {
         log::info("ClientTask", "Remove() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
       } else {
+        log::alert("ClientTask", "Remove() insert(key) %d %d", i, num_removes_);
         keys_removed.insert(key);
       }
     }

@@ -380,6 +380,7 @@ void Server::AcceptNetworkTraffic() {
   std::string str_port = std::to_string(server_options_.interface__memcached_port);
   int ret;
   if ((ret = getaddrinfo(NULL, str_port.c_str(), &ai_hints, &ai_server)) != 0) {
+    log::emerg("Server", "getaddrinfo: %s", gai_strerror(ret)); 
     stop_requested_ = true;
     return;// Status::IOError("Server - getaddrinfo", gai_strerror(ret));
   }
@@ -393,7 +394,9 @@ void Server::AcceptNetworkTraffic() {
 
     int setsockopt_yes=1;
     if (setsockopt(sockfd_listen, SOL_SOCKET, SO_REUSEADDR, &setsockopt_yes, sizeof(setsockopt_yes)) == -1) {
+      log::emerg("Server", "setsockopt: %s", strerror(errno)); 
       stop_requested_ = true;
+      freeaddrinfo(ai_server);
       return;// Status::IOError("Server - setsockopt", strerror(errno));
     }
 
@@ -404,13 +407,16 @@ void Server::AcceptNetworkTraffic() {
     break;
   }
 
+  freeaddrinfo(ai_server);
+
   if (ai_ptr == NULL) {
+    log::emerg("Server", "Failed to bind()");
     stop_requested_ = true;
     return;// Status::IOError("Server - Failed to bind");
   }
-  freeaddrinfo(ai_server);
 
   if (listen(sockfd_listen, server_options_.listen_backlog) == -1) {
+    log::emerg("Server", "listen(): %s", strerror(errno));
     stop_requested_ = true;
     return;// Status::IOError("Server - listen", strerror(errno));
   }
@@ -444,7 +450,7 @@ void Server::AcceptNetworkTraffic() {
     size_sa = sizeof(sockaddr_client);
     int ret_select = select(sockfd_max, &sockfds_read, NULL, NULL, NULL);
     if (ret_select < 0) {
-      log::trace("Server", "select() error %s", strerror(errno));
+      log::emerg("Server", "select() error %s", strerror(errno));
       stop_requested_ = true;
       return;
     } else if (ret_select == 0) {
