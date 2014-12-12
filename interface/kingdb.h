@@ -5,6 +5,8 @@
 #ifndef KINGDB_INTERFACE_MAIN_H_
 #define KINGDB_INTERFACE_MAIN_H_
 
+#include "util/debug.h"
+
 #include <assert.h>
 #include <thread>
 #include <string>
