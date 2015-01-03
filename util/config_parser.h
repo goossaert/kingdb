@@ -21,7 +21,6 @@
 
 // TODO: have short letter version of parameter names? ex: -l or --loglevel for the same parameter
 // TODO: error if duplicate parameter is same scope (file or command-line)
-// TODO: make --help from parameter infos
 
 namespace kdb {
 
@@ -29,9 +28,11 @@ class Parameter {
  public:
   std::string name;
   std::string description;
+  std::string default_value;
   bool is_mandatory;
   virtual ~Parameter() {}
   virtual Status Parse(const std::string& config, const std::string& value, const std::string& filepath, int line_number) = 0;
+  virtual std::string Type() = 0;
   uint64_t GetMultiplier(std::string str) {
     std::regex regex_number {"([\\d]+)[\\s]*([^\\s]*)"};
     std::smatch matches;
@@ -80,6 +81,7 @@ class FlagParameter: public Parameter {
     name = name_in;
     is_mandatory = mandatory_in;
     description = description_in;
+    default_value = "not set";
     is_present = is_present_in;
     *is_present = false;
   }
@@ -88,6 +90,7 @@ class FlagParameter: public Parameter {
     *is_present = true;
     return Status::OK();
   }
+  virtual std::string Type() { return "Flag"; }
 };
 
 
@@ -98,6 +101,7 @@ class BooleanParameter: public Parameter {
     name = name_in;
     is_mandatory = mandatory_in;
     description = description_in;
+    default_value = default_in ? "True" : "False";
     state = is_present_in;
     *state = default_in;
   }
@@ -115,6 +119,7 @@ class BooleanParameter: public Parameter {
     }
     return Status::OK();
   }
+  virtual std::string Type() { return "Boolean"; }
 };
 
 
@@ -127,6 +132,7 @@ class UnsignedInt32Parameter: public Parameter {
     name = name_in;
     is_mandatory = mandatory_in;
     description = description_in;
+    default_value = default_in;
     ptr = ptr_in;
     Status s = Parse(name, default_in, "default-value", 0);
     if (!s.IsOK()) {
@@ -150,6 +156,7 @@ class UnsignedInt32Parameter: public Parameter {
     *ptr = *ptr * multiplier;
     return Status::OK();
   }
+  virtual std::string Type() { return "Unsigned 32-bit integer"; }
 };
 
 
@@ -160,6 +167,7 @@ class UnsignedInt64Parameter: public Parameter {
     name = name_in;
     is_mandatory = mandatory_in;
     description = description_in;
+    default_value = default_in;
     ptr = ptr_in;
     Status s = Parse(name, default_in, "default-value", 0);
     if (!s.IsOK()) {
@@ -183,6 +191,7 @@ class UnsignedInt64Parameter: public Parameter {
     *ptr = *ptr * multiplier;
     return Status::OK();
   }
+  virtual std::string Type() { return "Unsigned 64-bit integer"; }
 };
 
 
@@ -193,6 +202,7 @@ class DoubleParameter: public Parameter {
     name = name_in;
     is_mandatory = mandatory_in;
     description = description_in;
+    default_value = default_in;
     ptr = ptr_in;
     Status s = Parse(name, default_in, "default-value", 0);
     if (!s.IsOK()) {
@@ -210,6 +220,7 @@ class DoubleParameter: public Parameter {
     }
     return Status::OK();
   }
+  virtual std::string Type() { return "Double-precision number"; }
 };
 
 
@@ -220,6 +231,7 @@ class StringParameter: public Parameter {
     name = name_in;
     is_mandatory = mandatory_in;
     description = description_in;
+    default_value = default_in;
     ptr = ptr_in;
     *ptr = default_in;
   }
@@ -229,6 +241,7 @@ class StringParameter: public Parameter {
     *ptr = value;
     return Status::OK();
   }
+  virtual std::string Type() { return "String"; }
 };
 
 
@@ -260,6 +273,50 @@ class ConfigParser {
     fprintf(stderr, "Error: the following mandatory parameters are missing:\n");
     for (auto& name: mandatories_) {
       fprintf(stderr, "%s\n", name.c_str()); 
+    }
+  }
+
+  int min_int(int a, int b) {
+    return a < b ? a : b;
+  }
+
+  std::string AlignString(int margin, int column, std::string& str) {
+    // Obviously not efficient, but simple and fast enough to format
+    // the parameters so they can be displayed in PrintUsage()
+    std::string str_aligned;
+    int i = 0;
+    while (i < str.size()) {
+      int j_start = i + column;
+      int j = (j_start <= str.size()) ? j_start : i;
+      while (j > i) {
+        if (str[j] == ' ') break;
+        j--;
+      }
+      if (j <= i) j = str.size();
+      for (int k = 0; k < margin; k++) str_aligned += " ";
+      str_aligned += str.substr(i, j - i);
+      if (j + 1 < str.size()) str_aligned += "\n";
+      i = j + 1;
+    }
+
+    return str_aligned;
+  }
+
+  void PrintUsage() {
+    int margin = 6;
+    int column = 74;
+    std::string str_margin = "";
+    for (int k = 0; k < margin; k++) str_margin += " ";
+    for (auto &p: parameters_) {
+      fprintf(stdout, "  --%s:\n", p->name.c_str());
+      std::string d_aligned = AlignString(margin, column, p->description);
+      fprintf(stdout, "%s\n", d_aligned.c_str());
+      if (mandatories_.find(p->name) == mandatories_.end()) {
+        fprintf(stdout, "%sDefault value: %s (%s)\n", str_margin.c_str(), p->default_value.c_str(), p->Type().c_str());
+      } else {
+        fprintf(stdout, "%sThis parameter is *mandatory* (%s)\n", str_margin.c_str(), p->Type().c_str());
+      }
+      fprintf(stdout, "\n");
     }
   }
 

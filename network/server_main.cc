@@ -5,6 +5,7 @@
 #include <execinfo.h>
 #include <csignal>
 
+#include "include/kingdb/kdb.h"
 #include "network/server.h"
 #include "thread/threadpool.h"
 #include "util/options.h"
@@ -81,8 +82,16 @@ int main(int argc, char** argv) {
                       "db.path", "", &dbname, true,
                       "Path where the database can be found or will be created."));
 
-  kdb::ServerOptions::AddParametersToConfigParser(server_options, parser);
   kdb::DatabaseOptions::AddParametersToConfigParser(db_options, parser);
+  kdb::ServerOptions::AddParametersToConfigParser(server_options, parser);
+
+  if (argc == 2 && (strncmp(argv[1], "--help", 6) == 0 || strncmp(argv[1], "-h", 2) == 0)) {
+    fprintf(stdout, "KingDB is a persisted key-value store. For more information, visit http://kingdb.org\n");
+    fprintf(stdout, "Software version %d.%d.%d\nData format version %d.%d\n", kdb::kVersionMajor, kdb::kVersionMinor, kdb::kVersionRevision, kdb::kVersionDataFormatMajor, kdb::kVersionDataFormatMinor);
+    fprintf(stdout, "\nParameters:\n\n");
+    parser.PrintUsage();
+    exit(0);
+  }
 
   if (configfile != "") {
     s = parser.ParseFile(configfile); 
@@ -120,9 +129,9 @@ int main(int argc, char** argv) {
   db_options.compression = ctype;
 
   kdb::HashType htype;
-  if (db_options.storage__hashing_algorithm == "xxhash_64") {
+  if (db_options.storage__hashing_algorithm == "xxhash-64") {
     htype = kdb::kxxHash_64;
-  } else if (db_options.storage__hashing_algorithm == "murmurhash3_64") {
+  } else if (db_options.storage__hashing_algorithm == "murmurhash3-64") {
     htype = kdb::kMurmurHash3_64;
   } else {
     fprintf(stderr, "Unknown hashing algorithm: [%s]\n", db_options.storage__hashing_algorithm.c_str());

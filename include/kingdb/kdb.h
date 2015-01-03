@@ -10,4 +10,13 @@
 #include "util/order.h"
 #include "thread/event_manager.h"
 
+namespace kdb {
+
+static const uint32_t kVersionMajor    = 0;
+static const uint32_t kVersionMinor    = 9;
+static const uint32_t kVersionRevision = 0;
+static const uint32_t kVersionBuild    = 0;
+
+} // namespace kdb
+
 #endif // KINGDB_HEADERS_H_

@@ -16,6 +16,7 @@
 #include <string.h>
 #include <inttypes.h>
 
+#include "include/kingdb/kdb.h"
 #include "util/logger.h"
 #include "util/status.h"
 #include "algorithm/coding.h"
@@ -27,8 +28,8 @@
 namespace kdb {
 
 // Data format is version 1.0
-static const uint32_t kVersionDataFormatMajor = 1;
-static const uint32_t kVersionDataFormatMinor = 0;
+static const uint32_t kVersionDataFormatMajor   = 1;
+static const uint32_t kVersionDataFormatMinor   = 0;
 
 // 32-bit flags
 // NOTE: kEntryFirst, kEntryMiddle and kEntryLast are not used yet,
@@ -210,14 +211,18 @@ struct EntryFooter {
 };
 
 enum FileType {
-  kUnknownType        = 0x0,
+  kUnknownType            = 0x0,
   kUncompactedRegularType = 0x1,
   kCompactedRegularType   = 0x2,
-  kCompactedLargeType = 0x4,
+  kCompactedLargeType     = 0x4,
 };
 
 struct HSTableHeader {
   uint32_t crc32;
+  uint32_t version_major;
+  uint32_t version_minor;
+  uint32_t version_revision;
+  uint32_t version_build;
   uint32_t version_data_format_major;
   uint32_t version_data_format_minor;
   uint32_t filetype;
@@ -386,23 +391,24 @@ struct DatabaseOptionEncoder {
   static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct DatabaseOptions *output) {
     if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
 
-    uint32_t crc32_computed = crc32c::Value(buffer_in + 4, 24);
+    uint32_t crc32_computed = crc32c::Value(buffer_in + 4, GetFixedSize() - 4);
     uint32_t crc32_stored; 
     GetFixed32(buffer_in, &crc32_stored);
     if (crc32_computed != crc32_stored) return Status::IOError("Invalid checksum");
 
     uint32_t version_data_format_major, version_data_format_minor;
-    GetFixed32(buffer_in +  4, &version_data_format_major);
-    GetFixed32(buffer_in +  8, &version_data_format_minor);
+    GetFixed32(buffer_in + 20, &version_data_format_major);
+    GetFixed32(buffer_in + 24, &version_data_format_minor);
     if (   version_data_format_major != kVersionDataFormatMajor
         || version_data_format_minor != kVersionDataFormatMinor) {
       return Status::IOError("Data format version not supported");
     }
 
-    uint32_t hash, compression_type;
-    GetFixed64(buffer_in + 12, &(output->storage__hstable_size));
-    GetFixed32(buffer_in + 20, &hash);
-    GetFixed32(buffer_in + 24, &compression_type);
+    uint32_t hash, compression_type, checksum_type;
+    GetFixed64(buffer_in + 28, &(output->storage__hstable_size));
+    GetFixed32(buffer_in + 36, &hash);
+    GetFixed32(buffer_in + 40, &compression_type);
+    GetFixed32(buffer_in + 44, &checksum_type);
     if (hash == 0x0) {
       output->hash = kMurmurHash3_64;
     } else if (hash == 0x1) {
@@ -418,22 +424,34 @@ struct DatabaseOptionEncoder {
     } else {
       return Status::IOError("Unknown compression type");
     }
+
+    if (compression_type == 0x1) {
+      output->checksum = kCrc32Checksum;
+    } else {
+      return Status::IOError("Unknown checksum type");
+    }
+
     return Status::OK();
   }
 
   static uint32_t EncodeTo(const struct DatabaseOptions *input, char* buffer) {
-    EncodeFixed32(buffer +  4, kVersionDataFormatMajor);
-    EncodeFixed32(buffer +  8, kVersionDataFormatMinor);
-    EncodeFixed64(buffer + 12, input->storage__hstable_size);
-    EncodeFixed32(buffer + 20, (uint32_t)input->hash);
-    EncodeFixed32(buffer + 24, (uint32_t)input->compression.type);
-    uint32_t crc32 = crc32c::Value(buffer + 4, 24);
+    EncodeFixed32(buffer +  4, kVersionMajor);
+    EncodeFixed32(buffer +  8, kVersionMinor);
+    EncodeFixed32(buffer + 12, kVersionRevision);
+    EncodeFixed32(buffer + 16, kVersionBuild);
+    EncodeFixed32(buffer + 20, kVersionDataFormatMajor);
+    EncodeFixed32(buffer + 24, kVersionDataFormatMinor);
+    EncodeFixed64(buffer + 28, input->storage__hstable_size);
+    EncodeFixed32(buffer + 36, (uint32_t)input->hash);
+    EncodeFixed32(buffer + 40, (uint32_t)input->compression.type);
+    EncodeFixed32(buffer + 44, (uint32_t)input->checksum);
+    uint32_t crc32 = crc32c::Value(buffer + 4, GetFixedSize() - 4);
     EncodeFixed32(buffer, crc32);
     return GetFixedSize();
   }
 
   static uint32_t GetFixedSize() {
-    return 28; // in bytes
+    return 48; // in bytes
   }
 
 };
