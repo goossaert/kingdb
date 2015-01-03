@@ -20,7 +20,6 @@
 #include "util/status.h"
 
 // TODO: have short letter version of parameter names? ex: -l or --loglevel for the same parameter
-// TODO: should I keep the dot naming format, or switch for all dashes 'this.sub_name.thing' vs 'this-sub-name-thing'
 // TODO: error if duplicate parameter is same scope (file or command-line)
 // TODO: make --help from parameter infos
 

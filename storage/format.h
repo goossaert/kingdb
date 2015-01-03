@@ -352,11 +352,11 @@ struct HSTableFooter {
 };
 
 
-struct HSTableFooterIndex {
+struct OffsetArrayRow {
   uint64_t hashed_key;
   uint32_t offset_entry;
 
-  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct HSTableFooterIndex *output, uint32_t *num_bytes_read) {
+  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct OffsetArrayRow *output, uint32_t *num_bytes_read) {
     int length;
     char *buffer = const_cast<char*>(buffer_in);
     SimpleByteArray array(buffer, num_bytes_max);
@@ -373,7 +373,7 @@ struct HSTableFooterIndex {
     return Status::OK();
   }
 
-  static uint32_t EncodeTo(const struct HSTableFooterIndex *input, char* buffer) {
+  static uint32_t EncodeTo(const struct OffsetArrayRow *input, char* buffer) {
     char *ptr;
     ptr = EncodeVarint64(buffer, input->hashed_key);
     ptr = EncodeVarint32(ptr, input->offset_entry);

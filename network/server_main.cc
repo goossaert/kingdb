@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
 
   // General options
   parser.AddParameter(new kdb::StringParameter(
-                      "configfile", "", &configfile, false,
+                      "configfile", configfile, &configfile, false,
                       "Configuration file. If not specified, the path ./kingdb.conf and /etc/kingdb.conf will be tested."));
   parser.AddParameter(new kdb::StringParameter(
                       "loglevel", "trace", &loglevel, false,
@@ -131,11 +131,6 @@ int main(int argc, char** argv) {
   db_options.hash = htype;
 
   kdb::FileUtil::increase_limit_open_files();
-
-  if (dbname == "") {
-    fprintf(stderr, "Missing arguments\n");
-    exit(-1); 
-  }
 
 #ifndef DEBUG
 #endif

@@ -326,11 +326,11 @@ class HSTableManager {
                           bool has_padding_in_values,
                           bool has_invalid_entries) {
     uint64_t offset = 0;
-    struct HSTableFooterIndex hstfindex;
+    struct OffsetArrayRow row;
     for (auto& p: offarray_current) {
-      hstfindex.hashed_key = p.first;
-      hstfindex.offset_entry = p.second;
-      uint32_t length = HSTableFooterIndex::EncodeTo(&hstfindex, buffer_index_ + offset);
+      row.hashed_key = p.first;
+      row.offset_entry = p.second;
+      uint32_t length = OffsetArrayRow::EncodeTo(&row, buffer_index_ + offset);
       offset += length;
       log::trace("HSTableManager::WriteOffsetArray()", "hashed_key:[%" PRIu64 "] offset:[%08x]", p.first, p.second);
     }
@@ -933,21 +933,21 @@ class HSTableManager {
     log::trace("LoadFile()", "Footer OK");
     // The file has a clean footer, load all the offsets in the index
     uint64_t offset_index = footer.offset_indexes;
-    struct HSTableFooterIndex hstfindex;
+    struct OffsetArrayRow row;
     for (auto i = 0; i < footer.num_entries; i++) {
-      uint32_t length_hstfindex = 0;
-      s = HSTableFooterIndex::DecodeFrom(mmap.datafile() + offset_index,
-                                         mmap.filesize() - offset_index,
-                                         &hstfindex,
-                                         &length_hstfindex);
+      uint32_t length_row = 0;
+      s = OffsetArrayRow::DecodeFrom(mmap.datafile() + offset_index,
+                                     mmap.filesize() - offset_index,
+                                     &row,
+                                     &length_row);
       if (!s.IsOK()) return s;
       uint64_t fileid_shifted = fileid;
       fileid_shifted <<= 32;
-      index_se.insert(std::pair<uint64_t, uint64_t>(hstfindex.hashed_key, fileid_shifted | hstfindex.offset_entry));
+      index_se.insert(std::pair<uint64_t, uint64_t>(row.hashed_key, fileid_shifted | row.offset_entry));
       log::trace("LoadFile()",
                 "Add item to index -- hashed_key:[%" PRIu64 "] offset:[%u] -- offset_index:[%" PRIu64 "]",
-                hstfindex.hashed_key, hstfindex.offset_entry, offset_index);
-      offset_index += length_hstfindex;
+                row.hashed_key, row.offset_entry, offset_index);
+      offset_index += length_row;
     }
     if (filesize_out) *filesize_out = mmap.filesize();
     if (is_file_large_out) *is_file_large_out = footer.IsTypeLarge() ? true : false;
