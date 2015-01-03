@@ -37,7 +37,7 @@ int main(int argc, char** argv) {
 
   kdb::Status s;
   std::string dbname = "";
-  std::string log_level = "";
+  std::string loglevel = "";
   std::string configfile = "";
   kdb::ServerOptions server_options;
   kdb::DatabaseOptions db_options;
@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
                       "configfile", "", &configfile, false,
                       "Configuration file. If not specified, the path ./kingdb.conf and /etc/kingdb.conf will be tested."));
   parser.AddParameter(new kdb::StringParameter(
-                      "log_level", "trace", &log_level, false,
+                      "loglevel", "trace", &loglevel, false,
                       "Level of the logging, can be: emerg, alert, crit, error, warn, notice, info, debug, trace."));
   parser.AddParameter(new kdb::StringParameter(
                       "db.path", "", &dbname, true,
@@ -103,8 +103,8 @@ int main(int argc, char** argv) {
     exit(-1);
   }
 
-  if (log_level != "" && kdb::Logger::set_current_level(log_level.c_str()) < 0) {
-    fprintf(stderr, "Unknown log level: [%s]\n", log_level.c_str());
+  if (loglevel != "" && kdb::Logger::set_current_level(loglevel.c_str()) < 0) {
+    fprintf(stderr, "Unknown log level: [%s]\n", loglevel.c_str());
     exit(-1);
   }
 

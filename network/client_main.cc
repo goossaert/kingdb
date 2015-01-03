@@ -37,7 +37,7 @@ int main(int argc, char **argv) {
         num_removes = atoi(argv[i+1]);
       } else if (strcmp(argv[i], "--read" ) == 0) {
         num_reads = atoi(argv[i+1]);
-      } else if (strcmp(argv[i], "--log-level" ) == 0) {
+      } else if (strcmp(argv[i], "--loglevel" ) == 0) {
         if (kdb::Logger::set_current_level(argv[i+1]) < 0 ) {
           fprintf(stderr, "Unknown log level: [%s]\n", argv[i+1]);
           exit(-1); 

@@ -940,8 +940,9 @@ class StorageEngine {
     //     stored in 'index_compaction_' into the main index 'index_'
     log::trace("Compaction()", "Step 13: Transfer index_compaction_ into index_");
     AcquireWriteLock();
+    // TODO: The pouring of index_compaction_ needs to be throttled just like the update of index_ above.
     index_.insert(index_compaction_.begin(), index_compaction_.end()); 
-    index_compaction_.clear();
+    index_compaction_.clear(); // TODO: this needs to be moved
     mutex_compaction_.lock();
     is_compaction_in_progress_ = false;
     mutex_compaction_.unlock();

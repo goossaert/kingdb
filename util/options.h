@@ -82,22 +82,22 @@ struct DatabaseOptions {
 
     // Database options
     parser.AddParameter(new kdb::BooleanParameter(
-                         "db.create_if_missing", true, &db_options.create_if_missing, false,
+                         "db.create-if-missing", true, &db_options.create_if_missing, false,
                          "Will create the database if it does not already exists"));
     parser.AddParameter(new kdb::BooleanParameter(
-                         "db.error_if_exists", false, &db_options.error_if_exists, false,
+                         "db.error-if-exists", false, &db_options.error_if_exists, false,
                          "Will exit if the database already exists"));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.write_buffer.size", "32MB", &db_options.write_buffer__size, false,
+                         "db.write-buffer.size", "32MB", &db_options.write_buffer__size, false,
                          "Size of the Write Buffer. The database has two of these buffers."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.write_buffer.flush_timeout", "500 milliseconds", &db_options.write_buffer__flush_timeout, false,
+                         "db.write-buffer.flush-timeout", "500 milliseconds", &db_options.write_buffer__flush_timeout, false,
                          "in milliseconds, the timeout after which the write buffer will flush its cache."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.write_buffer.close_timeout", "5 seconds", &db_options.write_buffer__close_timeout, false,
+                         "db.write-buffer.close-timeout", "5 seconds", &db_options.write_buffer__close_timeout, false,
                          "in milliseconds, the time that a closing process will ahave to wait when flushing the vectors in the Writer Buffer."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.hstable_size", "32MB", &db_options.storage__hstable_size, false,
+                         "db.storage.hstable-size", "32MB", &db_options.storage__hstable_size, false,
                          "Maximum size a HSTable can have. Entries with keys and values beyond that size are considered to be large entries."));
     parser.AddParameter(new kdb::StringParameter(
                          "db.storage.compression", "lz4", &db_options.storage__compression_algorithm, false,
@@ -106,36 +106,36 @@ struct DatabaseOptions {
                          "db.storage.hashing", "xxhash_64", &db_options.storage__hashing_algorithm, false,
                          "Hashing algorithm used by the storage engine. Can be 'xxhash_64' or 'murmurhash3_64'."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.free_space_reject_orders", "192MB", &db_options.storage__free_space_reject_orders, false,
+                         "db.storage.free-space-reject-orders", "192MB", &db_options.storage__free_space_reject_orders, false,
                          "Free space below which new incoming orders are rejected. Should be at least (2 * 'db.write_buffer.size' + 4 * 'db.hstable.maximum_size'), so that when the file system fills up, the two write buffers can be flushed to secondary storage safely and the survival-mode compaction process can be run."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.maximum_chunk_size", "1MB", &db_options.storage__maximum_chunk_size, false,
+                         "db.storage.maximum-chunk-size", "1MB", &db_options.storage__maximum_chunk_size, false,
                          "The maximum chunk size is used by the storage engine to cut entries into smaller chunks -- important for the compression and hashing algorithms, can never be more than (2^32 - 1) as the algorihms used do not support sizes above that value."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.timeout_streaming", "60 seconds", &db_options.storage__streaming_timeout, false,
+                         "db.storage.timeout-streaming", "60 seconds", &db_options.storage__streaming_timeout, false,
                          "In milliseconds, the time of inactivity after which an entry is considered left for dead, and any subsequent incoming chunk for that entry is rejected."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.statistics_polling_interval", "60 seconds", &db_options.storage__statistics_polling_interval, false,
+                         "db.storage.statistics-polling-interval", "60 seconds", &db_options.storage__statistics_polling_interval, false,
                          "In milliseconds, the frequency at which statistics are polled in the Storage Engine (free disk space, etc.)."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.num_index_iterations_per_lock", "10", &db_options.storage__num_index_iterations_per_lock, false,
+                         "db.storage.num-index-iterations-per-lock", "10", &db_options.storage__num_index_iterations_per_lock, false,
                          "Number of entries merged into the Storage Engine index for each locking of the dedicated mutex. This parameter throttles index updates."));
 
     // Compaction options
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.compaction.check_interval", "30 seconds", &db_options.compaction__check_interval, false,
+                         "db.compaction.check-interval", "30 seconds", &db_options.compaction__check_interval, false,
                          "In milliseconds, the frequency at which the compaction conditions are checked."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.compaction.filesystem.free_space_required", "128MB", &db_options.compaction__filesystem__free_space_required, false,
+                         "db.compaction.filesystem.free-space-required", "128MB", &db_options.compaction__filesystem__free_space_required, false,
                          "Minimum free space on the file system required for a compaction process to be started."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.compaction.filesystem.survival_mode_threshold", "2GB", &db_options.compaction__filesystem__survival_mode_threshold, false,
+                         "db.compaction.filesystem.survival-mode-threshold", "2GB", &db_options.compaction__filesystem__survival_mode_threshold, false,
                          "If the free space on the file system is above that threshold, the compaction is in 'normal mode'. Below that threshold, the compaction is in 'survival mode'. Each mode triggers the compaction process for different amount of uncompacted data found in the database."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.compaction.filesystem.normal_batch_size", "1GB", &db_options.compaction__filesystem__normal_batch_size, false,
+                         "db.compaction.filesystem.normal-batch-size", "1GB", &db_options.compaction__filesystem__normal_batch_size, false,
                          "If the compaction is in normal mode and the amount of uncompacted data is above that value of 'normal_batch_size', then the compaction will start when the compaction conditions are checked."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.compaction.filesystem.survival_batch_size", "256MB", &db_options.compaction__filesystem__survival_batch_size, false,
+                         "db.compaction.filesystem.survival-batch-size", "256MB", &db_options.compaction__filesystem__survival_batch_size, false,
                          "If the compaction is in survival mode and the amount of uncompacted data is above that value of 'survival_batch_size', then the compaction will start when the compaction conditions are checked."));
 
 
@@ -169,19 +169,19 @@ struct ServerOptions {
 
   static void AddParametersToConfigParser(ServerOptions& server_options, ConfigParser& parser) {
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "server.size_buffer_recv", "65535", &server_options.size_buffer_recv, false,
+                         "server.size-buffer-recv", "65535", &server_options.size_buffer_recv, false,
                          "Size of the buffer used to receive data from the network. Each thread of the server has one such buffer."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "server.size_buffer_send", "1024", &server_options.size_buffer_send, false,
+                         "server.size-buffer-send", "1024", &server_options.size_buffer_send, false,
                          "Size of send buffer."));
     parser.AddParameter(new kdb::UnsignedInt32Parameter(
-                         "server.listen_backlog", "150", &server_options.listen_backlog, false,
+                         "server.listen-backlog", "150", &server_options.listen_backlog, false,
                          "Size of the listen() backlog."));
     parser.AddParameter(new kdb::UnsignedInt32Parameter(
-                         "server.num_threads", "150", &server_options.num_threads, false,
+                         "server.num-threads", "150", &server_options.num_threads, false,
                          "Num of threads in the pool of workers."));
     parser.AddParameter(new kdb::UnsignedInt32Parameter(
-                         "server.interface.memcached_port", "3490", &server_options.interface__memcached_port, false,
+                         "server.interface.memcached-port", "3490", &server_options.interface__memcached_port, false,
                          "Port where the memcached interface will lisen."));
   }
 
