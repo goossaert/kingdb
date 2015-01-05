@@ -57,9 +57,12 @@ class WriteBuffer {
     if (is_closed_) return;
     is_closed_ = true;
     Stop();
+    Flush();
+    cv_flush_.notify_one();
     thread_buffer_handler_.join();
   }
 
+  bool IsFlushNeeded();
   bool IsStopRequested() { return stop_requested_; }
   void Stop() { stop_requested_ = true; }
   bool stop_requested_;

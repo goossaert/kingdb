@@ -57,20 +57,20 @@ class KingDB: public Interface {
     delete hash;
 
     if (db_options_.storage__maximum_chunk_size > std::numeric_limits<int32_t>::max()) {
-      return Status::IOError("db.storage.maximum_chunk_size cannot be greater than max int32. Fix your options.");
+      return Status::IOError("db.storage.maximum-chunk-size cannot be greater than max int32. Fix your options.");
     }
 
     if (db_options_.storage__maximum_chunk_size >= db_options_.storage__hstable_size) {
-      return Status::IOError("The maximum size of a chunk cannot be larger than the minimum size of a large file (db.storage.maximum_chunk_size >= db_options_.storage__hstable_size). Fix your options.");
+      return Status::IOError("The maximum size of a chunk cannot be larger than the minimum size of a large file (db.storage.maximum-chunk-size >= db.storage.hstable-size). Fix your options.");
     }
 
     if (db_options_.storage__maximum_chunk_size > max_size_hash) {
-      return Status::IOError("db.storage.maximum_chunk_size cannot be greater than the maximum input size of the hash function you chose. Fix your options.");
+      return Status::IOError("db.storage.maximum-chunk-size cannot be greater than the maximum input size of the hash function you chose. Fix your options.");
     }
 
     if (   db_options_.compression.type != kNoCompression
         && db_options_.storage__maximum_chunk_size > compressor_.MaxInputSize()) {
-      return Status::IOError("db.storage.maximum_chunk_size cannot be greater than the maximum input size of the compression function you chose. Fix your options.");
+      return Status::IOError("db.storage.maximum-chunk-size cannot be greater than the maximum input size of the compression function you chose. Fix your options.");
     }
 
     std::unique_lock<std::mutex> lock(mutex_close_);

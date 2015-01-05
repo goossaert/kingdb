@@ -6,14 +6,20 @@
 
 namespace kdb {
 
+bool WriteBuffer::IsFlushNeeded() {
+  return (   !IsStopRequested()
+          || !buffers_[im_live_].empty()
+          || !buffers_[im_copy_].empty());
+}
+
 void WriteBuffer::Flush() {
-  if (IsStopRequested()) return;
-  log::debug("LOCK", "2 lock");
   std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
-  // NOTE: Doing the flushing and waiting twice, in case the two buffers,
+  if (!IsFlushNeeded()) return;
+    // NOTE: Doing the flushing and waiting twice, in case the two buffers,
   // 'live' and 'copy', have items. This is a quick hack and a better
   // solution should be investigated.
   for (auto i = 0; i < 2; i++) {
+    log::debug("LOCK", "2 lock");
     cv_flush_.notify_one();
     cv_flush_done_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.write_buffer__close_timeout));
   }
@@ -295,7 +301,10 @@ void WriteBuffer::ProcessingLoop() {
       log::trace("WriteBuffer", "ProcessingLoop() - wait - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
       can_swap_ = true;
       std::cv_status status = cv_flush_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.write_buffer__flush_timeout));
-      if (status == std::cv_status::no_timeout) {
+
+      if (!IsFlushNeeded()) {
+        return;
+      } else if (status == std::cv_status::no_timeout) {
         //log::info("WriteBuffer", "ProcessingLoop() - swapped no timeout");
         break;
       } else if (   status == std::cv_status::timeout
@@ -311,8 +320,6 @@ void WriteBuffer::ProcessingLoop() {
         force_swap_ = false;
         std::swap(im_live_, im_copy_);
         break;
-      } else if (IsStopRequested()) {
-        return;
       }
     }
 
@@ -373,6 +380,8 @@ void WriteBuffer::ProcessingLoop() {
     log::debug("LOCK", "4 unlock");
     log::debug("LOCK", "2 unlock");
     cv_flush_done_.notify_all();
+
+    if (!IsFlushNeeded()) return;
   }
 }
 
