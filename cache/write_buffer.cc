@@ -64,8 +64,8 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** v
         && order_found.chunk->size() == order_found.size_value) {
       *value_out = order_found.chunk;
       return Status::OK();
-    } else if (order_found.type == OrderType::Remove) {
-      return Status::RemoveOrder();
+    } else if (order_found.type == OrderType::Delete) {
+      return Status::DeleteOrder();
     } else {
       return Status::NotFound("Unable to find entry");
     }
@@ -104,8 +104,8 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** v
     *value_out = order_found.chunk;
     s = Status::OK();
   } else if (   found
-             && order_found.type == OrderType::Remove) {
-    s = Status::RemoveOrder();
+             && order_found.type == OrderType::Delete) {
+    s = Status::DeleteOrder();
   } else {
     s = Status::NotFound("Unable to find entry");
   }
@@ -146,12 +146,12 @@ Status WriteBuffer::PutChunk(WriteOptions& write_options,
 }
 
 
-Status WriteBuffer::Remove(WriteOptions& write_options, ByteArray* key) {
+Status WriteBuffer::Delete(WriteOptions& write_options, ByteArray* key) {
   // TODO: The storage engine is calling data() and size() on the chunk ByteArray.
   //       The use of SimpleByteArray here is a hack to guarantee that data()
   //       and size() won't be called on a nullptr -- this needs to be cleaned up.
   auto empty_chunk = new SimpleByteArray(nullptr, 0);
-  return WriteChunk(OrderType::Remove, key, empty_chunk, 0, 0, 0, 0);
+  return WriteChunk(OrderType::Delete, key, empty_chunk, 0, 0, 0, 0);
 }
 
 

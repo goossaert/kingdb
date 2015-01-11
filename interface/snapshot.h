@@ -80,7 +80,7 @@ class Snapshot: public Interface {
     return Status::IOError("Not supported");
   }
 
-  virtual Status Remove(WriteOptions& write_options, ByteArray *key) override {
+  virtual Status Delete(WriteOptions& write_options, ByteArray *key) override {
     return Status::IOError("Not supported");
   }
 

@@ -28,7 +28,7 @@
 
 namespace kdb {
 
-enum class OrderType { Put, Remove };
+enum class OrderType { Put, Delete };
 
 struct Order {
   std::thread::id tid;

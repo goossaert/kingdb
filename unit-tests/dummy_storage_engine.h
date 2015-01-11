@@ -31,7 +31,7 @@ class StorageEngine {
       for (auto& order: buffer) {
         if (order.type == OrderType::Put) {
           data_[order.key] = order.value;
-        } else { // order.type == OrderType::Remove
+        } else { // order.type == OrderType::Delete
           data_.erase(order.key);
         }
       }

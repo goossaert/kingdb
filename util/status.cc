@@ -19,8 +19,8 @@ std::string Status::ToString() const {
       case kNotFound:
         type = "Not found: ";
         break;
-      case kRemoveOrder:
-        type = "Remove order: ";
+      case kDeleteOrder:
+        type = "Delete order: ";
         break;
       case kInvalidArgument:
         type = "Invalid argument: ";

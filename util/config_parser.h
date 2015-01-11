@@ -417,7 +417,7 @@ class ConfigParser {
     while (std::getline(file, str)) {
       line_number += 1;
 
-      // Removes the comment if any
+      // Deletes the comment if any
       char *line = const_cast<char*>(str.c_str());
       char *ptr = line;
       while (*ptr != '\0' && *ptr != '#') ptr++;

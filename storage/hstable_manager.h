@@ -606,9 +606,9 @@ class HSTableManager {
         log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "AFTER fileid_ %u", fileid_);
       }
       log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "Put [%s]", order.key->ToString().c_str());
-    } else { // order.type == OrderType::Remove
-      log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "Remove [%s]", order.key->ToString().c_str());
-      entry_header.SetTypeRemove();
+    } else { // order.type == OrderType::Delete
+      log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "Delete [%s]", order.key->ToString().c_str());
+      entry_header.SetTypeDelete();
       entry_header.SetEntryFull();
       entry_header.size_key = order.key->size();
       entry_header.size_value = 0;
@@ -749,7 +749,7 @@ class HSTableManager {
       // Else, if the order is not self-contained and is a first chunk,
       // the location is saved in key_to_location[]
       } else if (order.IsFirstChunk()) {
-        if (location != 0 && order.type != OrderType::Remove) {
+        if (location != 0 && order.type != OrderType::Delete) {
           key_to_location[order.tid][order.key->ToString()] = location;
           log::trace("HSTableManager", "location saved: [%" PRIu64 "]", location); 
         } else {
@@ -778,14 +778,14 @@ class HSTableManager {
 
       /*
       if(!(info.st_mode & S_IFDIR)) {
-        return Status::IOError("A file with same name as the lock directory already exists and is not a directory. Remove or rename this file to continue.", dirpath_locks_.c_str());
+        return Status::IOError("A file with same name as the lock directory already exists and is not a directory. Delete or rename this file to continue.", dirpath_locks_.c_str());
       }
       */
 
       s = FileUtil::remove_files_with_prefix(dbname_.c_str(), prefix_compaction_);
       if (!s.IsOK()) return Status::IOError("Could not clean up previous compaction");
 
-      s = RemoveAllLockedFiles(dbname_);
+      s = DeleteAllLockedFiles(dbname_);
       if (!s.IsOK()) return Status::IOError("Could not clean up snapshots");
 
       s = FileUtil::remove_files_with_prefix(dirpath_locks_.c_str(), "");
@@ -1038,7 +1038,7 @@ class HSTableManager {
   }
 
 
-  Status RemoveAllLockedFiles(std::string& dbname) {
+  Status DeleteAllLockedFiles(std::string& dbname) {
     std::set<uint32_t> fileids;
     DIR *directory;
     struct dirent *entry;
@@ -1057,7 +1057,7 @@ class HSTableManager {
 
     for (auto& fileid: fileids) {
       if (std::remove(GetFilepath(fileid).c_str()) != 0) {
-        log::emerg("RemoveAllLockedFiles()", "Could not remove data file [%s]", GetFilepath(fileid).c_str());
+        log::emerg("DeleteAllLockedFiles()", "Could not remove data file [%s]", GetFilepath(fileid).c_str());
       }
     }
 

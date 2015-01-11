@@ -49,7 +49,7 @@ class WriteBuffer {
                   uint64_t size_value,
                   uint64_t size_value_compressed,
                   uint32_t crc32);
-  Status Remove(WriteOptions& write_options, ByteArray* key);
+  Status Delete(WriteOptions& write_options, ByteArray* key);
   void Flush();
 
   void Close () {

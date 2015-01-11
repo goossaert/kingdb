@@ -81,7 +81,7 @@ class KingDB: public Interface {
     bool db_exists = (stat(dbname_.c_str(), &info) == 0);
 
     if(db_exists && !(info.st_mode & S_IFDIR)) {
-      return Status::IOError("A file with same name as the database already exists and is not a directory. Remove or rename this file to continue.", dbname_.c_str());
+      return Status::IOError("A file with same name as the database already exists and is not a directory. Delete or rename this file to continue.", dbname_.c_str());
     }
 
     if (   db_exists
@@ -154,7 +154,7 @@ class KingDB: public Interface {
                           ByteArray *chunk,
                           uint64_t offset_chunk,
                           uint64_t size_value) override;
-  virtual Status Remove(WriteOptions& write_options, ByteArray *key) override;
+  virtual Status Delete(WriteOptions& write_options, ByteArray *key) override;
   virtual Interface* NewSnapshot() override;
   virtual Iterator* NewIterator(ReadOptions& read_options) override { return nullptr; };
 

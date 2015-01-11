@@ -11,7 +11,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   int bytes_received_last;
   std::regex regex_get {"get ([^\\s]*)"};
   std::regex regex_put {"set ([^\\s]*) \\d* \\d* (\\d*)\r\n"};
-  std::regex regex_remove {"delete ([^\\s]*)"};
+  std::regex regex_delete {"delete ([^\\s]*)"};
 
   uint32_t bytes_received_buffer = 0;
   uint32_t bytes_received_total  = 0;
@@ -22,7 +22,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   bool is_new_buffer = true;
   bool is_command_get = false;
   bool is_command_put = false;
-  bool is_command_remove = false;
+  bool is_command_delete = false;
   char *buffer_send = new char[server_options_.size_buffer_send];
   SharedAllocatedByteArray *buffer = nullptr;
   SharedAllocatedByteArray *key = nullptr;
@@ -45,7 +45,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       offset_value = 0;
       is_command_get = false;
       is_command_put = false;
-      is_command_remove = false;
+      is_command_delete = false;
       size_key = 0;
     }
 
@@ -72,7 +72,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
 
     log::trace("NetworkTask", "recv()'d %d bytes of data in buf - bytes_expected:%d bytes_received_buffer:%d bytes_received_total:%d", bytes_received_last, bytes_expected, bytes_received_buffer, bytes_received_total);
 
-    // TODO: simplify the nested if-else blocks below to remove
+    // TODO: simplify the nested if-else blocks below to reduce
     //       indentation levels
 
     if (is_new) {
@@ -83,7 +83,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       } else if (buffer->StartsWith("set", 3)) {
         is_command_put = true;
       } else if (buffer->StartsWith("delete", 6)) {
-        is_command_remove = true;
+        is_command_delete = true;
         log::trace("NetworkTask", "got delete command");
       } else if (buffer->StartsWith("quit", 4)) {
         break;
@@ -246,12 +246,12 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         log::emerg("NetworkTask", "Could not match Get command");
         break;
       }
-    } else if (is_command_remove) {
+    } else if (is_command_delete) {
       std::smatch matches;
       std::string str_buffer = buffer->ToString();
-      if (std::regex_search(str_buffer, matches, regex_remove)) {
+      if (std::regex_search(str_buffer, matches, regex_delete)) {
         buffer->SetOffset(7, buffer->size() - 7 - 2);
-        Status s = db_->Remove(write_options, buffer);
+        Status s = db_->Delete(write_options, buffer);
         if (s.IsOK()) {
           // TODO: check for [noreply], which may be present (see Memcached
           // protocol specs)
@@ -261,13 +261,13 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
             break;
           }
         } else {
-          log::emerg("NetworkTask", "Remove() error: [%s]", s.ToString().c_str());
+          log::emerg("NetworkTask", "Delete() error: [%s]", s.ToString().c_str());
           break;
         }
         is_new = true;
         is_new_buffer = true;
       } else {
-        log::emerg("NetworkTask", "Could not match Remove command");
+        log::emerg("NetworkTask", "Could not match Delete command");
         break;
       }
     } else if (is_command_put) {

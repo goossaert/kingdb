@@ -62,7 +62,7 @@ class StorageEngine {
           data_[sequence_+1] = order.value;
           map_index[order.key] = sequence_;
           sequence_ += 2;
-        } else { // order.type == OrderType::Remove
+        } else { // order.type == OrderType::Delete
           map_index[order.key] = 0;
         }
       }

@@ -371,9 +371,9 @@ class StorageEngine {
       //std::string temp(key_temp->data(), key_temp->size());
       //log::trace("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
       if (key_temp != nullptr && *key_temp == *key) {
-        // NOTE: should this be testing (s.IsOK() || s.IsRemoveOrder()) ?
+        // NOTE: should this be testing (s.IsOK() || s.IsDeleteOrder()) ?
         delete key_temp;
-        if (s.IsRemoveOrder()) {
+        if (s.IsDeleteOrder()) {
           s = Status::NotFound("Unable to find the entry in the storage engine (remove order)");
         }
         if (location_out != nullptr) *location_out = it->second;
@@ -433,13 +433,13 @@ class StorageEngine {
     uint32_t crc32_headerkey = crc32c::Value(value_temp->datafile() + offset_file + 4, size_header + entry_header.size_key - 4);
     value_temp->SetInitialCRC32(crc32_headerkey);
 
-    if (entry_header.IsTypeRemove()) {
-      s = Status::RemoveOrder();
+    if (entry_header.IsTypeDelete()) {
+      s = Status::DeleteOrder();
       delete value_temp;
       value_temp = nullptr;
     }
 
-    log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeRemove());
+    log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeDelete());
     log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " size_value_compressed:%" PRIu64 " filesize:%" PRIu64, key_temp->size(), value_temp->size(), value_temp->size_compressed(), filesize);
 
     *key_out = key_temp;
@@ -597,13 +597,13 @@ class StorageEngine {
 
       // For any given key, only the first occurrence, which is the most recent one,
       // has to be kept. The other ones will be deleted. If the first occurrence
-      // is a Remove Order, then all occurrences of that key will be deleted.
+      // is a Delete Order, then all occurrences of that key will be deleted.
       if (keys_encountered.find(str_key) == keys_encountered.end()) {
         keys_encountered.insert(str_key);
         if (IsFileLarge(fileid)) {
           hashedkeys_to_locations_large_keep.insert(p);
           fileids_largefiles_keep.insert(fileid);
-        } else if (!s.IsRemoveOrder()) {
+        } else if (!s.IsDeleteOrder()) {
           hashedkeys_to_locations_regular_keep.insert(p);
         } else {
           locations_delete.insert(location);
@@ -950,8 +950,8 @@ class StorageEngine {
     if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
-    // 14. Remove compacted files
-    log::trace("Compaction()", "Step 14: Remove compacted files");
+    // 14. Delete compacted files
+    log::trace("Compaction()", "Step 14: Delete compacted files");
     mutex_snapshot_.lock();
     if (snapshotids_to_fileids_.size() == 0) {
       // No snapshots are in progress, remove the files on the spot

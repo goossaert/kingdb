@@ -35,7 +35,7 @@ class Status {
 
   static Status Done() { return Status(kDone); }
 
-  static Status RemoveOrder() { return Status(kRemoveOrder); }
+  static Status DeleteOrder() { return Status(kDeleteOrder); }
 
   static Status NotFound(const std::string& message1, const std::string& message2="") {
     return Status(kNotFound, message1, message2);
@@ -51,7 +51,7 @@ class Status {
 
   bool IsOK() const { return (code() == kOK); }
   bool IsNotFound() const { return code() == kNotFound; }
-  bool IsRemoveOrder() const { return code() == kRemoveOrder; }
+  bool IsDeleteOrder() const { return code() == kDeleteOrder; }
   bool IsInvalidArgument() const { return code() == kInvalidArgument; }
   bool IsIOError() const { return code() == kIOError; }
   bool IsDone() const { return code() == kDone; }
@@ -69,7 +69,7 @@ class Status {
   enum Code {
     kOK = 0, 
     kNotFound = 1,
-    kRemoveOrder = 2,
+    kDeleteOrder = 2,
     kInvalidArgument = 3,
     kIOError = 4,
     kDone = 5

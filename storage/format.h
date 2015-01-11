@@ -35,7 +35,7 @@ static const uint32_t kVersionDataFormatMinor   = 0;
 // NOTE: kEntryFirst, kEntryMiddle and kEntryLast are not used yet,
 //       they are reserved for possible future implementation.
 enum EntryHeaderFlag {
-  kTypeRemove    = 0x1,
+  kTypeDelete    = 0x1,
   kHasPadding    = 0x2,
   kEntryFull     = 0x4,
   kEntryFirst    = 0x8,
@@ -70,8 +70,8 @@ struct EntryHeader {
     return (flags & kHasPadding);
   }
 
-  void SetTypeRemove() {
-    flags |= kTypeRemove; 
+  void SetTypeDelete() {
+    flags |= kTypeDelete; 
   }
 
   void SetTypePut() {
@@ -83,13 +83,13 @@ struct EntryHeader {
             && offset_file + size_header_serialized + size_key + size_value_offset() <= filesize);
   }
 
-  bool IsTypeRemove() {
-    log::trace("IsTypeRemove()", "flags %u", flags);
-    return (flags & kTypeRemove);
+  bool IsTypeDelete() {
+    log::trace("IsTypeDelete()", "flags %u", flags);
+    return (flags & kTypeDelete);
   }
   
   bool IsTypePut() {
-    return !IsTypeRemove();
+    return !IsTypeDelete();
   }
 
   void SetEntryFull() {

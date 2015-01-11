@@ -36,8 +36,8 @@ class DummyInterface: public Interface {
     return Status::OK();
   }
 
-  virtual Status Remove(const std::string& key) override {
-    log::trace("KingDB Remove()", "[%s]", key.c_str());
+  virtual Status Delete(const std::string& key) override {
+    log::trace("KingDB Delete()", "[%s]", key.c_str());
     std::unique_lock<std::mutex> lock(mutex_);
     if (map_.find(key) == map_.end()) {
       return Status::NotFound("not found");

@@ -9,7 +9,7 @@ namespace kdb {
 Status KingDB::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
   log::trace("KingDB Get()", "[%s]", key->ToString().c_str());
   Status s = wb_->Get(read_options, key, value_out);
-  if (s.IsRemoveOrder()) {
+  if (s.IsDeleteOrder()) {
     return Status::NotFound("Unable to find entry");
   } else if (s.IsNotFound()) {
     log::trace("KingDB Get()", "not found in buffer");
@@ -154,12 +154,12 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 }
 
 
-Status KingDB::Remove(WriteOptions& write_options,
+Status KingDB::Delete(WriteOptions& write_options,
                       ByteArray *key) {
-  log::trace("KingDB::Remove()", "[%s]", key->ToString().c_str());
+  log::trace("KingDB::Delete()", "[%s]", key->ToString().c_str());
   Status s = se_->FileSystemStatus();
   if (!s.IsOK()) return s;
-  return wb_->Remove(write_options, key);
+  return wb_->Delete(write_options, key);
 }
 
 

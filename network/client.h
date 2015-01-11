@@ -125,7 +125,7 @@ class Client {
     return Status::OK();
   }
 
-  Status Remove(const char* key, uint64_t size_key) {
+  Status Delete(const char* key, uint64_t size_key) {
     memcached_return_t rc = memcached_delete(memc, key, size_key, (time_t)0);
     if (rc != MEMCACHED_SUCCESS) {
       std::string msg = std::string(key) + " " + memcached_strerror(memc, rc);
@@ -207,11 +207,11 @@ class ClientTask: public Task {
       std::stringstream ss;
       ss << id << "-" << i;
       std::string key = ss.str();
-      s = client.Remove(key.c_str(), key.size());
+      s = client.Delete(key.c_str(), key.size());
       if (!s.IsOK()) {
-        log::info("ClientTask", "Remove() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
+        log::info("ClientTask", "Delete() Error for key [%s]: %s", key.c_str(), s.ToString().c_str());
       } else {
-        log::alert("ClientTask", "Remove() insert(key) %d %d", i, num_removes_);
+        log::alert("ClientTask", "Delete() insert(key) %d %d", i, num_removes_);
         keys_removed.insert(key);
       }
     }
