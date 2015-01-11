@@ -56,6 +56,10 @@ struct DatabaseOptions {
   std::string storage__compression_algorithm;
   std::string storage__hashing_algorithm;
 
+  // Logging
+  std::string log_level;
+  std::string log_target;
+
   // Instance options (can be changed each time the db is opened)
   bool create_if_missing;
   bool error_if_exists;
@@ -86,6 +90,14 @@ struct DatabaseOptions {
   }
 
   static void AddParametersToConfigParser(DatabaseOptions& db_options, ConfigParser& parser) {
+
+    // Logging options
+    parser.AddParameter(new kdb::StringParameter(
+                        "log.level", "emerg", &db_options.log_level, false,
+                        "Level of the logging, can be: silent, emerg, alert, crit, error, warn, notice, info, debug, trace."));
+    parser.AddParameter(new kdb::StringParameter(
+                        "log.target", "kingdb", &db_options.log_target, false,
+                        "Target of the logs, can be 'stderr' to log to stderr, or any custom string that will be used as the 'ident' parameter for syslog."));
 
     // Database options
     parser.AddParameter(new kdb::BooleanParameter(

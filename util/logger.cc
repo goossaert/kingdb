@@ -6,7 +6,10 @@
 
 namespace kdb {
 
-int Logger::level_ = Logger::kLogLevelINFO;
+bool Logger::is_syslog_open_ = false;
+int Logger::level_ = Logger::kLogLevelSILENT;
+int Logger::log_target_ = Logger::kLogTargetStderr;
+std::string Logger::syslog_ident_ = "kingdb";
 std::mutex Logger::mutex_;
 
 }

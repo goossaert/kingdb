@@ -12,11 +12,12 @@
 #include "util/file.h"
 #include "util/config_parser.h"
 
-void show_usage(char *program_name) {
-  printf("Example: %s --db-name mydb --port 3490 --backlog 150 --num-threads 150\n", program_name);
-}
-
 bool stop_requested = false;
+
+void termination_signal_handler(int signal) {
+  fprintf(stderr, "Received signal [%d]\n", signal);
+  stop_requested = true; 
+}
 
 void crash_signal_handler(int sig) {
   int depth_max = 20;
@@ -29,17 +30,38 @@ void crash_signal_handler(int sig) {
   exit(1);
 }
 
-void termination_signal_handler(int signal) {
-  fprintf(stderr, "Received signal [%d]\n", signal);
-  stop_requested = true; 
+
+int daemonize() {
+  // Adapted from Michael Kerrisk's becomeDaemon()
+
+  // Become background process
+  switch (fork()) {
+    case -1: return -1;
+    case 0:  break;
+    default: _exit(EXIT_SUCCESS);
+  }
+
+  if (setsid() == -1) return -1;
+
+  // Ensure we are not session leader
+  switch (fork()) {
+    case -1: return -1;
+    case 0:  break;
+    default: _exit(EXIT_SUCCESS);
+  }
+
+  umask(0);
+  chdir("/");
+
+  return 0; 
 }
 
 int main(int argc, char** argv) {
 
   kdb::Status s;
   std::string dbname = "";
-  std::string loglevel = "";
   std::string configfile = "";
+  bool run_in_foreground = false;
   kdb::ServerOptions server_options;
   kdb::DatabaseOptions db_options;
 
@@ -75,9 +97,9 @@ int main(int argc, char** argv) {
   parser.AddParameter(new kdb::StringParameter(
                       "configfile", configfile, &configfile, false,
                       "Configuration file. If not specified, the path ./kingdb.conf and /etc/kingdb.conf will be tested."));
-  parser.AddParameter(new kdb::StringParameter(
-                      "loglevel", "trace", &loglevel, false,
-                      "Level of the logging, can be: emerg, alert, crit, error, warn, notice, info, debug, trace."));
+  parser.AddParameter(new kdb::FlagParameter(
+                      "foreground", &run_in_foreground, false,
+                      "When set, the server will run as a foreground process. By default, the server runs as a daemon process."));
   parser.AddParameter(new kdb::StringParameter(
                       "db.path", "", &dbname, true,
                       "Path where the database can be found or will be created."));
@@ -112,11 +134,13 @@ int main(int argc, char** argv) {
     exit(-1);
   }
 
-  if (loglevel != "" && kdb::Logger::set_current_level(loglevel.c_str()) < 0) {
-    fprintf(stderr, "Unknown log level: [%s]\n", loglevel.c_str());
+  if (db_options.log_level != "" && kdb::Logger::set_current_level(db_options.log_level.c_str()) < 0) {
+    fprintf(stderr, "Unknown log level: [%s]\n", db_options.log_level.c_str());
     exit(-1);
   }
 
+  kdb::Logger::set_target(db_options.log_target);
+ 
   kdb::CompressionType ctype;
   if (db_options.storage__compression_algorithm == "disabled") {
     ctype = kdb::kNoCompression;
@@ -148,6 +172,11 @@ int main(int argc, char** argv) {
 
   signal(SIGSEGV, crash_signal_handler);
   signal(SIGABRT, crash_signal_handler);
+
+  if (!run_in_foreground && daemonize() < 0) {
+    fprintf(stderr, "Could not daemonize the process\n");
+    exit(-1);
+  }
 
   kdb::Server server;
   server.Start(server_options, db_options, dbname);

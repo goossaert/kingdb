@@ -104,12 +104,9 @@ class KingDB: public Interface {
       }
 
       int ret = flock(fd_dboptions_, LOCK_EX | LOCK_NB);
-      if (ret == EWOULDBLOCK) {
+      if (ret == EWOULDBLOCK || ret < 0) {
         close(fd_dboptions_);
-        return Status::IOError("The database is already in use by another process"); 
-      } else if (ret < 0) {
-        close(fd_dboptions_);
-        return Status::IOError("Unknown error when trying to acquire the global database lock");
+        return Status::IOError("Could not acquire the global database lock: the database was already opened by another process"); 
       }
 
       Mmap mmap(filepath_dboptions, info.st_size);

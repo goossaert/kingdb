@@ -42,7 +42,9 @@ void handler(int sig) {
 }
 
 int main() {
+#ifdef DEBUG
   ProfilerStart("/tmp/kingdb.prof");
+#endif
 
   signal(SIGSEGV, handler);
   signal(SIGABRT, handler);
@@ -122,7 +124,9 @@ int main() {
 
   std::cout << "count items: " << count_items << std::endl;
   delete[] buffer_large;
+#ifdef DEBUG
   ProfilerStop();
   ProfilerFlush();
+#endif
   return 0;
 }
