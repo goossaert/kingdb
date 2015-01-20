@@ -185,7 +185,7 @@ class HSTableManager {
       uint32_t num_writes = file_resource_manager.GetNumWritesInProgress(fileid_candidate);
       uint64_t epoch = file_resource_manager.GetEpochLastActivity(fileid_candidate);
       if (num_writes > 0) {
-        if (epoch > epoch_now - db_options_.storage__streaming_timeout) {
+        if (epoch > epoch_now - db_options_.storage__inactivity_timeout) {
           // The in-progress writes for this file haven't timed out yet, thus it
           // is not stable yet.
           break;

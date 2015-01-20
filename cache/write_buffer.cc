@@ -164,14 +164,21 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
                                  uint32_t crc32) {
   if (IsStopRequested()) return Status::IOError("Cannot handle request: WriteBuffer is closing");
   log::debug("LOCK", "1 lock");
-  std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
 
   log::trace("WriteBuffer::WriteChunk()",
-            "Write() key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d",
-            key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
+             "key:[%s] | size chunk:%" PRIu64 ", total size value:%" PRIu64 " offset_chunk:%" PRIu64 " sizeOfBuffer:%d",
+             key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
 
   bool is_first_chunk = (offset_chunk == 0);
   bool is_large = key->size() + size_value > db_options_.storage__hstable_size;
+
+  uint64_t bytes_arriving = 0;
+  if (is_first_chunk) bytes_arriving += key->size();
+  bytes_arriving += chunk->size();
+
+  if (UseRateLimiter()) rate_limiter_.Tick(bytes_arriving);
+
+  std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
   buffers_[im_live_].push_back(Order{std::this_thread::get_id(),
                                      op,
                                      key,
@@ -182,10 +189,7 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
                                      crc32,
                                      is_large});
 
-  if (is_first_chunk) {
-    sizes_[im_live_] += key->size();
-  }
-  sizes_[im_live_] += chunk->size();
+  sizes_[im_live_] += bytes_arriving;
 
   // TODO-32: Because all writes and removes transit throught this method,
   //          it is the perfect location to implement throttling. What has to
@@ -245,8 +249,8 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   }
   */
 
-  // test on size for debugging remove()
   /*
+  // test on size for debugging remove()
   if (buffers_[im_live_].size() > 256) {
     // TODO: make this value optional -- a good default value would be the
     //       number of client threads.
@@ -263,7 +267,9 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
     // TODO: play with the mutex_flush_, try to keep it before the
     // if(can_swap_) or inside the if(can_swap_)
     //std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
-    if (mutex_flush_level2_.try_lock()) {
+    //if (mutex_flush_level2_.try_lock()) {
+    if (true) {
+      mutex_flush_level2_.lock();
       log::debug("LOCK", "2 lock");
       if (can_swap_) {
         log::trace("WriteBuffer::WriteChunk()", "can_swap_ == true");
@@ -327,6 +333,8 @@ void WriteBuffer::ProcessingLoop() {
  
     // Notify the storage engine that the buffer can be flushed
     log::trace("BM", "WAIT: Get()-flush_buffer");
+
+    if (UseRateLimiter()) rate_limiter_.WriteStart(); 
     event_manager_->flush_buffer.StartAndBlockUntilDone(buffers_[im_copy_]);
 
     // Wait for the index to notify the buffer manager
@@ -335,6 +343,9 @@ void WriteBuffer::ProcessingLoop() {
     event_manager_->clear_buffer.Done();
     
     // Wait for readers
+    // TODO: the clearning of the flush buffer shouldn't be done in one go but
+    // in multiple iterations just like the transfer of indexes is being done,
+    // so that the readers are never blocked for too long.
     log::debug("LOCK", "4 lock");
     mutex_copy_write_level4_.lock();
     while(true) {
@@ -345,6 +356,9 @@ void WriteBuffer::ProcessingLoop() {
       cv_read_.wait(lock_read);
     }
     log::debug("LOCK", "5 unlock");
+
+    if (UseRateLimiter()) rate_limiter_.WriteEnd(sizes_[im_copy_]); 
+    log::trace("WriteBuffer", "ProcessingLoop() bytes_in_buffer: %" PRIu64 " rate_writing: %" PRIu64, sizes_[im_copy_], rate_limiter_.GetWritingRate());
 
     // Clear flush buffer
     log::debug("WriteBuffer::ProcessingLoop()", "clear flush buffer");

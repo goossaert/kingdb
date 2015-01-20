@@ -13,7 +13,9 @@
 #include <string>
 #include <vector>
 #include <chrono>
+#include <ctime>
 
+#include "cache/rate_limiter.h"
 #include "kingdb/kdb.h"
 #include "util/order.h"
 #include "util/byte_array.h"
@@ -26,7 +28,8 @@ class WriteBuffer {
   WriteBuffer(const DatabaseOptions& db_options,
               EventManager *event_manager)
       : db_options_(db_options),
-        event_manager_(event_manager) {
+        event_manager_(event_manager),
+        rate_limiter_(db_options.rate_limit_incoming) {
     stop_requested_ = false;
     im_live_ = 0;
     im_copy_ = 1;
@@ -35,9 +38,17 @@ class WriteBuffer {
     num_readers_ = 0;
     can_swap_ = true;    // prevents the double-swapping
     force_swap_ = false; // forces swapping
-    buffer_size_ = db_options_.write_buffer__size;
+    buffer_size_ = db_options_.write_buffer__size / 2;
     thread_buffer_handler_ = std::thread(&WriteBuffer::ProcessingLoop, this);
     is_closed_ = false;
+
+    log::debug("WriteBuffer::ctor()", "WriteBufer::ctor() %" PRIu64 " - %s\n", db_options_.rate_limit_incoming, db_options_.write_buffer__mode_str.c_str());
+    if (db_options_.write_buffer__mode == kWriteBufferModeAdaptive) {
+      log::debug("WriteBuffer::ctor()", "WriteBufer::ctor() write buffer mode adaptive\n");
+    } else {
+      log::debug("WriteBuffer::ctor()", "WriteBufer::ctor() write buffer mode blocking\n");
+    }
+
   }
   ~WriteBuffer() { Close(); }
   Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out);
@@ -60,6 +71,14 @@ class WriteBuffer {
     Flush();
     cv_flush_.notify_one();
     thread_buffer_handler_.join();
+  }
+
+  bool UseRateLimiter() {
+    if (   db_options_.write_buffer__mode == kWriteBufferModeAdaptive
+        || db_options_.rate_limit_incoming > 0) {
+      return true;
+    }
+    return false;
   }
 
   bool IsFlushNeeded();
@@ -91,6 +110,7 @@ class WriteBuffer {
 
   std::thread thread_buffer_handler_;
   EventManager *event_manager_;
+  RateLimiter rate_limiter_;
 
   // Using a lock hierarchy to avoid deadlocks
   std::mutex mutex_live_write_level1_;

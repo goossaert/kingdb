@@ -25,6 +25,11 @@ enum ChecksumType {
   kCrc32Checksum = 0x1
 };
 
+enum WriteBufferMode {
+  kWriteBufferModeBlocking = 0x0, 
+  kWriteBufferModeAdaptive = 0x1
+};
+
 struct CompressionOptions {
   CompressionOptions(CompressionType ct)
       : type(ct) {
@@ -35,20 +40,34 @@ struct CompressionOptions {
 struct DatabaseOptions {
  public:
   DatabaseOptions()
-      : internal__hstable_header_size(8192),
+      : internal__hstable_header_size(8192),  // bytes
+        storage__num_iterations_per_lock(10),
+        write_buffer__close_timeout(5000),    // milliseconds
         hash(kxxHash_64),
         compression(kLZ4Compression),
-        checksum(kCrc32Checksum) {
+        checksum(kCrc32Checksum),
+        write_buffer__mode(kWriteBufferModeAdaptive) {
     DatabaseOptions &db_options = *this;
     ConfigParser parser;
     AddParametersToConfigParser(db_options, parser);
     parser.LoadDefaultValues();
   }
 
-  // Internal options (part of the file format, cannot be changed by users)
+  // *** Internal options (part of the file format, cannot be changed by users)
   uint64_t internal__hstable_header_size;
 
-  // Constant options (cannot be changed after the db is created)
+  // Wherever a loop needs to lock to merge or process data, this is the 
+  // number of iterations done for each locking of the dedicated mutex.
+  // This allows to throttle the locking and prevents the starvation
+  // of other processes.
+  uint64_t storage__num_iterations_per_lock; 
+
+  // The time that a closing process will have to wait when flushing the vectors
+  // in the Writer Buffer.
+  uint64_t write_buffer__close_timeout;
+
+
+  // *** Constant options (cannot be changed after the db is created)
   HashType hash;
   CompressionOptions compression;
   ChecksumType checksum;
@@ -56,30 +75,32 @@ struct DatabaseOptions {
   std::string storage__compression_algorithm;
   std::string storage__hashing_algorithm;
 
-  // Logging
-  std::string log_level;
-  std::string log_target;
-
-  // Instance options (can be changed each time the db is opened)
+  // *** Instance options (can be changed each time the db is opened)
   bool create_if_missing;
   bool error_if_exists;
   uint32_t max_open_files; // TODO: this parameter is ignored: use it
 
+  uint64_t rate_limit_incoming;
+
   uint64_t write_buffer__size;
   uint64_t write_buffer__flush_timeout;
-  uint64_t write_buffer__close_timeout;
+  std::string write_buffer__mode_str;
+  WriteBufferMode write_buffer__mode;
 
-  uint64_t storage__streaming_timeout;
+  uint64_t storage__inactivity_timeout;
   uint64_t storage__statistics_polling_interval;
-  uint64_t storage__free_space_reject_orders;
+  uint64_t storage__minimum_free_space_accept_orders;
   uint64_t storage__maximum_chunk_size;
-  uint64_t storage__num_index_iterations_per_lock;
 
   uint64_t compaction__check_interval;
   uint64_t compaction__filesystem__survival_mode_threshold;
   uint64_t compaction__filesystem__normal_batch_size;
   uint64_t compaction__filesystem__survival_batch_size;
   uint64_t compaction__filesystem__free_space_required;
+
+  // *** Logging
+  std::string log_level;
+  std::string log_target;
 
   static std::string GetPath(const std::string &dirpath) {
     return dirpath + "/db_options";
@@ -107,14 +128,17 @@ struct DatabaseOptions {
                          "db.error-if-exists", false, &db_options.error_if_exists, false,
                          "Will exit if the database already exists"));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.write-buffer.size", "32MB", &db_options.write_buffer__size, false,
-                         "Size of the Write Buffer. The database has two of these buffers."));
+                         "db.incoming-rate-limit", "0", &db_options.rate_limit_incoming, false,
+                         "Limit the rate of incoming traffic, in bytes per second. Unlimited if equal to 0."));
+    parser.AddParameter(new kdb::UnsignedInt64Parameter(
+                         "db.write-buffer.size", "64MB", &db_options.write_buffer__size, false,
+                         "Size of the Write Buffer."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.write-buffer.flush-timeout", "500 milliseconds", &db_options.write_buffer__flush_timeout, false,
                          "The timeout after which the write buffer will flush its cache."));
-    parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.write-buffer.close-timeout", "5 seconds", &db_options.write_buffer__close_timeout, false,
-                         "The time that a closing process will ahave to wait when flushing the vectors in the Writer Buffer."));
+    parser.AddParameter(new kdb::StringParameter(
+                         "db.write-buffer.mode", "adaptive", &db_options.write_buffer__mode_str, false,
+                         "The mode with which the write buffer handles incoming traffic, can be 'blocking' or 'adaptive'. With the 'blocking' mode, once the Write Buffer is full other incoming Write and Delete operations will blocked until the buffer is persisted to secondary storage. The blocking mode should be used when the clients are not subjects to timeouts. When choosing the 'adaptive' mode, incoming orders will be made slower, down to the speed of the writes on the secondary storage, so that they are almost just as fast as when using the blocking mode, but are never blocking. The adaptive mode is expected to introduce a small performance decrease, but required for cases where clients timeouts must be avoided, for example when the database is used over a network."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.hstable-size", "32MB", &db_options.storage__hstable_size, false,
                          "Maximum size a HSTable can have. Entries with keys and values beyond that size are considered to be large entries."));
@@ -125,20 +149,18 @@ struct DatabaseOptions {
                          "db.storage.hashing", "xxhash-64", &db_options.storage__hashing_algorithm, false,
                          "Hashing algorithm used by the storage engine. Can be 'xxhash-64' or 'murmurhash3-64'."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.free-space-reject-orders", "192MB", &db_options.storage__free_space_reject_orders, false,
-                         "Free space below which new incoming orders are rejected. Should be at least (2 * 'db.write-buffer.size' + 4 * 'db.hstable.maximum-size'), so that when the file system fills up, the two write buffers can be flushed to secondary storage safely and the survival-mode compaction process can be run."));
+                         "db.storage.minimum-free-space-accept-orders", "192MB", &db_options.storage__minimum_free_space_accept_orders, false,
+                         "Minimum free disk space required to accept incoming orders. It is recommended that for this value to be at least (2 * 'db.write-buffer.size' + 4 * 'db.hstable.maximum-size'), so that when the file system fills up, the two write buffers can be flushed to secondary storage safely and the survival-mode compaction process can be run."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.maximum-chunk-size", "1MB", &db_options.storage__maximum_chunk_size, false,
-                         "The maximum chunk size is used by the storage engine to cut entries into smaller chunks -- important for the compression and hashing algorithms, can never be more than (2^32 - 1) as the algorihms used do not support sizes above that value."));
+                         "The maximum chunk size is used by the storage engine to split entries into smaller chunks -- important for the compression and hashing algorithms, can never be more than (2^32 - 1) as the algorihms used do not support sizes above that value."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.timeout-streaming", "60 seconds", &db_options.storage__streaming_timeout, false,
+                         "db.storage.inactivity-streaming", "60 seconds", &db_options.storage__inactivity_timeout, false,
                          "The time of inactivity after which an entry stored with the streaming API is considered left for dead, and any subsequent incoming chunks for that entry are rejected."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.statistics-polling-interval", "5 seconds", &db_options.storage__statistics_polling_interval, false,
                          "The frequency at which statistics are polled in the Storage Engine (free disk space, etc.)."));
-    parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.num-index-iterations-per-lock", "10", &db_options.storage__num_index_iterations_per_lock, false,
-                         "Number of entries merged into the Storage Engine index for each locking of the dedicated mutex. This parameter throttles index updates."));
+
 
     // Compaction options
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
@@ -159,7 +181,7 @@ struct DatabaseOptions {
 
 
   }
-    
+ 
 };
 
 struct ReadOptions {
@@ -185,6 +207,9 @@ struct ServerOptions {
   uint32_t num_threads;
   uint64_t size_buffer_recv;
   uint64_t size_buffer_send;
+
+  // TODO: change size-buffer-recv to recv-socket-buffer-size ?
+  // TODO: add a max-connections parameter?
 
   static void AddParametersToConfigParser(ServerOptions& server_options, ConfigParser& parser) {
     parser.AddParameter(new kdb::UnsignedInt64Parameter(

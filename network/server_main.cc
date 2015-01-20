@@ -163,6 +163,17 @@ int main(int argc, char** argv) {
   }
   db_options.hash = htype;
 
+  kdb::WriteBufferMode wbm;
+  if (db_options.write_buffer__mode_str == "blocking") {
+    wbm = kdb::kWriteBufferModeBlocking;
+  } else if (db_options.write_buffer__mode_str == "adaptive") {
+    wbm = kdb::kWriteBufferModeAdaptive;
+  } else {
+    fprintf(stderr, "Unknown write buffer mode: [%s]\n", db_options.write_buffer__mode_str.c_str());
+    exit(-1);
+  }
+  db_options.write_buffer__mode = wbm;
+
   kdb::FileUtil::increase_limit_open_files();
 
 #ifndef DEBUG
