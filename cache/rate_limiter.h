@@ -16,8 +16,8 @@ class RateLimiter {
  public:
   RateLimiter(uint64_t rate_limit)
     : rate_limit_(rate_limit),
-      rate_arriving_(250 * 1024 * 1024),
-      rate_arriving_adjusted_(0),
+      rate_incoming_(250 * 1024 * 1024),
+      rate_incoming_adjusted_(0),
       epoch_last_(0),
       epoch_current_(0),
       duration_slept_(0),
@@ -28,22 +28,26 @@ class RateLimiter {
   ~RateLimiter() {
   }
 
-  void Tick(uint64_t bytes_arriving) {
+  void Tick(uint64_t bytes_incoming) {
     epoch_current_ = std::time(0);
     if (epoch_current_ != epoch_last_) {
-      uint64_t rate_arriving_adjusted_last = rate_arriving_adjusted_;
-      rate_arriving_adjusted_ = rate_arriving_ + bytes_per_microsecond_ * duration_slept_;
+      rate_incoming_adjusted_ = rate_incoming_ + bytes_per_microsecond_ * duration_slept_;
       log::trace("RateLimiter",
-                 "rate_arriving_: %" PRIu64 " rate_arriving_adjusted_:%" PRIu64 " rate_arriving_adjusted_last:%" PRIu64,
-                 rate_arriving_, rate_arriving_adjusted_, rate_arriving_adjusted_last);
+                 "rate_incoming_: %" PRIu64 " rate_incoming_adjusted_:%" PRIu64,
+                 rate_incoming_, rate_incoming_adjusted_);
       duration_slept_ = 0;
-      rate_arriving_ = 0;
+      rate_incoming_ = 0;
       epoch_last_ = epoch_current_;
 
       uint64_t rate_writing = GetWritingRate();
-      double ratio = (double)rate_arriving_adjusted_ / (double)rate_writing;
-      if (rate_arriving_adjusted_ > rate_writing) {
-        // ratio is > 0
+      double ratio = (double)rate_incoming_adjusted_ / (double)rate_writing;
+      if (ratio > 1.0) {
+        // The rate of incoming data is greater than the rate at which data
+        // can be written, therefore the number of bytes for each microsecond
+        // slept must be decreased: this means that less bytes will trigger the
+        // same amount of microseconds slept, which will increase the amount
+        // of time spent sleeping, and bring the rate of incoming data closer
+        // to the rate at which data is written.
         if (ratio > 1.50) {
           bytes_per_microsecond_ *= 0.75;
         } else if (ratio > 1.10) {
@@ -56,7 +60,9 @@ class RateLimiter {
         if (bytes_per_microsecond_ <= 5) bytes_per_microsecond_ += 1;
         log::trace("WriteBuffer::WriteChunk()", "decreasing");
       } else {
-        // ratio is < 0
+        // The rate of incoming data is lower than the rate at which data
+        // can be written, therefore bytes_per_microsecond_ needs to be
+        // increased.
         if (ratio < 0.5) {
           bytes_per_microsecond_ *= 1.25;
         } else if (ratio < 0.90) {
@@ -76,10 +82,10 @@ class RateLimiter {
     }
 
     mutex_throttling_.lock();
-    rate_arriving_ += bytes_arriving;
+    rate_incoming_ += bytes_incoming;
     uint64_t sleep_microseconds = 0;
     if (bytes_per_microsecond_ > 0) {
-      sleep_microseconds = bytes_arriving / bytes_per_microsecond_;
+      sleep_microseconds = bytes_incoming / bytes_per_microsecond_;
     }
     mutex_throttling_.unlock();
     if (sleep_microseconds > 50000) sleep_microseconds = 50000;
@@ -125,7 +131,12 @@ class RateLimiter {
   }
 
   uint64_t GetWritingRate() {
+    // If no rate has been stored yet, a default value is used.
     if (rates_.size() == 0) return 1 * 1024 * 1024;
+    // The writting rate is an average: this allows to cope with irregularities
+    // in the throughput and prevent the rate limiter to fall into a flapping
+    // effect, in which it would limit the throughput either way too much,
+    // or not enough. This average allow the bandwitdth to converge smoothly.
     uint64_t sum = 0; 
     for (int i = 0; i < rates_.size(); i++) {
       sum += rates_[i]; 
@@ -141,13 +152,13 @@ class RateLimiter {
   uint64_t epoch_write_start_;
   uint64_t epoch_write_end_;
   uint64_t rate_limit_;
-  uint64_t rate_arriving_;
-  uint64_t rate_arriving_adjusted_;
+  uint64_t rate_incoming_;
+  uint64_t rate_incoming_adjusted_;
   uint64_t rate_writing_;
   uint64_t epoch_last_;
   uint64_t epoch_current_;
   uint64_t duration_slept_;
-  uint64_t bytes_per_microsecond_ = 5;
+  uint64_t bytes_per_microsecond_;
   std::mutex mutex_throttling_;
   std::vector<uint64_t> rates_;
 };
