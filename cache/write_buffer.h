@@ -36,8 +36,6 @@ class WriteBuffer {
     sizes_[im_live_] = 0;
     sizes_[im_copy_] = 0;
     num_readers_ = 0;
-    can_swap_ = true;    // prevents the double-swapping
-    force_swap_ = false; // forces swapping
     buffer_size_ = db_options_.write_buffer__size / 2;
     thread_buffer_handler_ = std::thread(&WriteBuffer::ProcessingLoop, this);
     is_closed_ = false;
@@ -101,8 +99,6 @@ class WriteBuffer {
   int im_copy_;
   int buffer_size_;
   int num_readers_;
-  bool can_swap_;
-  bool force_swap_;
   std::array<std::vector<Order>, 2> buffers_;
   std::array<int, 2> sizes_;
   bool is_closed_;

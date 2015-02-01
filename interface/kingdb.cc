@@ -165,16 +165,15 @@ Status KingDB::Delete(WriteOptions& write_options,
 
 Interface* KingDB::NewSnapshot() {
   log::trace("KingDB::NewSnapshot()", "start");
+
+  wb_->Flush();
+  uint32_t fileid_end = se_->FlushCurrentFileForSnapshot();
+
   std::set<uint32_t>* fileids_ignore;
   uint32_t snapshot_id;
   Status s = se_->GetNewSnapshotData(&snapshot_id, &fileids_ignore);
   if (!s.IsOK()) return nullptr;
 
-  log::trace("KingDB::NewSnapshot()", "Flushing 0");
-  wb_->Flush();
-  log::trace("KingDB::NewSnapshot()", "Flushing 1");
-  uint32_t fileid_end = se_->FlushCurrentFileForSnapshot();
-  log::trace("KingDB::NewSnapshot()", "Flushing 2");
   StorageEngine *se_readonly = new StorageEngine(db_options_,
                                                  nullptr,
                                                  dbname_,

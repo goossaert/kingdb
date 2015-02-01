@@ -15,7 +15,7 @@ bool WriteBuffer::IsFlushNeeded() {
 void WriteBuffer::Flush() {
   std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
   if (!IsFlushNeeded()) return;
-    // NOTE: Doing the flushing and waiting twice, in case the two buffers,
+  // NOTE: Doing the flushing and waiting twice, in case the two buffers,
   // 'live' and 'copy', have items. This is a quick hack and a better
   // solution should be investigated.
   for (auto i = 0; i < 2; i++) {
@@ -163,7 +163,6 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
                                  uint64_t size_value_compressed,
                                  uint32_t crc32) {
   if (IsStopRequested()) return Status::IOError("Cannot handle request: WriteBuffer is closing");
-  log::debug("LOCK", "1 lock");
 
   log::trace("WriteBuffer::WriteChunk()",
              "key:[%s] | size chunk:%" PRIu64 ", total size value:%" PRIu64 " offset_chunk:%" PRIu64 " sizeOfBuffer:%d",
@@ -178,7 +177,10 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
 
   if (UseRateLimiter()) rate_limiter_.Tick(bytes_arriving);
 
+  // TODO: here the buffer index im_live_ is called outside of the level 2 and 3 mutexes is this really safe?
+  log::debug("LOCK", "1 lock");
   std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
+  mutex_indices_level3_.lock();
   buffers_[im_live_].push_back(Order{std::this_thread::get_id(),
                                      op,
                                      key,
@@ -188,30 +190,8 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
                                      size_value_compressed,
                                      crc32,
                                      is_large});
-
   sizes_[im_live_] += bytes_arriving;
-
-  // TODO-32: Because all writes and removes transit throught this method,
-  //          it is the perfect location to implement throttling. What has to
-  //          be done is:
-  //
-  //          - Identify the throughput at which updates can be written to
-  //            secondary storage.
-  //          - Identify the speed at which updates are currently incoming
-  //          - If currently incoming updates are faster than the speed at which
-  //            data can be persisted on secondary storage, then introduce
-  //            some calls to sleep() in order to throttle them.
-  //
-  //          Notes:
-  //
-  //          - If throttling is not implemented, the risk is to see the buffer
-  //            grow unbounded, which will cause "out-of-memory" errors, or
-  //            force the OS to use its swap.
-  //          - One could also look at the throughput at which uncompacted data
-  //            is compacted, but then large write bursts would be slowed down
-  //            unnecessarily: compaction might be slow, but as long as there
-  //            is free space on the disk, then the writes shouldn't be slowed
-  //            down. Throttling on compaction throughput is probably a bad idea.
+  mutex_indices_level3_.unlock();
 
   /*
   if (buffers_[im_live_].size()) {
@@ -225,70 +205,21 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   }
   */
 
-  // The notes below are obsolete -- keeping them here until throttling is
-  // implemented.
-  //
-  // NOTE: With multi-chunk entries, the last chunks may get stuck in the
-  //       buffers without being flushed to secondary storage, and the storage
-  //       engine will say that it doesn't has the item as the last chunk
-  //       wasn't flushed yet.
-  //       The use of 'force_swap_' here is a cheap bastard way of fixing the
-  //       problem, by forcing the buffer to swap and flush for every last
-  //       chunk encountered in a multi-chunk entry.
-  //       If a Get() directly follows a Put() with a very low latency, this still
-  //       won't fix the issue: needs a better solution on the long term.
-  //       Builing the value by mixing data from the storage engine and the
-  //       chunk in the buffers would be the best, but would add considerable
-  //       complexity.
-  //       => idea: return a "RETRY" command, indicating to the client that he
-  //                needs to sleep for 100ms-ish and retry?
-  /*
-  if (   chunk->size() + offset_chunk == size_value
-      && offset_chunk > 0) {
-    force_swap_ = true;
-  }
-  */
-
-  /*
-  // test on size for debugging remove()
-  if (buffers_[im_live_].size() > 256) {
-    // TODO: make this value optional -- a good default value would be the
-    //       number of client threads.
-    // NOTE: this is only here for when the database is used through a
-    //       networking interface, in which case a better solution would be to not
-    //       force a swap when the buffer reach a certain size, but just throttle the
-    //       incoming requests.
-    force_swap_ = true;
-  }
-  */
-
-  if (sizes_[im_live_] > buffer_size_ || force_swap_) {
+  if (sizes_[im_live_] > buffer_size_) {
     log::trace("WriteBuffer::WriteChunk()", "trying to swap");
-    // TODO: play with the mutex_flush_, try to keep it before the
-    // if(can_swap_) or inside the if(can_swap_)
-    //std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
-    //if (mutex_flush_level2_.try_lock()) {
-    if (true) {
-      mutex_flush_level2_.lock();
-      log::debug("LOCK", "2 lock");
-      if (can_swap_) {
-        log::trace("WriteBuffer::WriteChunk()", "can_swap_ == true");
-        log::debug("LOCK", "3 lock");
-        std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
-        log::trace("WriteBuffer::WriteChunk()", "Swap buffers");
-        can_swap_ = false;
-        force_swap_ = false;
-        std::swap(im_live_, im_copy_);
-        cv_flush_.notify_one();
-        log::debug("LOCK", "3 unlock");
-      } else {
-        log::trace("WriteBuffer::WriteChunk()", "can_swap_ == false");
-      }
-      mutex_flush_level2_.unlock();
-      log::debug("LOCK", "2 unlock");
-    } else {
-      log::trace("WriteBuffer::WriteChunk()", "could not lock to swap");
-    }
+    mutex_flush_level2_.lock();
+    log::debug("LOCK", "2 lock");
+    log::debug("LOCK", "3 lock");
+    std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
+    /*
+    log::trace("WriteBuffer::WriteChunk()", "Swap buffers");
+    std::swap(im_live_, im_copy_);
+    */
+    cv_flush_.notify_one();
+    log::debug("LOCK", "3 unlock");
+    mutex_flush_level2_.unlock();
+    log::debug("LOCK", "2 unlock");
+
   } else {
     log::trace("WriteBuffer::WriteChunk()", "will not swap");
   }
@@ -305,7 +236,6 @@ void WriteBuffer::ProcessingLoop() {
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
     while (sizes_[im_copy_] == 0) {
       log::trace("WriteBuffer", "ProcessingLoop() - wait - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
-      can_swap_ = true;
       std::cv_status status = cv_flush_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.write_buffer__flush_timeout));
 
       if (!IsFlushNeeded()) {
@@ -315,19 +245,16 @@ void WriteBuffer::ProcessingLoop() {
         break;
       } else if (   status == std::cv_status::timeout
                  && buffers_[im_live_].size() > 0) {
-        // Note: I could have made it so the swap only happened here and not in
-        //       WriteChunk(), however it is simpler to have swapping code twice
-        //       than to have to deal with adding and removing items from the
-        //       live buffer, because it would requires lots of locking --
-        //       working with the copy buffer is simpler.
         //log::info("WriteBuffer", "ProcessingLoop() - swapped timeout");
-        std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
-        can_swap_ = false;
-        force_swap_ = false;
-        std::swap(im_live_, im_copy_);
         break;
       }
     }
+
+    mutex_indices_level3_.lock();
+    if (sizes_[im_copy_] == 0) {
+      std::swap(im_live_, im_copy_);
+    }
+    mutex_indices_level3_.unlock();
 
     log::trace("WriteBuffer", "ProcessingLoop() - start swap - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
  
@@ -343,7 +270,7 @@ void WriteBuffer::ProcessingLoop() {
     event_manager_->clear_buffer.Done();
     
     // Wait for readers
-    // TODO: the clearning of the flush buffer shouldn't be done in one go but
+    // TODO: the cleaning of the flush buffer shouldn't be done in one go but
     // in multiple iterations just like the transfer of indexes is being done,
     // so that the readers are never blocked for too long.
     log::debug("LOCK", "4 lock");
@@ -389,12 +316,13 @@ void WriteBuffer::ProcessingLoop() {
     }
     */
 
-    can_swap_ = true;
     mutex_copy_write_level4_.unlock();
     log::debug("LOCK", "4 unlock");
     log::debug("LOCK", "2 unlock");
     cv_flush_done_.notify_all();
 
+
+    // The call to IsFlushNeeded() is used to exit the thread when a stop was requested
     if (!IsFlushNeeded()) return;
   }
 }
