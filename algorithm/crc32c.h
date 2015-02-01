@@ -94,6 +94,7 @@ class CRC32 {
   uint32_t get() { return ts_.get(); }
   void put(uint32_t c32) { ts_.put(c32); }
   void ResetThreadLocalStorage() { ts_.reset(); }
+  virtual uint64_t MaxInputSize() { return std::numeric_limits<int32_t>::max(); }
    
  private:
   kdb::ThreadStorage ts_;

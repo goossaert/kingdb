@@ -177,18 +177,23 @@ class Mmap {
 
   char* datafile() { return datafile_; }
   int64_t filesize() { return filesize_; }
-  const char* filepath() const { return filepath_.c_str(); } // for debugging
   bool is_valid_;
   bool is_valid() { return is_valid_; }
 
   int fd_;
   int64_t filesize_;
   char *datafile_;
-  std::string filepath_; // just for debugging
+
+  // For debugging
+  const char* filepath() const { return filepath_.c_str(); }
+  std::string filepath_;
 };
 
 
 class SharedMmappedByteArray: public ByteArrayCommon {
+ // TODO: Does the checksum and compressor here really need to be store in a
+ // thread local storage? It would be way simpler to have this state held within
+ // the ByteArray object.
  public:
   SharedMmappedByteArray() {}
   SharedMmappedByteArray(std::string filepath, int64_t filesize) {
@@ -218,19 +223,38 @@ class SharedMmappedByteArray: public ByteArrayCommon {
   }
 
   void SetInitialCRC32(uint32_t c32) {
+    log::debug("SetInitialCRC32()", "Initial CRC32 0x%08" PRIx64 "\n", c32);
     crc32_.put(c32); 
   }
 
   virtual Status data_chunk(char **data_out, uint64_t *size_out) {
     if (!is_compressed()) {
-      // TODO: fix bug here -- if size_ is bigger than 2^31 - 1, crc32 will fail
-      /*
-      crc32_.stream(data_, size_);
-      if (crc32_.get() != crc32_value_) {
-        log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-        return Status::IOError("Bad CRC32");
+      if (size_ <= crc32_.MaxInputSize()) {
+        crc32_.stream(data_, size_);
+        if (crc32_.get() != crc32_value_) {
+          log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+          return Status::IOError("Bad CRC32");
+        }
+      } else {
+        // TODO-34: With entries larger than (2^31 - 1) bytes, the computation of
+        //          the checksum returns invalid values. For the time being the
+        //          CRC32 of very large files is therefore desactivated, until the
+        //          bug is fixed.
+        /*
+        size_t step = 1024*1024;
+        for (uint64_t i = 0; i < size_; i += step) {
+          size_t size_current = i + step < size_ ? step : size_ - i;
+          log::debug("SharedMmappedByteArray::data_chunk()",
+                     "Current CRC32 - before - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 " i:%llu size_current:%llu",
+                     crc32_value_, crc32_.get(), i, size_current);
+          crc32_.stream(data_ + i, size_current);
+          log::debug("SharedMmappedByteArray::data_chunk()",
+                     "Current CRC32 - after - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 " i:%llu size_current:%llu",
+                     crc32_value_, crc32_.get(), i, size_current);
+        }
+        */
       }
-      */
+
       *data_out = data_;
       *size_out = size_;
       return Status::Done();
