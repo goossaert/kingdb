@@ -55,7 +55,7 @@ struct EntryHeader {
   int32_t size_header_serialized;
 
   void print() {
-    log::trace("EntryHeader::print()", "flags:%u crc32:%u size_key:%" PRIu64 " size_value:%" PRIu64 " size_value_compressed:%" PRIu64 " hash:%" PRIu64, flags, crc32, size_key, size_value, size_value_compressed, hash);
+    log::trace("EntryHeader::print()", "flags:%u crc32:0x%08" PRIx64 " size_key:%" PRIu64 " size_value:%" PRIu64 " size_value_compressed:%" PRIu64 " hash:0x%08" PRIx64, flags, crc32, size_key, size_value, size_value_compressed, hash);
   }
 
   void SetHasPadding(bool b) {

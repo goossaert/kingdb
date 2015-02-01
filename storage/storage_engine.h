@@ -367,7 +367,7 @@ class StorageEngine {
       ByteArray *key_temp = nullptr;
       Status s = GetEntry(it->second, &key_temp, value_out);
       log::trace("StorageEngine::GetWithIndex()", "key ptr:[%p]", key);
-      //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[%" PRIu64 "] hashed_key_temp:[%" PRIu64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
+      //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
       //std::string temp(key_temp->data(), key_temp->size());
       //log::trace("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
       if (key_temp != nullptr && *key_temp == *key) {
@@ -1057,8 +1057,6 @@ class StorageEngine {
   }
 
   uint32_t FlushCurrentFileForSnapshot() {
-    // TODO: flushing the current file is not enough, I also need to make sure
-    //       that all the buffers are flushed
     return hstable_manager_.FlushCurrentFile(1, 0);
   }
 

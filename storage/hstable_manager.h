@@ -332,7 +332,7 @@ class HSTableManager {
       row.offset_entry = p.second;
       uint32_t length = OffsetArrayRow::EncodeTo(&row, buffer_index_ + offset);
       offset += length;
-      log::trace("HSTableManager::WriteOffsetArray()", "hashed_key:[%" PRIu64 "] offset:[%08x]", p.first, p.second);
+      log::trace("HSTableManager::WriteOffsetArray()", "hashed_key:[0x%" PRIx64 "] offset:[0x%08x]", p.first, p.second);
     }
 
     int64_t position = lseek(fd, 0, SEEK_END);
@@ -503,6 +503,8 @@ class HSTableManager {
       // key and value, then recompute the header to save the checksum
       uint32_t crc32_header = crc32c::Value(buffer + 4, size_header_new - 4);
       entry_header.crc32 = crc32c::Combine(crc32_header, order.crc32, entry_header.size_key + entry_header.size_value_used());
+      log::trace("HSTableManager::WriteMiddleOrLastChunk()", "CRC32 header: 0x%08" PRIx64, crc32_header);
+      entry_header.print();
       size_header_new = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
       if (size_header_new != size_header) {
         log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
@@ -945,7 +947,7 @@ class HSTableManager {
       fileid_shifted <<= 32;
       index_se.insert(std::pair<uint64_t, uint64_t>(row.hashed_key, fileid_shifted | row.offset_entry));
       log::trace("LoadFile()",
-                "Add item to index -- hashed_key:[%" PRIu64 "] offset:[%u] -- offset_index:[%" PRIu64 "]",
+                "Add item to index -- hashed_key:[0x%" PRIx64 "] offset:[%u] -- offset_index:[%" PRIu64 "]",
                 row.hashed_key, row.offset_entry, offset_index);
       offset_index += length_row;
     }
