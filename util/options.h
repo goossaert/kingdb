@@ -42,7 +42,7 @@ struct DatabaseOptions {
   DatabaseOptions()
       : internal__hstable_header_size(8192),  // bytes
         storage__num_iterations_per_lock(10),
-        write_buffer__close_timeout(5000),    // milliseconds
+        write_buffer__close_timeout(500),     // milliseconds
         hash(kxxHash_64),
         compression(kLZ4Compression),
         checksum(kCrc32Checksum),

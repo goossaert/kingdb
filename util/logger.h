@@ -79,7 +79,7 @@ class Logger {
         struct tm t;
         localtime_r(&seconds, &t);
         p += snprintf(p, limit - p,
-                      "%04d/%02d/%02d-%02d:%02d:%02d.%06d %s ",
+                      "%04d/%02d/%02d-%02d:%02d:%02d.%06d %s %s ",
                       t.tm_year + 1900,
                       t.tm_mon + 1,
                       t.tm_mday,
@@ -87,11 +87,13 @@ class Logger {
                       t.tm_min,
                       t.tm_sec,
                       static_cast<int>(now_tv.tv_usec),
-                      ss.str().c_str());
+                      ss.str().c_str(),
+                      logname);
       } else if (log_target_ == Logger::kLogTargetSyslog) {
         p += snprintf(p, limit - p,
-                      "%s ",
-                      ss.str().c_str());
+                      "%s %s ",
+                      ss.str().c_str(),
+                      logname);
       }
 
       if (p < limit) {
