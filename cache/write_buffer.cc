@@ -6,15 +6,9 @@
 
 namespace kdb {
 
-bool WriteBuffer::IsFlushNeeded() {
-  return (   !IsStopRequested()
-          || !buffers_[im_live_].empty()
-          || !buffers_[im_copy_].empty());
-}
-
 void WriteBuffer::Flush() {
   std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
-  if (!IsFlushNeeded()) return;
+  if (IsStopRequestedAndBufferEmpty()) return;
   // NOTE: Doing the flushing and waiting twice, in case the two buffers,
   // 'live' and 'copy', have items. This is a quick hack and a better
   // solution should be investigated.
@@ -191,6 +185,7 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
                                      crc32,
                                      is_large});
   sizes_[im_live_] += bytes_arriving;
+  uint64_t size_buffer_live = sizes_[im_live_];
   mutex_indices_level3_.unlock();
 
   /*
@@ -205,7 +200,7 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   }
   */
 
-  if (sizes_[im_live_] > buffer_size_) {
+  if (size_buffer_live > buffer_size_) {
     log::trace("WriteBuffer::WriteChunk()", "trying to swap");
     mutex_flush_level2_.lock();
     log::debug("LOCK", "2 lock");
@@ -234,20 +229,10 @@ void WriteBuffer::ProcessingLoop() {
     log::trace("WriteBuffer", "ProcessingLoop() - start");
     log::debug("LOCK", "2 lock");
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
-    while (sizes_[im_copy_] == 0) {
+    while (sizes_[im_live_] == 0) {
       log::trace("WriteBuffer", "ProcessingLoop() - wait - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
       std::cv_status status = cv_flush_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.write_buffer__flush_timeout));
-
-      if (!IsFlushNeeded()) {
-        return;
-      } else if (status == std::cv_status::no_timeout) {
-        //log::info("WriteBuffer", "ProcessingLoop() - swapped no timeout");
-        break;
-      } else if (   status == std::cv_status::timeout
-                 && buffers_[im_live_].size() > 0) {
-        //log::info("WriteBuffer", "ProcessingLoop() - swapped timeout");
-        break;
-      }
+      if (IsStopRequestedAndBufferEmpty()) return;
     }
 
     mutex_indices_level3_.lock();
@@ -321,9 +306,7 @@ void WriteBuffer::ProcessingLoop() {
     log::debug("LOCK", "2 unlock");
     cv_flush_done_.notify_all();
 
-
-    // The call to IsFlushNeeded() is used to exit the thread when a stop was requested
-    if (!IsFlushNeeded()) return;
+    if (IsStopRequestedAndBufferEmpty()) return;
   }
 }
 

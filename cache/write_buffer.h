@@ -79,7 +79,11 @@ class WriteBuffer {
     return false;
   }
 
-  bool IsFlushNeeded();
+  bool IsStopRequestedAndBufferEmpty() {
+    return (   IsStopRequested()
+            && buffers_[im_live_].empty()
+            && buffers_[im_copy_].empty());
+  }
   bool IsStopRequested() { return stop_requested_; }
   void Stop() { stop_requested_ = true; }
   bool stop_requested_;
