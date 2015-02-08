@@ -306,7 +306,7 @@ class AllocatedByteArray: public ByteArrayCommon {
   AllocatedByteArray(const char* data_in, uint64_t size_in) {
     size_ = size_in;
     data_ = new char[size_];
-    strncpy(data_, data_in, size_);
+    memcpy(data_, data_in, size_);
   }
 
   AllocatedByteArray(uint64_t size_in) {
