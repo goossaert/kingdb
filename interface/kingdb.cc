@@ -139,10 +139,8 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
       compressed = new char[compressor_.size_uncompressed_frame(chunk->size())];
       compressor_.DisableCompressionInFrameHeader(compressed);
       memcpy(compressed + compressor_.size_frame_header(), chunk->data(), chunk->size());
-      //compressor_.AdjustCompressedSize(- size_compressed + compressor_.size_frame_header() + size_remaining);
       compressor_.AdjustCompressedSize(- size_compressed);
       size_compressed = chunk->size() + compressor_.size_frame_header();
-      //offset_chunk_compressed = size_compressed;
       ts_compression_enabled_.put(0);
       ts_offset_.put(compressor_.size_compressed() + size_compressed);
     }
@@ -179,9 +177,10 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   if (is_last_chunk) crc32 = crc32_.get();
 
   log::trace("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%" PRIu64 " crc32:0x%" PRIx64 " END", key->ToString().c_str(), size_value_compressed, crc32);
- 
+
+  uint64_t size_padding = do_compression ? EntryHeader::CalculatePaddingSize(size_value) : 0;
   if (  offset_chunk_compressed + chunk_final->size()
-      > size_value + EntryHeader::CalculatePaddingSize(size_value)) {
+      > size_value + size_padding) {
     log::emerg("KingDB::PutChunkValidSize()", "Error: write was attempted outside of the allocated memory.");
     return Status::IOError("Prevented write to occur outside of the allocated memory.");
   }
