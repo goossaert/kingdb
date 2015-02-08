@@ -36,11 +36,12 @@ static const uint32_t kVersionDataFormatMinor   = 0;
 //       they are reserved for possible future implementation.
 enum EntryHeaderFlag {
   kTypeDelete    = 0x1,
-  kHasPadding    = 0x2,
-  kEntryFull     = 0x4,
-  kEntryFirst    = 0x8,
-  kEntryMiddle   = 0x10,
-  kEntryLast     = 0x20
+  kIsUncompacted = 0x2,
+  kHasPadding    = 0x4,
+  kEntryFull     = 0x8,
+  kEntryFirst    = 0x10,
+  kEntryMiddle   = 0x20,
+  kEntryLast     = 0x40
 };
 
 
@@ -51,11 +52,24 @@ struct EntryHeader {
   uint64_t size_key;
   uint64_t size_value;
   uint64_t size_value_compressed;
+  uint64_t size_padding;
   uint64_t hash;
+
+  // Helpers, not store on secondary storage
   int32_t size_header_serialized;
 
   void print() {
-    log::trace("EntryHeader::print()", "flags:%u crc32:0x%08" PRIx64 " size_key:%" PRIu64 " size_value:%" PRIu64 " size_value_compressed:%" PRIu64 " hash:0x%08" PRIx64, flags, crc32, size_key, size_value, size_value_compressed, hash);
+    log::trace("EntryHeader::print()", "flags:%u crc32:0x%08" PRIx64 " size_key:%" PRIu64 " size_value:%" PRIu64 " size_value_compressed:%" PRIu64 " size_padding:%" PRIu64  " hash:0x%08" PRIx64, flags, crc32, size_key, size_value, size_value_compressed, size_padding, hash);
+  }
+
+  static uint64_t CalculatePaddingSize(uint64_t size_value) {
+    // NOTE: Here I picked an arbitrary frame size of 64KB, and do an estimate
+    // of the padding necessary for the frame headers based on the current size
+    // of the value.
+    // This logic is related to the compression algorithms, and therefore should
+    // be moved to the compression classes.
+    uint64_t size_frame_header = 8;
+    return (size_value / (64*1024) + 1) * size_frame_header;
   }
 
   void SetHasPadding(bool b) {
@@ -68,6 +82,18 @@ struct EntryHeader {
 
   bool HasPadding() {
     return (flags & kHasPadding);
+  }
+
+  void SetIsUncompacted(bool b) {
+    if (b) {
+      flags |= kIsUncompacted;
+    } else {
+      flags &= ~kIsUncompacted;
+    }
+  }
+
+  bool IsUncompacted() {
+    return (flags & kIsUncompacted);
   }
 
   void SetTypeDelete() {
@@ -114,13 +140,12 @@ struct EntryHeader {
   }
 
   uint64_t size_value_offset() {
-    if (!IsCompressed() || HasPadding()) {
-      return size_value;
+    if (!IsCompressed() || IsUncompacted()) {
+      return size_value + size_padding;
     } else {
       return size_value_compressed;
     }
   }
-
 
   static Status DecodeFrom(const DatabaseOptions& db_options, const char* buffer_in, uint64_t num_bytes_max, struct EntryHeader *output, uint32_t *num_bytes_read) {
     /*
@@ -148,22 +173,26 @@ struct EntryHeader {
     if (length == -1) return Status::IOError("Decoding error");
     array.AddOffset(length);
 
-    int length_value = GetVarint64(&array, &(output->size_value));
-    if (length_value == -1) return Status::IOError("Decoding error");
-    array.AddOffset(length_value);
+    length = GetVarint64(&array, &(output->size_value));
+    if (length == -1) return Status::IOError("Decoding error");
+    array.AddOffset(length);
 
     if (db_options.compression.type != kNoCompression) {
-      int length = GetVarint64(&array, &(output->size_value_compressed));
+      GetFixed64(array.data(), &(output->size_value_compressed));
+      array.AddOffset(8);
+      length = GetVarint64(&array, &(output->size_padding));
       if (length == -1) return Status::IOError("Decoding error");
-      array.AddOffset(length_value); // size_value_compressed is using length_value
+      array.AddOffset(length);
     } else {
       output->size_value_compressed = 0;
+      output->size_padding = 0;
     }
 
     if (array.size() < 8) return Status::IOError("Decoding error");
     GetFixed64(array.data(), &(output->hash));
+    array.AddOffset(8);
 
-    *num_bytes_read = num_bytes_max - array.size() + 8;
+    *num_bytes_read = num_bytes_max - array.size();
     output->size_header_serialized = *num_bytes_read;
     //log::trace("EntryHeader::DecodeFrom", "size:%u", *num_bytes_read);
     return Status::OK();
@@ -185,19 +214,17 @@ struct EntryHeader {
     char *ptr;
     ptr = EncodeVarint32(buffer + 4, input->flags);
     ptr = EncodeVarint64(ptr, input->size_key);
-    char *ptr_value = EncodeVarint64(ptr, input->size_value);
-    int length_value = ptr_value - ptr;
-    ptr = ptr_value;
+    ptr = EncodeVarint64(ptr, input->size_value);
     if (db_options.compression.type != kNoCompression) {
-      // size_value_compressed is stored only if the database is using compression
-      //if (input->size_value_compressed != 0) {
-        EncodeVarint64(ptr, input->size_value_compressed);
-      //}
-      ptr += length_value;
+      EncodeFixed64(ptr, input->size_value_compressed);
+      ptr += 8;
+      ptr = EncodeVarint64(ptr, input->size_padding);
     }
     EncodeFixed64(ptr, input->hash);
+    ptr += 8;
+
     //log::trace("EntryHeader::EncodeTo", "size:%u", ptr - buffer + 8);
-    return (ptr - buffer + 8);
+    return (ptr - buffer);
   }
 
 };

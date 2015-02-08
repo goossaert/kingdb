@@ -401,8 +401,6 @@ class StorageEngine {
     uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
     uint32_t offset_file = location & 0x00000000FFFFFFFF;
     uint64_t filesize = 0;
-    // NOTE: used to be in mutex_write_ and mutex_read_ -- if crashing, put the
-    //       mutexes back
     filesize = hstable_manager_.file_resource_manager.GetFileSize(fileid);
 
     log::trace("StorageEngine::GetEntry()", "location:%" PRIu64 " fileid:%u offset_file:%u filesize:%" PRIu64, location, fileid, offset_file, filesize);
@@ -422,11 +420,12 @@ class StorageEngine {
 
     if (   !entry_header.AreSizesValid(offset_file, filesize)
         || !entry_header.IsEntryFull()) {
+      entry_header.print();
       return Status::IOError("Entry has invalid header");
     }
 
     key_temp->SetOffset(offset_file + size_header, entry_header.size_key);
-    value_temp->SetOffset(offset_file + size_header + entry_header.size_key, entry_header.size_value);
+    value_temp->SetOffset(offset_file + size_header + entry_header.size_key, entry_header.size_value_offset());
     value_temp->SetSizeCompressed(entry_header.size_value_compressed);
     value_temp->SetCRC32(entry_header.crc32);
 

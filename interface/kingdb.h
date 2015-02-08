@@ -26,6 +26,7 @@
 #include "util/options.h"
 #include "interface/iterator.h"
 #include "interface/snapshot.h"
+#include "thread/threadstorage.h"
 
 #include "algorithm/compressor.h"
 #include "algorithm/crc32c.h"
@@ -173,6 +174,8 @@ class KingDB: public Interface {
   kdb::EventManager *em_;
   kdb::CompressorLZ4 compressor_;
   kdb::CRC32 crc32_;
+  ThreadStorage ts_compression_enabled_;
+  ThreadStorage ts_offset_;
   bool is_closed_;
   int fd_dboptions_;
   std::mutex mutex_close_;

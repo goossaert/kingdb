@@ -200,6 +200,8 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     mmap_ = std::shared_ptr<Mmap>(new Mmap(filepath, filesize));
     data_ = mmap_->datafile();
     size_ = 0;
+    is_compression_disabled_ = false;
+    offset_output_ = 0;
     compressor_.ResetThreadLocalStorage();
     crc32_.ResetThreadLocalStorage();
   }
@@ -228,67 +230,84 @@ class SharedMmappedByteArray: public ByteArrayCommon {
   }
 
   virtual Status data_chunk(char **data_out, uint64_t *size_out) {
-    if (!is_compressed()) {
-      if (size_ <= crc32_.MaxInputSize()) {
-        crc32_.stream(data_, size_);
-        if (crc32_.get() != crc32_value_) {
+
+    if (is_compressed() && !is_compression_disabled_) {
+
+      if (compressor_.IsUncompressionDone(size_compressed_)) {
+        if (crc32_.get() == crc32_value_) {
+          log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+          return Status::Done();
+        } else {
           log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
           return Status::IOError("Bad CRC32");
         }
+      }
+
+      if (compressor_.HasFrameHeaderDisabledCompression(data_ + offset_output_)) {
+        log::debug("SharedMmappedByteArray::data_chunk()", "Finds that compression is disabled\n");
+        is_compression_disabled_ = true;
+        crc32_.stream(data_ + offset_output_, compressor_.size_frame_header());
+        offset_output_ += compressor_.size_frame_header();
+      }
+
+      if (!is_compression_disabled_) {
+        *data_out = nullptr;
+        *size_out = 0;
+
+        char *frame;
+        uint64_t size_frame;
+
+        log::trace("data_chunk()", "start");
+        Status s = compressor_.Uncompress(data_,
+                                          size_compressed_,
+                                          data_out,
+                                          size_out,
+                                          &frame,
+                                          &size_frame);
+        offset_output_ += size_frame;
+
+        if (s.IsDone()) {
+          return s;
+        } else if (!s.IsOK()) {
+          log::debug("SharedMmappedByteArray::data_chunk()", "Error CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+          return s;
+        }
+
+        crc32_.stream(frame, size_frame);
+        return Status::OK();
+      }
+    }
+
+    if (!is_compressed() || is_compression_disabled_) {
+      uint64_t size_left = size_ - offset_output_;
+      if (is_compressed() && is_compression_disabled_) size_left = size_compressed_ - offset_output_;
+      char* data_left = data_ + offset_output_;
+      if (size_left <= crc32_.MaxInputSize()) {
+        crc32_.stream(data_left, size_left);
+        if (crc32_.get() != crc32_value_) {
+          log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+          return Status::IOError("Bad CRC32");
+        } else {
+          log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+        }
       } else {
-        // TODO-34: With entries larger than (2^31 - 1) bytes, the computation of
-        //          the checksum returns invalid values. For the time being the
-        //          CRC32 of very large files is therefore desactivated, until the
-        //          bug is fixed.
-        /*
         size_t step = 1024*1024;
-        for (uint64_t i = 0; i < size_; i += step) {
-          size_t size_current = i + step < size_ ? step : size_ - i;
+        for (uint64_t i = 0; i < size_left; i += step) {
+          size_t size_current = i + step < size_left ? step : size_left - i;
           log::debug("SharedMmappedByteArray::data_chunk()",
                      "Current CRC32 - before - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 " i:%llu size_current:%llu",
                      crc32_value_, crc32_.get(), i, size_current);
-          crc32_.stream(data_ + i, size_current);
+          crc32_.stream(data_left + i, size_current);
           log::debug("SharedMmappedByteArray::data_chunk()",
                      "Current CRC32 - after - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 " i:%llu size_current:%llu",
                      crc32_value_, crc32_.get(), i, size_current);
         }
-        */
       }
 
-      *data_out = data_;
-      *size_out = size_;
+      *data_out = data_left;
+      *size_out = size_left;
       return Status::Done();
     }
-
-    *data_out = nullptr;
-    *size_out = 0;
-
-    char *frame;
-    uint64_t size_frame;
-
-    log::trace("data_chunk()", "start");
-    Status s = compressor_.Uncompress(data_,
-                                      size_compressed_,
-                                      data_out,
-                                      size_out,
-                                      &frame,
-                                      &size_frame);
-
-    if (s.IsDone()) {
-      if (crc32_.get() == crc32_value_) {
-        log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-        return s;
-      } else {
-        log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-        return Status::IOError("Bad CRC32");
-      }
-    } else if (!s.IsOK()) {
-      log::debug("SharedMmappedByteArray::data_chunk()", "Error CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-      return s;
-    }
-
-    crc32_.stream(frame, size_frame);
-    return Status::OK();
   }
 
   char* datafile() { return mmap_->datafile(); };
@@ -298,6 +317,8 @@ class SharedMmappedByteArray: public ByteArrayCommon {
   CRC32 crc32_;
   std::shared_ptr<Mmap> mmap_;
   uint64_t offset_;
+  uint64_t offset_output_;
+  bool is_compression_disabled_;
 };
 
 

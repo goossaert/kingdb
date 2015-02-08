@@ -45,6 +45,7 @@ class CompressorLZ4 {
                   uint64_t *size_compressed_out
                  );
 
+  bool IsUncompressionDone(uint64_t size_source);
   Status Uncompress(char *source,
                     uint64_t size_source,
                     char **dest,
@@ -52,6 +53,17 @@ class CompressorLZ4 {
                     char **frame_out,
                     uint64_t *size_frame_out
                    );
+
+  void DisableCompressionInFrameHeader(char* frame) {
+    for (int i = 0; i < size_frame_header(); i++) frame[i] = 0;
+  }
+
+  bool HasFrameHeaderDisabledCompression(char *frame) {
+    for (int i = 0; i < size_frame_header(); i++) {
+      if(frame[i] != 0) return false;
+    }
+    return true;
+  }
 
   uint64_t thread_local_handler(std::map<std::thread::id, uint64_t>& status,
                                 std::mutex& mutex,
@@ -63,6 +75,15 @@ class CompressorLZ4 {
   uint64_t MaxInputSize() {
     return LZ4_MAX_INPUT_SIZE;
   }
+
+  uint64_t size_frame_header() { return 8; };
+  uint64_t size_uncompressed_frame(uint64_t size_data) { return size_data + 8; }
+
+  void AdjustCompressedSize(int64_t inc) {
+    int64_t size = ts_compress_.get() + inc;
+    ts_compress_.put(size);
+  }
+
 
  private:
   ThreadStorage ts_compress_;

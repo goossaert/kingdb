@@ -96,7 +96,21 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     do_compression = false;
   }
 
-  if (!do_compression) {
+  if (is_first_chunk) {
+    ts_compression_enabled_.put(1);
+    ts_offset_.put(0);
+  }
+
+  if (ts_compression_enabled_.get() == 0) {
+    // If compression is disabled, chunks are copied uncompressed, but the first
+    // of the chunk copied when compression was disabled was shifted to have a
+    // frame header, thus the current offset needs to account for it.
+    //offset_chunk_compressed += compressor_.size_frame_header();
+    offset_chunk_compressed = ts_offset_.get();
+    ts_offset_.put(offset_chunk_compressed + chunk->size());
+  }
+
+  if (!do_compression || ts_compression_enabled_.get() == 0) {
     chunk_final = chunk;
   } else {
     if (is_first_chunk) {
@@ -112,9 +126,27 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     uint64_t size_compressed;
     char *compressed;
     s = compressor_.Compress(chunk->data(),
-                                    chunk->size(),
-                                    &compressed,
-                                    &size_compressed);
+                             chunk->size(),
+                             &compressed,
+                             &size_compressed);
+
+    // Now Checking if compression should be disabled for this entry
+    uint64_t size_remaining = size_value - offset_chunk;
+    uint64_t space_left = size_value + EntryHeader::CalculatePaddingSize(size_value) - offset_chunk_compressed;
+    if (  size_remaining - chunk->size() + compressor_.size_frame_header()
+        > space_left - size_compressed) {
+      delete[] compressed;
+      compressed = new char[compressor_.size_uncompressed_frame(chunk->size())];
+      compressor_.DisableCompressionInFrameHeader(compressed);
+      memcpy(compressed + compressor_.size_frame_header(), chunk->data(), chunk->size());
+      //compressor_.AdjustCompressedSize(- size_compressed + compressor_.size_frame_header() + size_remaining);
+      compressor_.AdjustCompressedSize(- size_compressed);
+      size_compressed = chunk->size() + compressor_.size_frame_header();
+      //offset_chunk_compressed = size_compressed;
+      ts_compression_enabled_.put(0);
+      ts_offset_.put(compressor_.size_compressed() + size_compressed);
+    }
+
     if (!s.IsOK()) return s;
     chunk_compressed = new SharedAllocatedByteArray(compressed, size_compressed);
 
@@ -125,12 +157,16 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
               chunk_compressed->size(),
               offset_chunk_compressed);
 
-    if (is_last_chunk) {
-      size_value_compressed = compressor_.size_compressed();
-    }
-
     chunk_final = chunk_compressed;
     delete chunk;
+  }
+
+  if (do_compression && is_last_chunk) {
+    if (ts_compression_enabled_.get() == 1) {
+      size_value_compressed = compressor_.size_compressed();
+    } else {
+      size_value_compressed = offset_chunk_compressed + chunk->size();
+    }
   }
 
   // Compute CRC32 checksum
@@ -143,7 +179,14 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   if (is_last_chunk) crc32 = crc32_.get();
 
   log::trace("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%" PRIu64 " crc32:0x%" PRIx64 " END", key->ToString().c_str(), size_value_compressed, crc32);
+ 
+  if (  offset_chunk_compressed + chunk_final->size()
+      > size_value + EntryHeader::CalculatePaddingSize(size_value)) {
+    log::emerg("KingDB::PutChunkValidSize()", "Error: write was attempted outside of the allocated memory.");
+    return Status::IOError("Prevented write to occur outside of the allocated memory.");
+  }
 
+  // (size_value_compressed != 0 && chunk->size() + offset_chunk == size_value_compressed));
   return wb_->PutChunk(write_options,
                       key,
                       chunk_final,

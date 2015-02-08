@@ -167,7 +167,7 @@ class HSTableManager {
     sprintf(buffer, "%08" PRIx64, num);
     return std::string(buffer);
   }
-  
+ 
   static uint32_t hex_to_num(char* hex) {
     uint32_t num;
     sscanf(hex, "%x", &num);
@@ -405,8 +405,10 @@ class HSTableManager {
     entry_header.size_key = order.key->size();
     entry_header.size_value = order.size_value;
     entry_header.size_value_compressed = order.size_value_compressed;
+    entry_header.size_padding = 0;
     entry_header.hash = hashed_key;
     entry_header.crc32 = 0;
+    entry_header.SetIsUncompacted(false);
     entry_header.SetHasPadding(false);
     uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
     key_to_headersize[order.tid][order.key->ToString()] = size_header;
@@ -421,6 +423,7 @@ class HSTableManager {
       log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
     }
+
     if (write(fd, order.chunk->data(), order.chunk->size()) < 0) {
       log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
@@ -486,12 +489,15 @@ class HSTableManager {
       entry_header.size_key = order.key->size();
       entry_header.size_value = order.size_value;
       entry_header.size_value_compressed = order.size_value_compressed;
+      entry_header.size_padding = EntryHeader::CalculatePaddingSize(order.size_value);
+      entry_header.print();
       if (!order.IsLarge() && entry_header.IsCompressed()) {
         // NOTE: entry_header.IsCompressed() makes no sense since compression is
         // handled at database level, not at entry level. All usages of
         // IsCompressed() should be replaced by a check on the database options.
-        entry_header.SetHasPadding(true);
+        entry_header.SetIsUncompacted(true);
         file_resource_manager.SetHasPaddingInValues(fileid_, true);
+        entry_header.SetHasPadding(true);
       }
       entry_header.hash = hashed_key;
 
@@ -562,10 +568,14 @@ class HSTableManager {
       entry_header.hash = hashed_key;
       entry_header.crc32 = order.crc32;
       if (order.IsSelfContained()) {
+        entry_header.SetIsUncompacted(false);
         entry_header.SetHasPadding(false);
+        entry_header.size_padding = 0;
       } else {
-        entry_header.SetHasPadding(true);
+        entry_header.SetIsUncompacted(true);
         file_resource_manager.SetHasPaddingInValues(fileid_, true);
+        entry_header.SetHasPadding(true);
+        entry_header.size_padding = EntryHeader::CalculatePaddingSize(order.size_value);
         // TODO: check that the has_padding_in_values field in fields is used during compaction
       }
       uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer_raw_ + offset_end_);
@@ -593,7 +603,7 @@ class HSTableManager {
         key_to_headersize[order.tid][order.key->ToString()] = size_header;
         log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "BEFORE fileid_ %u", fileid_);
         file_resource_manager.SetNumWritesInProgress(fileid_, 1);
-        FlushCurrentFile(0, order.size_value - order.chunk->size());
+        FlushCurrentFile(0, entry_header.size_value_offset() - order.chunk->size());
         // NOTE: A better way to do it would be to copy things into the buffer, and
         // then for the other chunks, either copy in the buffer if the position
         // to write is >= offset_end_, or do a pwrite() if the position is <

@@ -124,7 +124,7 @@ class Iterator {
       uint64_t location_current = locations_current_[index_location_];
       Status s = se_readonly_->GetEntry(location_current, &key, &value);
       if (!s.IsOK()) {
-        log::trace("Iterator::Next()", "GetEntry() failed");
+        log::trace("Iterator::Next()", "GetEntry() failed: %s", s.ToString().c_str());
         delete key; 
         delete value;
         index_location_ += 1;
@@ -138,7 +138,7 @@ class Iterator {
       uint64_t location_out;
       s = se_readonly_->Get(key, &value_alt, &location_out);
       if (!s.IsOK()) {
-        log::trace("Iterator::Next()", "Get(): failed");
+        log::trace("Iterator::Next()", "Get(): failed: %s", s.ToString().c_str());
         delete key;
         delete value;
         delete value_alt;
