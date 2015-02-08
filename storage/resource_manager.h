@@ -104,8 +104,10 @@ class FileResourceManager {
   }
 
   void SetFileLarge(uint32_t fileid) {
-    std::unique_lock<std::mutex> lock(mutex_);
+    mutex_.lock();
     largefiles_.insert(fileid);
+    mutex_.unlock();
+    SetFileCompacted(fileid);
   }
 
   bool IsFileCompacted(uint32_t fileid) {
@@ -114,6 +116,10 @@ class FileResourceManager {
   }
 
   void SetFileCompacted(uint32_t fileid) {
+    // NOTE: the compacted files are all the ones before the fileid at which the
+    // compaction process is currently waiting. Thus technically, there is no
+    // need for a std::set to know which HSTables are compacted and which
+    // aren't. This could be optimized at some point.
     std::unique_lock<std::mutex> lock(mutex_);
     if (compactedfiles_.find(fileid) != compactedfiles_.end()) return;
     compactedfiles_.insert(fileid);
