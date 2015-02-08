@@ -14,4 +14,13 @@
 
 #endif // DEBUG
 
+#include <cstdio>
+
+
+namespace kdb {
+
+void PrintHex(char *buffer, int size);
+
+} // namespace kdb
+
 #endif // KINGDB_DEBUG_H_
