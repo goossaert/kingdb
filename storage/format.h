@@ -453,7 +453,7 @@ struct DatabaseOptionEncoder {
     }
 
     if (compression_type == 0x1) {
-      output->checksum = kCrc32Checksum;
+      output->checksum = kCRC32C;
     } else {
       return Status::IOError("Unknown checksum type");
     }

@@ -21,8 +21,8 @@ enum CompressionType {
 };
 
 enum ChecksumType {
-  kNoChecksum    = 0x0,
-  kCrc32Checksum = 0x1
+  kNoChecksum = 0x0,
+  kCRC32C     = 0x1  // CRC-32C (Castagnoli)
 };
 
 enum WriteBufferMode {
@@ -45,7 +45,7 @@ struct DatabaseOptions {
         write_buffer__close_timeout(500),     // milliseconds
         hash(kxxHash_64),
         compression(kLZ4Compression),
-        checksum(kCrc32Checksum),
+        checksum(kCRC32C),
         write_buffer__mode(kWriteBufferModeAdaptive) {
     DatabaseOptions &db_options = *this;
     ConfigParser parser;
