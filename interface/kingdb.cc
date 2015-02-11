@@ -7,6 +7,7 @@
 namespace kdb {
 
 Status KingDB::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
+  if (is_closed_) return Status::IOError("The database is not open");
   log::trace("KingDB Get()", "[%s]", key->ToString().c_str());
   Status s = wb_->Get(read_options, key, value_out);
   if (s.IsDeleteOrder()) {
@@ -41,6 +42,7 @@ Status KingDB::PutChunk(WriteOptions& write_options,
                         ByteArray *chunk,
                         uint64_t offset_chunk,
                         uint64_t size_value) {
+  if (is_closed_) return Status::IOError("The database is not open");
   if (size_value <= db_options_.storage__maximum_chunk_size) {
     return PutChunkValidSize(write_options, key, chunk, offset_chunk, size_value);
   }
@@ -71,6 +73,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
                                  ByteArray *chunk,
                                  uint64_t offset_chunk,
                                  uint64_t size_value) {
+  if (is_closed_) return Status::IOError("The database is not open");
   Status s;
   s = se_->FileSystemStatus();
   if (!s.IsOK()) return s;
@@ -198,6 +201,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 
 Status KingDB::Delete(WriteOptions& write_options,
                       ByteArray *key) {
+  if (is_closed_) return Status::IOError("The database is not open");
   log::trace("KingDB::Delete()", "[%s]", key->ToString().c_str());
   Status s = se_->FileSystemStatus();
   if (!s.IsOK()) return s;
@@ -206,6 +210,7 @@ Status KingDB::Delete(WriteOptions& write_options,
 
 
 Interface* KingDB::NewSnapshot() {
+  if (is_closed_) return nullptr;
   log::trace("KingDB::NewSnapshot()", "start");
 
   wb_->Flush();
