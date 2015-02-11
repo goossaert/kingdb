@@ -53,6 +53,7 @@ int main() {
 
   kdb::DatabaseOptions options;
   kdb::KingDB db(options, "mydb");
+  db.Open();
 
   kdb::ReadOptions read_options;
   kdb::WriteOptions write_options;
@@ -100,22 +101,15 @@ int main() {
     //std::cout << "value: ";
 
     kdb::ByteArray *value = iterator->GetValue();
-    char *chunk;
-    uint64_t size_chunk;
-    kdb::Status s;
-    while (true) {
-      s = value->data_chunk(&chunk, &size_chunk);
-      if (s.IsDone()) break;
-      if (!s.IsOK()) {
-        delete[] chunk;
-        fprintf(stderr, "ClientEmbedded - Error - data_chunk(): %s", s.ToString().c_str());
-        break;
-      }
-      //std::cout << std::string(chunk, size_chunk);
-      delete[] chunk;
+
+    for (value->Begin(); value->IsValid(); value->Next()) {
+      kdb::ByteArray* chunk = value->GetChunk();
     }
-    //std::cout << std::endl;
-    //std::cout << std::endl;
+
+    kdb::Status s = value->GetStatus();
+    if (!s.IsOK()) {
+      fprintf(stderr, "ClientEmbedded - Error: %s", s.ToString().c_str());
+    }
     count_items += 1;
   }
 
