@@ -25,8 +25,25 @@
 
 namespace kdb {
 
-// TODO-1: most of the uses of ByteArray classes are pointers
-//         => change that to use references whenever possible
+class Stream {
+ public:
+  Stream(ByteArray* byte_array)
+    : byte_array_(byte_array),
+      chunk_current_(nullptr) {
+    
+  }
+
+  ~Stream() {
+    if (chunk_current_ != nullptr) {
+      delete chunk_current_;
+      chunk_current_ = nullptr;
+    }
+  }
+
+ private:
+  ByteArray* byte_array_;
+  ByteArray* chunk_current_;
+};
 
 
 class ByteArrayCommon: public ByteArray {
@@ -73,10 +90,30 @@ class ByteArrayCommon: public ByteArray {
   virtual void SetSizeCompressed(uint64_t s) { size_compressed_ = s; }
   virtual void SetCRC32(uint64_t c) { crc32_value_ = c; }
 
-  virtual Status data_chunk(char **data, uint64_t *size) {
-    *size = size_;
-    *data = data_;
-    return Status::Done();
+  bool IsStreamingRequired() { return false; }
+
+  Stream* GetNewStream(uint64_t advised_chunk_size) {
+    return nullptr;
+  }
+
+  // Streaming API
+  virtual void Begin() {
+  }
+
+  virtual bool IsValid() {
+    return false;
+  }
+
+  virtual bool Next() {
+    return false;
+  }
+
+  virtual Status GetStatus() {
+    return Status::OK(); 
+  }
+
+  virtual ByteArray* GetChunk() {
+    return nullptr;
   }
 
   char *data_;
@@ -128,197 +165,6 @@ class SmartByteArray: public ByteArrayCommon {
  private:
   ByteArray* ba_;
 
-};
-
-
-
-// TODO: move to file.h
-class Mmap {
- public:
-  Mmap(std::string filepath, int64_t filesize)
-      : filepath_(filepath),
-        filesize_(filesize),
-        is_valid_(false) {
-    if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
-      std::string msg = std::string("Count not open file [") + filepath + std::string("]");
-      log::emerg("Mmap()::ctor()", "%s", msg.c_str());
-      return;
-    }
-
-    log::trace("Mmap::ctor()", "open file: ok");
-
-    datafile_ = static_cast<char*>(mmap(0,
-                                       filesize, 
-                                       PROT_READ,
-                                       MAP_SHARED,
-                                       fd_,
-                                       0));
-    if (datafile_ == MAP_FAILED) {
-      std::string message("Could not mmap() file: " + filepath);
-      log::emerg(message.c_str(), strerror(errno));
-      return;
-    }
-
-    is_valid_ = true;
-  }
-
-  virtual ~Mmap() {
-    Close();
-  }
-
-  void Close() {
-    if (datafile_ != nullptr) {
-      munmap(datafile_, filesize_);
-      close(fd_);
-      datafile_ = nullptr;
-      log::debug("Mmap::~Mmap()", "released mmap on file: [%s]", filepath_.c_str());
-    }
-  }
-
-  char* datafile() { return datafile_; }
-  int64_t filesize() { return filesize_; }
-  bool is_valid_;
-  bool is_valid() { return is_valid_; }
-
-  int fd_;
-  int64_t filesize_;
-  char *datafile_;
-
-  // For debugging
-  const char* filepath() const { return filepath_.c_str(); }
-  std::string filepath_;
-};
-
-
-class SharedMmappedByteArray: public ByteArrayCommon {
- // TODO: Does the checksum and compressor here really need to be store in a
- // thread local storage? It would be way simpler to have this state held within
- // the ByteArray object.
- public:
-  SharedMmappedByteArray() {}
-  SharedMmappedByteArray(std::string filepath, int64_t filesize) {
-    mmap_ = std::shared_ptr<Mmap>(new Mmap(filepath, filesize));
-    data_ = mmap_->datafile();
-    size_ = 0;
-    is_compression_disabled_ = false;
-    offset_output_ = 0;
-    compressor_.ResetThreadLocalStorage();
-    crc32_.ResetThreadLocalStorage();
-  }
-
-  SharedMmappedByteArray(char *data, uint64_t size) {
-    data_ = data;
-    size_ = size;
-    compressor_.ResetThreadLocalStorage();
-    crc32_.ResetThreadLocalStorage();
-  }
-  virtual ~SharedMmappedByteArray() {}
-
-  void SetOffset(uint64_t offset, uint64_t size) {
-    offset_ = offset;
-    data_ = mmap_->datafile() + offset;
-    size_ = size;
-  }
-
-  void AddSize(int add) {
-    size_ += add; 
-  }
-
-  void SetInitialCRC32(uint32_t c32) {
-    log::debug("SetInitialCRC32()", "Initial CRC32 0x%08" PRIx64 "\n", c32);
-    crc32_.put(c32); 
-  }
-
-  virtual Status data_chunk(char **data_out, uint64_t *size_out) {
-
-    if (is_compressed() && !is_compression_disabled_) {
-
-      if (compressor_.IsUncompressionDone(size_compressed_)) {
-        if (crc32_.get() == crc32_value_) {
-          log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-          return Status::Done();
-        } else {
-          log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-          return Status::IOError("Bad CRC32");
-        }
-      }
-
-      if (compressor_.HasFrameHeaderDisabledCompression(data_ + offset_output_)) {
-        log::debug("SharedMmappedByteArray::data_chunk()", "Finds that compression is disabled\n");
-        is_compression_disabled_ = true;
-        crc32_.stream(data_ + offset_output_, compressor_.size_frame_header());
-        offset_output_ += compressor_.size_frame_header();
-      }
-
-      if (!is_compression_disabled_) {
-        *data_out = nullptr;
-        *size_out = 0;
-
-        char *frame;
-        uint64_t size_frame;
-
-        log::trace("data_chunk()", "start");
-        Status s = compressor_.Uncompress(data_,
-                                          size_compressed_,
-                                          data_out,
-                                          size_out,
-                                          &frame,
-                                          &size_frame);
-        offset_output_ += size_frame;
-
-        if (s.IsDone()) {
-          return s;
-        } else if (!s.IsOK()) {
-          log::debug("SharedMmappedByteArray::data_chunk()", "Error CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-          return s;
-        }
-
-        crc32_.stream(frame, size_frame);
-        return Status::OK();
-      }
-    }
-
-    if (!is_compressed() || is_compression_disabled_) {
-      uint64_t size_left = size_ - offset_output_;
-      if (is_compressed() && is_compression_disabled_) size_left = size_compressed_ - offset_output_;
-      char* data_left = data_ + offset_output_;
-      if (size_left <= crc32_.MaxInputSize()) {
-        crc32_.stream(data_left, size_left);
-        if (crc32_.get() != crc32_value_) {
-          log::debug("SharedMmappedByteArray::data_chunk()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-          return Status::IOError("Bad CRC32");
-        } else {
-          log::debug("SharedMmappedByteArray::data_chunk()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-        }
-      } else {
-        size_t step = 1024*1024;
-        for (uint64_t i = 0; i < size_left; i += step) {
-          size_t size_current = i + step < size_left ? step : size_left - i;
-          log::debug("SharedMmappedByteArray::data_chunk()",
-                     "Current CRC32 - before - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 " i:%llu size_current:%llu",
-                     crc32_value_, crc32_.get(), i, size_current);
-          crc32_.stream(data_left + i, size_current);
-          log::debug("SharedMmappedByteArray::data_chunk()",
-                     "Current CRC32 - after - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 " i:%llu size_current:%llu",
-                     crc32_value_, crc32_.get(), i, size_current);
-        }
-      }
-
-      *data_out = data_left;
-      *size_out = size_left;
-      return Status::Done();
-    }
-  }
-
-  char* datafile() { return mmap_->datafile(); };
-
- private:
-  CompressorLZ4 compressor_;
-  CRC32 crc32_;
-  std::shared_ptr<Mmap> mmap_;
-  uint64_t offset_;
-  uint64_t offset_output_;
-  bool is_compression_disabled_;
 };
 
 
@@ -375,6 +221,243 @@ class SharedAllocatedByteArray: public ByteArrayCommon {
   std::shared_ptr<char> data_allocated_;
   uint64_t offset_;
 
+};
+
+
+
+
+
+
+
+// TODO: move to file.h
+class Mmap {
+ public:
+  Mmap(std::string filepath, int64_t filesize)
+      : filepath_(filepath),
+        filesize_(filesize),
+        is_valid_(false) {
+    if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
+      log::emerg("Mmap()::ctor()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
+      return;
+    }
+
+    log::trace("Mmap::ctor()", "open file: ok");
+
+    datafile_ = static_cast<char*>(mmap(0,
+                                       filesize, 
+                                       PROT_READ,
+                                       MAP_SHARED,
+                                       fd_,
+                                       0));
+    if (datafile_ == MAP_FAILED) {
+      log::emerg("Could not mmap() file [%s]: %s", filepath.c_str(), strerror(errno));
+      return;
+    }
+
+    is_valid_ = true;
+  }
+
+  virtual ~Mmap() {
+    Close();
+  }
+
+  void Close() {
+    if (datafile_ != nullptr) {
+      munmap(datafile_, filesize_);
+      close(fd_);
+      datafile_ = nullptr;
+      log::debug("Mmap::~Mmap()", "released mmap on file: [%s]", filepath_.c_str());
+    }
+  }
+
+  char* datafile() { return datafile_; }
+  int64_t filesize() { return filesize_; }
+  bool is_valid_;
+  bool is_valid() { return is_valid_; }
+
+  int fd_;
+  int64_t filesize_;
+  char *datafile_;
+
+  // For debugging
+  const char* filepath() const { return filepath_.c_str(); }
+  std::string filepath_;
+};
+
+
+class SharedMmappedByteArray: public ByteArrayCommon {
+ // TODO: Does the checksum and compressor here really need to be store in a
+ // thread local storage? It would be way simpler to have this state held within
+ // the ByteArray object.
+ public:
+  SharedMmappedByteArray() {}
+  SharedMmappedByteArray(std::string filepath, int64_t filesize) {
+    mmap_ = std::shared_ptr<Mmap>(new Mmap(filepath, filesize));
+    data_ = mmap_->datafile();
+    size_ = 0;
+    is_compression_disabled_ = false;
+    offset_output_ = 0;
+    compressor_.ResetThreadLocalStorage();
+    crc32_.ResetThreadLocalStorage();
+    chunk_ = nullptr;
+  }
+
+  SharedMmappedByteArray(char *data, uint64_t size) {
+    data_ = data;
+    size_ = size;
+    compressor_.ResetThreadLocalStorage();
+    crc32_.ResetThreadLocalStorage();
+  }
+  virtual ~SharedMmappedByteArray() {}
+
+  void SetOffset(uint64_t offset, uint64_t size) {
+    offset_ = offset;
+    data_ = mmap_->datafile() + offset;
+    size_ = size;
+  }
+
+  void AddSize(int add) {
+    size_ += add; 
+  }
+
+  void SetInitialCRC32(uint32_t c32) {
+    log::debug("SetInitialCRC32()", "Initial CRC32 0x%08" PRIx64 "\n", c32);
+    initial_crc32_ = c32;
+    crc32_.put(c32); 
+  }
+
+
+  // Streaming API - START
+  
+  Status status_; 
+  ByteArray* chunk_;
+  bool is_valid_stream_;
+  
+  virtual void Begin() {
+    crc32_.ResetThreadLocalStorage();
+    crc32_.put(initial_crc32_); 
+    if (chunk_ != nullptr) delete chunk_;
+    chunk_ = nullptr;
+    is_valid_stream_ = true;
+    is_compression_disabled_ = false;
+    offset_output_ = 0;
+    compressor_.ResetThreadLocalStorage();
+    Next();
+    status_ = Status::IOError("Steam is unfinished");
+  }
+
+  virtual bool IsValid() {
+    return is_valid_stream_;
+  }
+
+  virtual Status GetStatus() {
+    return status_; 
+  }
+
+  // Careful here: if the call to Next() is the first one, i.e. the one in
+  // Begin(), then is_valid_stream_ must not be set to false yet, otherwise
+  // the for-loops of type for(Begin(); IsValid(); Next()) would never run,
+  // as IsValid() would prevent the first iteration to start.
+  virtual bool Next() {
+    if (is_compressed() && !is_compression_disabled_) {
+
+      if (compressor_.IsUncompressionDone(size_compressed_)) {
+        is_valid_stream_ = false;
+        if (crc32_.get() == crc32_value_) {
+          log::debug("SharedMmappedByteArray::Next()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+          status_ = Status::OK();
+        } else {
+          log::debug("SharedMmappedByteArray::Next()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+          status_ = Status::IOError("Invalid checksum.");
+        }
+        return false;
+      }
+
+      if (compressor_.HasFrameHeaderDisabledCompression(data_ + offset_output_)) {
+        log::debug("SharedMmappedByteArray::Next()", "Finds that compression is disabled\n");
+        is_compression_disabled_ = true;
+        crc32_.stream(data_ + offset_output_, compressor_.size_frame_header());
+        offset_output_ += compressor_.size_frame_header();
+      }
+
+      if (!is_compression_disabled_) {
+        char *frame;
+        uint64_t size_frame;
+
+        char *data_out;
+        uint64_t size_out;
+
+        log::trace("SharedMmappedByteArray::Next()", "before uncompress");
+        Status s = compressor_.Uncompress(data_,
+                                          size_compressed_,
+                                          &data_out,
+                                          &size_out,
+                                          &frame,
+                                          &size_frame);
+        offset_output_ += size_frame;
+
+        if (chunk_ != nullptr) delete chunk_;
+        chunk_ = new SharedAllocatedByteArray(data_out, size_out);
+
+        if (s.IsDone()) {
+          is_valid_stream_ = false;
+          status_ = Status::OK();
+        } else if (s.IsOK()) {
+          crc32_.stream(frame, size_frame);
+        } else {
+          is_valid_stream_ = false;
+          status_ = s;
+        }
+      }
+    }
+
+    if (!is_compressed() || is_compression_disabled_) {
+      uint64_t size_left;
+      if (is_compressed() && is_compression_disabled_) {
+        size_left = size_compressed_;
+      } else {
+        size_left = size_;
+      }
+
+      if (offset_output_ == size_left) {
+        is_valid_stream_ = false;
+        status_ = Status::OK();
+        return false;
+      }
+
+      char* data_left = data_ + offset_output_;
+
+      size_t step = 1024*1024;
+      size_t size_current = offset_output_ + step < size_left ? step : size_left - offset_output_;
+      crc32_.stream(data_left, size_current);
+
+      auto chunk = new SharedMmappedByteArray();
+      *chunk = *this;
+      chunk->SetOffset(offset_output_, size_current);
+
+      if (chunk_ != nullptr) delete chunk_;
+      chunk_ = chunk;
+      offset_output_ += size_current;
+      status_ = Status::Done();
+    }
+    return true;
+  }
+  // Streaming API - END
+
+  virtual ByteArray* GetChunk() {
+    return chunk_;
+  }
+
+  char* datafile() { return mmap_->datafile(); };
+
+ private:
+  CompressorLZ4 compressor_;
+  uint32_t initial_crc32_;
+  CRC32 crc32_;
+  std::shared_ptr<Mmap> mmap_;
+  uint64_t offset_;
+  uint64_t offset_output_;
+  bool is_compression_disabled_;
 };
 
 

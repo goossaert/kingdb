@@ -170,66 +170,23 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
             break;
           }
 
-          if (!value->is_compressed()) {
-            // is this condition really necessary? can't the 'compressed' code
-            // block also handle this as well?
-            char *chunk;
-            uint64_t size_chunk;
-            s = value->data_chunk(&chunk, &size_chunk);
-            if (!s.IsOK() && !s.IsDone()) {
-              // TODO: this won't work, as it has to be sent before
-              //       the 'VALUE' command
-              if (send(sockfd_, "SERVER_ERROR Bad CRC32\r\n", 24, 0) == -1) {
-                log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
-              }
-            } else {
-              if (send(sockfd_, chunk, size_chunk, 0) == -1) {
-                log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
-              }
-            }
-          } else {
-            // If the value is compressed
-            char *chunk;
-            uint64_t size_chunk;
-            while (true) {
-              s = value->data_chunk(&chunk, &size_chunk);
-              if (s.IsDone()) break;
-              if (!s.IsOK()) {
-                delete[] chunk;
-                log::trace("NetworkTask", "Error - data_chunk(): %s", s.ToString().c_str());
-                break;
-              }
-              if (send(sockfd_, chunk, size_chunk, 0) == -1) {
-                delete[] chunk;
-                log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
-                break;
-              }
-              delete[] chunk;
-            }
-
-            if (!s.IsOK() && !s.IsDone()) {
-              log::emerg("NetworkTask", "Error: send()", strerror(errno));
-              //break;
+          for (value->Begin(); value->IsValid(); value->Next()) {
+            kdb::ByteArray *chunk = value->GetChunk();
+            if (send(sockfd_, chunk->data(), chunk->size(), 0) == -1) {
+              log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
             }
           }
 
-          //if (s.IsOK() || s.IsDone()) {
-            if (send(sockfd_, "\r\nEND\r\n", 7, 0) == -1) {
-              log::emerg("NetworkTask", "Error: send()", strerror(errno));
-              break;
-            }
-          //}
-
-          /*
-          if (send(sockfd_, value->data(), value->size(), 0) == -1) {
-            log::trace("NetworkTask", "Error: send() - %s", strerror(errno));
-            break;
+          Status s = value->GetStatus();
+          if (!s.IsOK()) {
+            log::trace("NetworkTask", "Error - GetChunk(): %s", s.ToString().c_str());
+            break; // drop the connection
           }
+
           if (send(sockfd_, "\r\nEND\r\n", 7, 0) == -1) {
             log::emerg("NetworkTask", "Error: send()", strerror(errno));
             break;
           }
-          */
         } else {
           log::trace("NetworkTask", "GET: [%s]", s.ToString().c_str());
           std::string msg = "NOT_FOUND\r\n";

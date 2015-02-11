@@ -24,6 +24,7 @@
 #include "util/order.h"
 #include "util/byte_array.h"
 #include "util/options.h"
+#include "util/file.h"
 #include "interface/iterator.h"
 #include "interface/snapshot.h"
 #include "thread/threadstorage.h"
@@ -53,6 +54,8 @@ class KingDB: public Interface {
  
   virtual Status Open() override {
  
+    FileUtil::increase_limit_open_files();
+
     Hash* hash = MakeHash(db_options_.hash);
     uint64_t max_size_hash = hash->MaxInputSize();
     delete hash;

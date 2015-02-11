@@ -6,6 +6,7 @@
 #define KINGDB_BYTE_ARRAY_BASE_H_
 
 #include "util/debug.h"
+#include "util/status.h"
 
 namespace kdb {
 
@@ -21,7 +22,13 @@ class ByteArray {
   virtual void set_offset(int off) = 0;
   virtual bool is_compressed() = 0;
   virtual bool StartsWith(const char *substr, int n) = 0;
-  virtual Status data_chunk(char **data, uint64_t *size) = 0;
+
+  // Streaming API
+  virtual void Begin() = 0;
+  virtual bool IsValid() = 0;
+  virtual bool Next() = 0;
+  virtual ByteArray* GetChunk() = 0;
+  virtual Status GetStatus() = 0;
 
   bool operator ==(const ByteArray &right) const {
     //fprintf(stderr, "ByteArray operator==() -- left: %p %" PRIu64 " [%s] right: %p %" PRIu64 " [%s]\n", data_, size_, std::string(data_, size_).c_str(), right.data_const(), right.size_const(), std::string(right.data_const(), right.size_const()).c_str());

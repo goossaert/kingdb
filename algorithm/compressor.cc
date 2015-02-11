@@ -109,7 +109,7 @@ Status CompressorLZ4::Uncompress(char *source,
     size_compressed = size_source;
     *size_dest = size_source;
     *dest = new char[size_source];
-    memcpy(*dest, source, size_source);
+    memcpy(*dest, source + offset_uncompress + 8, size_source);
   }
 
   crc32_.stream(source + offset_uncompress, size_compressed + 8);
