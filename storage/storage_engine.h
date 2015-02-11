@@ -425,7 +425,7 @@ class StorageEngine {
     }
 
     key_temp->SetOffset(offset_file + size_header, entry_header.size_key);
-    value_temp->SetOffset(offset_file + size_header + entry_header.size_key, entry_header.size_value_offset());
+    value_temp->SetOffset(offset_file + size_header + entry_header.size_key, entry_header.size_value);
     value_temp->SetSizeCompressed(entry_header.size_value_compressed);
     value_temp->SetCRC32(entry_header.crc32);
 
