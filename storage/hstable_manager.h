@@ -50,6 +50,7 @@ class HSTableManager {
     is_read_only_ = true;
     has_file_ = false;
     buffer_has_items_ = false;
+    has_sync_option_ = false;
   }
 
   HSTableManager(DatabaseOptions& db_options,
@@ -287,6 +288,13 @@ class HSTableManager {
       }
     }
 
+    if (has_sync_option_) {
+      has_sync_option_ = false;
+      if (FileUtil::sync_file(fd_) < 0) {
+        log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error sync_file(): %s", strerror(errno));
+      }
+    }
+
     if (offset_end_ >= size_block_ || (force_new_file && offset_end_ > db_options_.internal__hstable_header_size)) {
       log::trace("HSTableManager::FlushCurrentFile()", "file renewed - force_new_file:%d", force_new_file);
       file_resource_manager.SetFileSize(fileid_, offset_end_);
@@ -394,7 +402,7 @@ class HSTableManager {
     hstheader.timestamp = timestamp_largefile;
     HSTableHeader::EncodeTo(&hstheader, buffer);
     if (write(fd, buffer, db_options_.internal__hstable_header_size) < 0) {
-      log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
     }
 
@@ -413,27 +421,32 @@ class HSTableManager {
     uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
     key_to_headersize[order.tid][order.key->ToString()] = size_header;
     if (write(fd, buffer, size_header) < 0) {
-      log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
     }
 
     // Write key and chunk
     // NOTE: Could also put the key and chunk in the buffer and do a single write
     if (write(fd, order.key->data(), order.key->size()) < 0) {
-      log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
     }
 
     if (write(fd, order.chunk->data(), order.chunk->size()) < 0) {
-      log::emerg("HSTableManager::FlushLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
     }
 
     uint64_t filesize = db_options_.internal__hstable_header_size + size_header + order.key->size() + order.size_value;
     if (ftruncate(fd, filesize) < 0) {
-      log::emerg("HSTableManager::FlushLargeOrder()", "Error ftruncate(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error ftruncate(): %s", strerror(errno));
       return 0;
     }
+
+    if (order.write_options.sync && FileUtil::sync_file(fd) < 0) {
+      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error sync_file(): %s", strerror(errno));
+    }
+
     file_resource_manager.SetFileSize(fileid_largefile, filesize);
     close(fd);
     uint64_t fileid_shifted = fileid_largefile;
@@ -550,6 +563,10 @@ class HSTableManager {
       }
     }
 
+    if (order.write_options.sync && FileUtil::sync_file(fd) < 0) {
+      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error sync_file(): %s", strerror(errno));
+    }
+
     close(fd);
     log::trace("HSTableManager::WriteMiddleOrLastChunk()", "all good");
     return location;
@@ -557,8 +574,14 @@ class HSTableManager {
 
 
   uint64_t WriteFirstChunkOrSmallOrder(Order& order, uint64_t hashed_key) {
+
+    if (order.write_options.sync) {
+      has_sync_option_ = true;
+    }
+
     uint64_t location_out = 0;
     struct EntryHeader entry_header;
+
     if (order.type == OrderType::Put) {
       entry_header.SetTypePut();
       entry_header.SetEntryFull();
@@ -1099,6 +1122,7 @@ class HSTableManager {
 
   int size_block_;
   bool has_file_;
+  bool has_sync_option_;
   int fd_;
   std::string filepath_;
   uint64_t offset_start_;

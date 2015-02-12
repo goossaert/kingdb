@@ -10,6 +10,7 @@
 #include <sys/resource.h>
 #include <sys/statvfs.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 #include "util/status.h"
 
@@ -128,6 +129,17 @@ class FileUtil {
 
   static uint64_t maximum_path_size() {
     return 4096;
+  }
+
+  static int sync_file(int fd) {
+    int ret;
+#ifdef F_FULLFSYNC
+    // For Mac OS X
+    ret = fcntl(fd, F_FULLFSYNC);
+#else
+    ret = fdatasync(fd);
+#endif // F_FULLFSYNC
+    return ret;
   }
 };
 

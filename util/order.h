@@ -32,6 +32,7 @@ enum class OrderType { Put, Delete };
 
 struct Order {
   std::thread::id tid;
+  WriteOptions write_options;
   OrderType type;
   ByteArray* key;
   ByteArray* chunk;

@@ -123,13 +123,14 @@ Status WriteBuffer::Put(WriteOptions& write_options, ByteArray* key, ByteArray* 
 
 
 Status WriteBuffer::PutChunk(WriteOptions& write_options,
-                               ByteArray* key,
-                               ByteArray* chunk,
-                               uint64_t offset_chunk,
-                               uint64_t size_value,
-                               uint64_t size_value_compressed,
-                               uint32_t crc32) {
-  return WriteChunk(OrderType::Put,
+                             ByteArray* key,
+                             ByteArray* chunk,
+                             uint64_t offset_chunk,
+                             uint64_t size_value,
+                             uint64_t size_value_compressed,
+                             uint32_t crc32) {
+  return WriteChunk(write_options,
+                    OrderType::Put,
                     key,
                     chunk,
                     offset_chunk,
@@ -145,17 +146,18 @@ Status WriteBuffer::Delete(WriteOptions& write_options, ByteArray* key) {
   //       The use of SimpleByteArray here is a hack to guarantee that data()
   //       and size() won't be called on a nullptr -- this needs to be cleaned up.
   auto empty_chunk = new SimpleByteArray(nullptr, 0);
-  return WriteChunk(OrderType::Delete, key, empty_chunk, 0, 0, 0, 0);
+  return WriteChunk(write_options, OrderType::Delete, key, empty_chunk, 0, 0, 0, 0);
 }
 
 
-Status WriteBuffer::WriteChunk(const OrderType& op,
-                                 ByteArray* key,
-                                 ByteArray* chunk,
-                                 uint64_t offset_chunk,
-                                 uint64_t size_value,
-                                 uint64_t size_value_compressed,
-                                 uint32_t crc32) {
+Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
+                               const OrderType& op,
+                               ByteArray* key,
+                               ByteArray* chunk,
+                               uint64_t offset_chunk,
+                               uint64_t size_value,
+                               uint64_t size_value_compressed,
+                               uint32_t crc32) {
   if (IsStopRequested()) return Status::IOError("Cannot handle request: WriteBuffer is closing");
 
   log::trace("WriteBuffer::WriteChunk()",
@@ -176,6 +178,7 @@ Status WriteBuffer::WriteChunk(const OrderType& op,
   std::unique_lock<std::mutex> lock_live(mutex_live_write_level1_);
   mutex_indices_level3_.lock();
   buffers_[im_live_].push_back(Order{std::this_thread::get_id(),
+                                     write_options,
                                      op,
                                      key,
                                      chunk,

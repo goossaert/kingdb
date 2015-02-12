@@ -89,7 +89,8 @@ class WriteBuffer {
   bool stop_requested_;
 
  private:
-  Status WriteChunk(const OrderType& op,
+  Status WriteChunk(const WriteOptions& write_options,
+                    const OrderType& op,
                     ByteArray* key,
                     ByteArray* chunk,
                     uint64_t offset_chunk,

@@ -316,7 +316,10 @@ class StorageEngine {
   }
 
   // NOTE: key_out and value_out must be deleted by the caller
-  Status Get(ByteArray* key, ByteArray** value_out, uint64_t *location_out=nullptr) {
+  Status Get(ReadOptions& read_options,
+             ByteArray* key,
+             ByteArray** value_out,
+             uint64_t *location_out=nullptr) {
     mutex_write_.lock();
     mutex_read_.lock();
     num_readers_ += 1;
@@ -330,10 +333,10 @@ class StorageEngine {
 
     Status s;
     if (!has_compaction_index) {
-      s = GetWithIndex(index_, key, value_out, location_out);
+      s = GetWithIndex(read_options, index_, key, value_out, location_out);
     } else {
-      s = GetWithIndex(index_compaction_, key, value_out, location_out);
-      if (!s.IsOK()) s = GetWithIndex(index_, key, value_out, location_out);
+      s = GetWithIndex(read_options, index_compaction_, key, value_out, location_out);
+      if (!s.IsOK()) s = GetWithIndex(read_options, index_, key, value_out, location_out);
     }
 
     mutex_read_.lock();
@@ -346,7 +349,8 @@ class StorageEngine {
   }
 
   // IMPORTANT: value_out must be deleled by the caller
-  Status GetWithIndex(std::multimap<uint64_t, uint64_t>& index,
+  Status GetWithIndex(ReadOptions& read_options,
+                      std::multimap<uint64_t, uint64_t>& index,
                       ByteArray* key,
                       ByteArray** value_out,
                       uint64_t *location_out=nullptr) {
@@ -365,7 +369,7 @@ class StorageEngine {
     auto rend  = --range.first;
     for (auto it = rbegin; it != rend; --it) {
       ByteArray *key_temp = nullptr;
-      Status s = GetEntry(it->second, &key_temp, value_out);
+      Status s = GetEntry(read_options, it->second, &key_temp, value_out);
       log::trace("StorageEngine::GetWithIndex()", "key ptr:[%p]", key);
       //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
       //std::string temp(key_temp->data(), key_temp->size());
@@ -387,7 +391,8 @@ class StorageEngine {
   }
 
   // IMPORTANT: key_out and value_out must be deleted by the caller
-  Status GetEntry(uint64_t location,
+  Status GetEntry(ReadOptions& read_options,
+                  uint64_t location,
                   ByteArray **key_out,
                   ByteArray **value_out) {
     log::trace("StorageEngine::GetEntry()", "start");
@@ -429,8 +434,11 @@ class StorageEngine {
     value_temp->SetSizeCompressed(entry_header.size_value_compressed);
     value_temp->SetCRC32(entry_header.crc32);
 
-    uint32_t crc32_headerkey = crc32c::Value(value_temp->datafile() + offset_file + 4, size_header + entry_header.size_key - 4);
-    value_temp->SetInitialCRC32(crc32_headerkey);
+    if (read_options.verify_checksums) {
+      value_temp->EnableChecksumVerification();
+      uint32_t crc32_headerkey = crc32c::Value(value_temp->datafile() + offset_file + 4, size_header + entry_header.size_key - 4);
+      value_temp->SetInitialCRC32(crc32_headerkey);
+    }
 
     if (entry_header.IsTypeDelete()) {
       s = Status::DeleteOrder();
@@ -579,6 +587,7 @@ class StorageEngine {
     // Reversing the order of the vector to guarantee that
     // the most recent locations are treated first
     std::reverse(index_compaction_se.begin(), index_compaction_se.end());
+    ReadOptions read_options;
     for (auto &p: index_compaction_se) {
       ByteArray *key, *value;
       uint64_t& location = p.second;
@@ -589,7 +598,7 @@ class StorageEngine {
         continue;
       }
       fileids_compaction.insert(fileid);
-      Status s = GetEntry(location, &key, &value);
+      Status s = GetEntry(read_options, location, &key, &value);
       std::string str_key = key->ToString();
       delete key;
       delete value;
@@ -780,6 +789,7 @@ class StorageEngine {
 
         //for (auto it_location = locations.begin(); it_location != locations.end(); ++it_location) {
           //uint64_t location = *it_location;
+        WriteOptions write_options;
         for (auto& location: locations) {
           uint32_t fileid_location = (location & 0xFFFFFFFF00000000) >> 32;
           uint32_t offset_file = location & 0x00000000FFFFFFFF;
@@ -804,6 +814,7 @@ class StorageEngine {
 
           bool is_large = false;
           orders.push_back(Order{std::this_thread::get_id(),
+                                 write_options,
                                  OrderType::Put,
                                  key,
                                  chunk,

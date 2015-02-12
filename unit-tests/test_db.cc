@@ -97,6 +97,7 @@ TEST(DBTest, SingleThreadSmallEntries) {
 
   kdb::ReadOptions read_options;
   kdb::WriteOptions write_options;
+  write_options.sync = true;
 
   int size = 101;
   char *buffer_large = new char[size+1];
@@ -166,6 +167,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
 
   kdb::ReadOptions read_options;
   kdb::WriteOptions write_options;
+  write_options.sync = true;
 
   uint64_t total_size = (uint64_t)1 << 30;
   //total_size *= 5;
