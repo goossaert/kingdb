@@ -160,7 +160,7 @@ class KingDB: public Interface {
                           uint64_t size_value) override;
   virtual Status Delete(WriteOptions& write_options, ByteArray *key) override;
   virtual Interface* NewSnapshot() override;
-  virtual Iterator* NewIterator(ReadOptions& read_options) override { return nullptr; };
+  virtual Iterator* NewIterator(ReadOptions& read_options) override;
 
  private:
 

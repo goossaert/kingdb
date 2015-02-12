@@ -89,7 +89,7 @@ class Snapshot: public Interface {
   }
 
   virtual Iterator* NewIterator(ReadOptions& read_options) override {
-    Iterator* it = new Iterator(read_options, se_readonly_, fileids_iterator_);
+    Iterator* it = new BasicIterator(read_options, se_readonly_, fileids_iterator_);
     return it;
   }
 

@@ -130,8 +130,7 @@ TEST(DBTest, SingleThreadSmallEntries) {
   //std::this_thread::sleep_for(std::chrono::milliseconds(10000));
 
   int count_items_end = 0;
-  kdb::Interface *snapshot = db_->NewSnapshot();
-  kdb::Iterator *iterator = snapshot->NewIterator(read_options);
+  kdb::Iterator *iterator = db_->NewIterator(read_options);
 
   for (iterator->Begin(); iterator->IsValid(); iterator->Next()) {
     kdb::ByteArray *value = iterator->GetValue();
@@ -154,7 +153,6 @@ TEST(DBTest, SingleThreadSmallEntries) {
   //std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
   delete iterator;
-  delete snapshot;
   
   delete[] buffer_large;
   ASSERT_EQ(count_items_end, num_items);

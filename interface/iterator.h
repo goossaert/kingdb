@@ -11,33 +11,42 @@
 #include "util/order.h"
 #include "util/byte_array.h"
 #include "util/options.h"
+#include "interface/interface.h"
 #include "storage/storage_engine.h"
 
 namespace kdb {
 
-class Iterator {
+class BasicIterator: public Iterator {
  public:
-  Iterator(ReadOptions& read_options,
-           StorageEngine *se_readonly,
-           std::vector<uint32_t>* fileids_iterator)
+  BasicIterator(ReadOptions& read_options,
+                   StorageEngine *se_readonly,
+                   std::vector<uint32_t>* fileids_iterator)
       : se_readonly_(se_readonly),
         read_options_(read_options),
+        snapshot_(nullptr),
         fileids_iterator_(fileids_iterator) {
-    log::trace("Iterator::ctor()", "start");
+    log::trace("BasicIterator::ctor()", "start");
   }
 
-  ~Iterator() {
-    log::emerg("Iterator::dtor()", "call");
+  ~BasicIterator() {
+    log::emerg("BasicIterator::dtor()", "call");
     if (key_ != nullptr) {
       delete key_;
       delete value_;
       key_ = nullptr;
       value_ = nullptr;
     }
+    if (snapshot_ != nullptr) {
+      delete snapshot_;
+    }
+  }
+
+  void SetParentSnapshot(Interface *snapshot) {
+    snapshot_ = snapshot; 
   }
 
   void Begin() {
-    log::trace("Iterator::Begin()", "start");
+    log::trace("BasicIterator::Begin()", "start");
     mutex_.lock();
     fileid_current_ = 0;
     has_file_ = false;
@@ -47,18 +56,18 @@ class Iterator {
     value_ = nullptr;
     mutex_.unlock();
     Next();
-    log::trace("Iterator::Begin()", "end");
+    log::trace("BasicIterator::Begin()", "end");
   }
 
   bool IsValid() {
-    log::trace("Iterator::IsValid()", "start");
+    log::trace("BasicIterator::IsValid()", "start");
     std::unique_lock<std::mutex> lock(mutex_);
-    log::trace("Iterator::IsValid()", "end");
+    log::trace("BasicIterator::IsValid()", "end");
     return is_valid_;
   }
 
   bool Next() {
-    log::trace("Iterator::Next()", "start");
+    log::trace("BasicIterator::Next()", "start");
     std::unique_lock<std::mutex> lock(mutex_);
     if (!is_valid_) return false;
     Status s;
@@ -70,14 +79,14 @@ class Iterator {
         key_ = nullptr;
         value_ = nullptr;
       }
-      log::trace("Iterator::Next()", "loop index_file:[%u] index_location:[%u]", index_fileid_, index_location_);
+      log::trace("BasicIterator::Next()", "loop index_file:[%u] index_location:[%u]", index_fileid_, index_location_);
       if (index_fileid_ >= fileids_iterator_->size()) {
         is_valid_ = false;
         break;
       }
 
       if (!has_file_) {
-        log::trace("Iterator::Next()", "initialize file");
+        log::trace("BasicIterator::Next()", "initialize file");
         fileid_current_ = fileids_iterator_->at(index_fileid_);
         filepath_current_ = se_readonly_->GetFilepath(fileid_current_);
         struct stat info;
@@ -110,9 +119,9 @@ class Iterator {
         has_file_ = true;
       }
 
-      log::trace("Iterator::Next()", "has file");
+      log::trace("BasicIterator::Next()", "has file");
       if (index_location_ >= locations_current_.size()) {
-        log::trace("Iterator::Next()", "index_location_ is out");
+        log::trace("BasicIterator::Next()", "index_location_ is out");
         has_file_ = false;
         index_fileid_ += 1;
         continue;
@@ -124,7 +133,7 @@ class Iterator {
       uint64_t location_current = locations_current_[index_location_];
       Status s = se_readonly_->GetEntry(location_current, &key, &value);
       if (!s.IsOK()) {
-        log::trace("Iterator::Next()", "GetEntry() failed: %s", s.ToString().c_str());
+        log::trace("BasicIterator::Next()", "GetEntry() failed: %s", s.ToString().c_str());
         delete key; 
         delete value;
         index_location_ += 1;
@@ -138,7 +147,7 @@ class Iterator {
       uint64_t location_out;
       s = se_readonly_->Get(key, &value_alt, &location_out);
       if (!s.IsOK()) {
-        log::trace("Iterator::Next()", "Get(): failed: %s", s.ToString().c_str());
+        log::trace("BasicIterator::Next()", "Get(): failed: %s", s.ToString().c_str());
         delete key;
         delete value;
         delete value_alt;
@@ -147,7 +156,7 @@ class Iterator {
       }
         
       if (location_current != location_out) {
-        log::trace("Iterator::Next()", "Get(): wrong location");
+        log::trace("BasicIterator::Next()", "Get(): wrong location");
         delete key;
         delete value;
         delete value_alt;
@@ -155,7 +164,7 @@ class Iterator {
         continue;
       }
 
-      log::trace("Iterator::Next()", "has a valid key/value pair");
+      log::trace("BasicIterator::Next()", "has a valid key/value pair");
       key_ = key;
       value_ = value;
       delete value_alt;
@@ -176,6 +185,7 @@ class Iterator {
 
  private:
   StorageEngine *se_readonly_;
+  Interface *snapshot_;
   ReadOptions read_options_;
   std::mutex mutex_;
   uint32_t fileid_current_;

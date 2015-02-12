@@ -9,13 +9,23 @@
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
-#include "interface/iterator.h"
 
 namespace kdb {
 
+class Iterator {
+ public:
+  virtual ~Iterator() {}
+  virtual void Begin() = 0;
+  virtual bool IsValid() = 0;
+  virtual bool Next() = 0;
+  virtual ByteArray *GetKey() = 0;
+  virtual ByteArray *GetValue() = 0;
+};
+
+
 class Interface {
  public:
-  virtual ~Interface() {};
+  virtual ~Interface() {}
   virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) = 0;
   virtual Status Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk) = 0;
   virtual Status PutChunk(WriteOptions& write_options,

@@ -237,4 +237,14 @@ Interface* KingDB::NewSnapshot() {
   return snapshot;
 }
 
+
+Iterator* KingDB::NewIterator(ReadOptions& read_options) {
+  if (is_closed_) return nullptr;
+  Interface* snapshot = NewSnapshot();
+  Iterator* it = snapshot->NewIterator(read_options);
+  BasicIterator *si = static_cast<BasicIterator*>(it);
+  si->SetParentSnapshot(snapshot);
+  return it;
+}
+
 } // namespace kdb
