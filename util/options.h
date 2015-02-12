@@ -186,10 +186,8 @@ struct DatabaseOptions {
 
 struct ReadOptions {
   bool verify_checksums;
-  bool fill_cache;
   ReadOptions()
-      : verify_checksums(false),
-        fill_cache(true) {
+      : verify_checksums(false) {
   }
 };
 

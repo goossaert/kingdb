@@ -296,6 +296,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     data_ = mmap_->datafile();
     size_ = 0;
     is_compression_disabled_ = false;
+    is_enabled_checksum_verification_ = false;
     offset_output_ = 0;
     compressor_.ResetThreadLocalStorage();
     crc32_.ResetThreadLocalStorage();
@@ -320,10 +321,16 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     size_ += add; 
   }
 
+  void EnableChecksumVerification() {
+    is_enabled_checksum_verification_ = true;
+  }
+
   void SetInitialCRC32(uint32_t c32) {
     log::debug("SetInitialCRC32()", "Initial CRC32 0x%08" PRIx64 "\n", c32);
-    initial_crc32_ = c32;
-    crc32_.put(c32); 
+    if (is_enabled_checksum_verification_) {
+      initial_crc32_ = c32;
+      crc32_.put(c32); 
+    }
   }
 
 
@@ -334,8 +341,10 @@ class SharedMmappedByteArray: public ByteArrayCommon {
   bool is_valid_stream_;
   
   virtual void Begin() {
-    crc32_.ResetThreadLocalStorage();
-    crc32_.put(initial_crc32_); 
+    if (is_enabled_checksum_verification_) {
+      crc32_.ResetThreadLocalStorage();
+      crc32_.put(initial_crc32_); 
+    }
     if (chunk_ != nullptr) delete chunk_;
     chunk_ = nullptr;
     is_valid_stream_ = true;
@@ -363,7 +372,8 @@ class SharedMmappedByteArray: public ByteArrayCommon {
 
       if (compressor_.IsUncompressionDone(size_compressed_)) {
         is_valid_stream_ = false;
-        if (crc32_.get() == crc32_value_) {
+        if (   !is_enabled_checksum_verification_
+            || crc32_.get() == crc32_value_) {
           log::debug("SharedMmappedByteArray::Next()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
           status_ = Status::OK();
         } else {
@@ -376,7 +386,9 @@ class SharedMmappedByteArray: public ByteArrayCommon {
       if (compressor_.HasFrameHeaderDisabledCompression(data_ + offset_output_)) {
         log::debug("SharedMmappedByteArray::Next()", "Finds that compression is disabled\n");
         is_compression_disabled_ = true;
-        crc32_.stream(data_ + offset_output_, compressor_.size_frame_header());
+        if (is_enabled_checksum_verification_) {
+          crc32_.stream(data_ + offset_output_, compressor_.size_frame_header());
+        }
         offset_output_ += compressor_.size_frame_header();
       }
 
@@ -403,7 +415,9 @@ class SharedMmappedByteArray: public ByteArrayCommon {
           is_valid_stream_ = false;
           status_ = Status::OK();
         } else if (s.IsOK()) {
-          crc32_.stream(frame, size_frame);
+          if (is_enabled_checksum_verification_) {
+            crc32_.stream(frame, size_frame);
+          }
         } else {
           is_valid_stream_ = false;
           status_ = s;
@@ -429,7 +443,9 @@ class SharedMmappedByteArray: public ByteArrayCommon {
 
       size_t step = 1024*1024;
       size_t size_current = offset_output_ + step < size_left ? step : size_left - offset_output_;
-      crc32_.stream(data_left, size_current);
+      if (is_enabled_checksum_verification_) {
+        crc32_.stream(data_left, size_current);
+      }
 
       auto chunk = new SharedMmappedByteArray();
       *chunk = *this;
@@ -458,6 +474,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
   uint64_t offset_;
   uint64_t offset_output_;
   bool is_compression_disabled_;
+  bool is_enabled_checksum_verification_;
 };
 
 

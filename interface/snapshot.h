@@ -53,7 +53,7 @@ class Snapshot: public Interface {
   }
 
   virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override {
-    Status s = se_readonly_->Get(key, value_out);
+    Status s = se_readonly_->Get(read_options, key, value_out);
     if (s.IsNotFound()) {
       log::trace("Snapshot::Get()", "not found in storage engine");
       return s;

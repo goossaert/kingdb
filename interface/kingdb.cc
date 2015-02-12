@@ -14,7 +14,7 @@ Status KingDB::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_
     return Status::NotFound("Unable to find entry");
   } else if (s.IsNotFound()) {
     log::trace("KingDB Get()", "not found in buffer");
-    s = se_->Get(key, value_out);
+    s = se_->Get(read_options, key, value_out);
     if (s.IsNotFound()) {
       log::trace("KingDB Get()", "not found in storage engine");
       return s;
@@ -190,12 +190,12 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 
   // (size_value_compressed != 0 && chunk->size() + offset_chunk == size_value_compressed));
   return wb_->PutChunk(write_options,
-                      key,
-                      chunk_final,
-                      offset_chunk_compressed,
-                      size_value,
-                      size_value_compressed,
-                      crc32);
+                       key,
+                       chunk_final,
+                       offset_chunk_compressed,
+                       size_value,
+                       size_value_compressed,
+                       crc32);
 }
 
 

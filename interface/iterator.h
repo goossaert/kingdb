@@ -131,7 +131,7 @@ class BasicIterator: public Iterator {
       ByteArray *key = nullptr;
       ByteArray *value = nullptr;
       uint64_t location_current = locations_current_[index_location_];
-      Status s = se_readonly_->GetEntry(location_current, &key, &value);
+      Status s = se_readonly_->GetEntry(read_options_, location_current, &key, &value);
       if (!s.IsOK()) {
         log::trace("BasicIterator::Next()", "GetEntry() failed: %s", s.ToString().c_str());
         delete key; 
@@ -145,7 +145,7 @@ class BasicIterator: public Iterator {
       // by a later entry.
       ByteArray *value_alt = nullptr;
       uint64_t location_out;
-      s = se_readonly_->Get(key, &value_alt, &location_out);
+      s = se_readonly_->Get(read_options_, key, &value_alt, &location_out);
       if (!s.IsOK()) {
         log::trace("BasicIterator::Next()", "Get(): failed: %s", s.ToString().c_str());
         delete key;
