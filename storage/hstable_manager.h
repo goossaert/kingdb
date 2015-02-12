@@ -291,7 +291,7 @@ class HSTableManager {
     if (has_sync_option_) {
       has_sync_option_ = false;
       if (FileUtil::sync_file(fd_) < 0) {
-        log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error sync_file(): %s", strerror(errno));
+        log::emerg("HSTableManager::FlushCurrentFile()", "Error sync_file(): %s", strerror(errno));
       }
     }
 
@@ -564,7 +564,7 @@ class HSTableManager {
     }
 
     if (order.write_options.sync && FileUtil::sync_file(fd) < 0) {
-      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error sync_file(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error sync_file(): %s", strerror(errno));
     }
 
     close(fd);
