@@ -35,7 +35,6 @@ class Snapshot: public Interface {
   }
 
   virtual ~Snapshot() {
-    log::emerg("Snapshot::dtor()", "call");
     Close();
   }
 

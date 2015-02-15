@@ -50,6 +50,7 @@ class ByteArrayCommon: public ByteArray {
  public:
   ByteArrayCommon()
       : data_(nullptr),
+        chunk_(nullptr),
         size_(0),
         size_compressed_(0),
         off_(0),
@@ -337,23 +338,18 @@ class SmartByteArray: public ByteArrayCommon {
 class AllocatedByteArray: public ByteArrayCommon {
  public:
   AllocatedByteArray(const char* data_in, uint64_t size_in) {
-    is_valid_ = false;
-    chunk_ = nullptr;
     size_ = size_in;
     data_ = new char[size_];
     memcpy(data_, data_in, size_);
   }
 
   AllocatedByteArray(uint64_t size_in) {
-    is_valid_ = false;
-    chunk_ = nullptr;
     size_ = size_in;
     data_ = new char[size_+1];
   }
 
   virtual ~AllocatedByteArray() {
     delete[] data_;
-    if (chunk_ != nullptr) delete chunk_;
   }
 
   virtual ByteArray* NewByteArrayChunk(char* data_out, uint64_t size_out) {
@@ -373,8 +369,6 @@ class AllocatedByteArray: public ByteArrayCommon {
  
  private:
   bool is_valid_;
-  ByteArray* chunk_;
-
 };
 
 
@@ -496,7 +490,6 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     offset_output_ = 0;
     compressor_.ResetThreadLocalStorage();
     crc32_.ResetThreadLocalStorage();
-    chunk_ = nullptr;
   }
 
   SharedMmappedByteArray(char *data, uint64_t size) {

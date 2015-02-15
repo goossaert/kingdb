@@ -29,7 +29,6 @@ class BasicIterator: public Iterator {
   }
 
   ~BasicIterator() {
-    log::emerg("BasicIterator::dtor()", "call");
     if (key_ != nullptr) {
       delete key_;
       delete value_;

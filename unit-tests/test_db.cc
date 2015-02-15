@@ -130,7 +130,7 @@ class DBTest {
       int offset = 0;
       for (ba_value->Begin(); ba_value->IsValid(); ba_value->Next()) {
         ByteArray* chunk = ba_value->GetChunk();
-        fprintf(stderr, "db_->Get() - size:%" PRIu64 "\n", chunk->size());
+        //fprintf(stderr, "db_->Get() - size:%" PRIu64 "\n", chunk->size());
         memcpy(buffer + offset, chunk->data(), chunk->size());
         offset += chunk->size();
         buffer[offset] = '\0';
@@ -158,7 +158,7 @@ class DBTest {
 TEST(DBTest, KeysWithNullBytes) {
   Open();
   kdb::Status s;
-  kdb::Logger::set_current_level("trace");
+  kdb::Logger::set_current_level("emerg");
 
   kdb::ReadOptions read_options;
   kdb::WriteOptions write_options;
@@ -192,22 +192,22 @@ TEST(DBTest, KeysWithNullBytes) {
 
   s = Get(read_options, key1->ToString(), &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
-  fprintf(stderr, "out_str: %s\n", out_str.c_str());
+  //fprintf(stderr, "out_str: %s\n", out_str.c_str());
 
   s = Get(read_options, key2->ToString(), &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
-  fprintf(stderr, "out_str: %s\n", out_str.c_str());
+  //fprintf(stderr, "out_str: %s\n", out_str.c_str());
 
   // Sleeping to let the buffer store the entries on secondary storage
   std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
   s = Get(read_options, key1->ToString(), &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
-  fprintf(stderr, "out_str: %s\n", out_str.c_str());
+  //fprintf(stderr, "out_str: %s\n", out_str.c_str());
 
   s = Get(read_options, key2->ToString(), &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
-  fprintf(stderr, "out_str: %s\n", out_str.c_str());
+  //fprintf(stderr, "out_str: %s\n", out_str.c_str());
 
   delete key1;
   delete key2;
@@ -273,7 +273,6 @@ TEST(DBTest, SingleThreadSmallEntries) {
       kdb::ByteArray *chunk = value->GetChunk();
       chunk->data();
       chunk->size();
-      fprintf(stderr, "item %d - chunk\n", count_items_end);
     }
 
     kdb::Status s = value->GetStatus();
@@ -364,9 +363,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
 
   close(fd);
 
-  fprintf(stderr, "ClientEmbedded - waiting for the buffers to be persisted\n");
   usleep(1 * 1000000);
-  fprintf(stderr, "ClientEmbedded - waiting is done\n");
 
   kdb::ByteArray *value_out;
   kdb::ByteArray *key = new kdb::SimpleByteArray(key_str.c_str(), key_str.size());
