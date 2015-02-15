@@ -33,12 +33,59 @@
 
 namespace kdb {
 
+class KeyGenerator {
+ public:
+  virtual ~KeyGenerator() {}
+  virtual std::string GetKey(uint64_t thread_id, uint64_t index, int size) = 0;
+};
+
+
+class SequentialKeyGenerator: public KeyGenerator {
+ public:
+  virtual ~SequentialKeyGenerator() {
+  }
+  virtual std::string GetKey(uint64_t thread_id, uint64_t index, int size) {
+    std::stringstream ss;
+    ss << std::setfill ('0') << std::setw (size);
+    ss << index;
+    return ss.str();
+  }
+};
+
+
+class RandomKeyGenerator: public KeyGenerator {
+ public:
+  RandomKeyGenerator() {
+    generator = std::mt19937(seq);
+    random_dist = std::uniform_int_distribution<int>(0,255);
+  }
+
+  virtual ~RandomKeyGenerator() {
+  }
+
+  virtual std::string GetKey(uint64_t thread_id, uint64_t index, int size) {
+    std::string str;
+    str.resize(size);
+    for (int i = 0; i < size; i++) {
+      str[i] = static_cast<char>(random_dist(generator));
+    }
+    return str;
+  }
+
+ private:
+    std::seed_seq seq{1, 2, 3, 4, 5, 6, 7};
+    std::mt19937 generator;
+    std::uniform_int_distribution<int> random_dist;
+};
+
+
+
 class DBTest {
  public:
   DBTest() {
     dbname_ = "db_test";
     db_ = nullptr;
-    db_options_.compression.type = kNoCompression;
+    db_options_.compression.type = kLZ4Compression;
   }
 
   void Open() {
@@ -74,8 +121,25 @@ class DBTest {
     rmdir(dbname_.c_str());
   }
 
-  kdb::Status Get(const std::string& key, std::string *value_out) {
-    return Status::OK();
+  kdb::Status Get(ReadOptions& read_options, const std::string& key, std::string *value_out) {
+    SimpleByteArray ba_key(key.c_str(), key.size());
+    ByteArray* ba_value;
+    kdb::Status s = db_->Get(read_options, &ba_key, &ba_value);
+    if (s.IsOK()) {
+      char buffer[1024];
+      int offset = 0;
+      for (ba_value->Begin(); ba_value->IsValid(); ba_value->Next()) {
+        ByteArray* chunk = ba_value->GetChunk();
+        fprintf(stderr, "db_->Get() - size:%" PRIu64 "\n", chunk->size());
+        memcpy(buffer + offset, chunk->data(), chunk->size());
+        offset += chunk->size();
+        buffer[offset] = '\0';
+      }
+      *value_out = std::string(buffer);
+      delete ba_value;
+    }
+
+    return s;
   }
 
   kdb::Status Put(const std::string& key, const std::string& value) {
@@ -88,6 +152,71 @@ class DBTest {
   std::string dbname_;
   DatabaseOptions db_options_;
 };
+
+
+
+TEST(DBTest, KeysWithNullBytes) {
+  Open();
+  kdb::Status s;
+  kdb::Logger::set_current_level("trace");
+
+  kdb::ReadOptions read_options;
+  kdb::WriteOptions write_options;
+  write_options.sync = true;
+  int num_count_valid = 0;
+
+  std::string keystr1("000000000000key1");
+  std::string keystr2("000000000000key2");
+
+  keystr1[5] = '\0';
+  keystr2[5] = '\0';
+
+  std::string valuestr1("value1");
+  std::string valuestr2("value2");
+
+  kdb::ByteArray *key1, *key2, *value1, *value2, *value_out;
+  key1 = new kdb::SimpleByteArray(keystr1.c_str(), keystr1.size());
+  value1 = new kdb::SimpleByteArray(valuestr1.c_str(), valuestr1.size());
+  s = db_->PutChunk(write_options, key1, value1, 0, value1->size());
+
+  key2 = new kdb::SimpleByteArray(keystr2.c_str(), keystr2.size());
+  value2 = new kdb::SimpleByteArray(valuestr2.c_str(), valuestr2.size());
+  s = db_->PutChunk(write_options, key2, value2, 0, value2->size());
+
+  key1 = new kdb::SimpleByteArray(keystr1.c_str(), keystr1.size());
+  value1 = new kdb::SimpleByteArray(valuestr1.c_str(), valuestr1.size());
+  key2 = new kdb::SimpleByteArray(keystr2.c_str(), keystr2.size());
+  value2 = new kdb::SimpleByteArray(valuestr2.c_str(), valuestr2.size());
+
+  std::string out_str;
+
+  s = Get(read_options, key1->ToString(), &out_str);
+  if (s.IsOK() && out_str == "value1") num_count_valid += 1;
+  fprintf(stderr, "out_str: %s\n", out_str.c_str());
+
+  s = Get(read_options, key2->ToString(), &out_str);
+  if (s.IsOK() && out_str == "value2") num_count_valid += 1;
+  fprintf(stderr, "out_str: %s\n", out_str.c_str());
+
+  // Sleeping to let the buffer store the entries on secondary storage
+  std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+  s = Get(read_options, key1->ToString(), &out_str);
+  if (s.IsOK() && out_str == "value1") num_count_valid += 1;
+  fprintf(stderr, "out_str: %s\n", out_str.c_str());
+
+  s = Get(read_options, key2->ToString(), &out_str);
+  if (s.IsOK() && out_str == "value2") num_count_valid += 1;
+  fprintf(stderr, "out_str: %s\n", out_str.c_str());
+
+  delete key1;
+  delete key2;
+  delete value1;
+  delete value2;
+
+  ASSERT_EQ(num_count_valid, 4);
+  Close();
+}
 
 
 
@@ -118,7 +247,11 @@ TEST(DBTest, SingleThreadSmallEntries) {
     items.push_back(ss.str());
   }
 
+  KeyGenerator* kg = new RandomKeyGenerator();
+
   for (auto i = 0; i < num_items; i++) {
+    //std::string key_str = kg->GetKey(0, i, 16);
+    //kdb::ByteArray *key = new kdb::AllocatedByteArray(key_str.c_str(), key_str.size());
     kdb::ByteArray *key = new kdb::SimpleByteArray(items[i].c_str(), items[i].size());
     kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_large, 100);
     kdb::Status s = db_->PutChunk(write_options,
@@ -161,6 +294,15 @@ TEST(DBTest, SingleThreadSmallEntries) {
   Close();
 }
 
+
+
+
+
+
+
+
+
+
 TEST(DBTest, SingleThreadSingleLargeEntry) {
   Open();
   kdb::Logger::set_current_level("emerg");
@@ -189,7 +331,6 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
   //usleep(10 * 1000000);
 
   int fd = open("/tmp/kingdb-input", O_WRONLY|O_CREAT|O_TRUNC, 0644);
-  uint32_t crc32_rotating = 0;
 
   for (uint64_t i = 0; i < total_size; i += buffersize) {
 
@@ -208,15 +349,12 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
     memcpy(buffer_temp, buffer, size_current);
     kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_temp, size_current);
 
-    uint32_t crc32_debug = kdb::crc32c::Value(value->data(), value->size());
-    fprintf(stderr, "PutChunk - before - crc32_debug:0x%08x\n", crc32_debug);
     s = db_->PutChunk(write_options,
                       key,
                       value,
                       i,
                       total_size);
 
-    crc32_rotating = kdb::crc32c::Extend(crc32_rotating, buffer, size_current);
     write(fd, buffer, size_current);
     //memcpy(buffer_full + i, buffer, size_current);
     if (!s.IsOK()) {
@@ -248,12 +386,8 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
     if (write(fd_output, chunk->data(), chunk->size()) < 0) {
       fprintf(stderr, "ClientEmbedded - Couldn't write to output file: [%s]\n", strerror(errno));
     }
-    fprintf(stderr, "data_out after : %p\n", chunk);
 
-    //PrintHex(chunk->data(), chunk->size());
-    
     bytes_read += chunk->size();
-    fprintf(stderr, "ClientEmbedded - bytes_read: %" PRIu64 " %p %" PRIu64 "\n", bytes_read, chunk, chunk->size());
   }
 
   s = value_out->GetStatus();
