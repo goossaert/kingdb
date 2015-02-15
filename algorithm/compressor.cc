@@ -16,11 +16,13 @@ Status CompressorLZ4::Compress(char *source,
                                uint64_t size_source,
                                char **dest,
                                uint64_t *size_dest) {
+  /*
   if (size_source < 8) {
     *dest = nullptr;
     *size_dest = 0;
     return Status::OK();
   }
+  */
   uint32_t bound = LZ4_compressBound(size_source);
   *size_dest = 0;
   *dest = new char[8 + bound];

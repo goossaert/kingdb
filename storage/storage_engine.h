@@ -254,7 +254,7 @@ class StorageEngine {
       log::trace("StorageEngine::ProcessingLoopIndex()", "start");
       std::multimap<uint64_t, uint64_t> index_updates = event_manager_->update_index.Wait();
       if (IsStopRequested()) return;
-      log::trace("StorageEngine::ProcessingLoopIndex()", "got index_updates");
+      log::trace("StorageEngine::ProcessingLoopIndex()", "got index_updates: %d updates", index_updates.size());
 
       /*
       for (auto& p: index_updates) {
@@ -358,12 +358,12 @@ class StorageEngine {
     // TODO-26: should not be locking here, instead, should store the hashed key
     // and location from the index and release the lock right away -- should not
     // be locking while calling GetEntry()
-    
-    log::trace("StorageEngine::GetWithIndex()", "%s", key->ToString().c_str());
 
     // NOTE: Since C++11, the relative ordering of elements with equivalent keys
     //       in a multimap is preserved.
     uint64_t hashed_key = hash_->HashFunction(key->data(), key->size());
+    log::trace("StorageEngine::GetWithIndex()", "num entries in index:[%d] content:[%s] size:[%d] hashed_key:[0x%" PRIx64 "]", index.size(), key->ToString().c_str(), key->size(), hashed_key);
+
     auto range = index.equal_range(hashed_key);
     auto rbegin = --range.second;
     auto rend  = --range.first;

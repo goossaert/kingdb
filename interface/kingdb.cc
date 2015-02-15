@@ -78,8 +78,9 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   s = se_->FileSystemStatus();
   if (!s.IsOK()) return s;
   log::trace("KingDB::PutChunkValidSize()",
-            "[%s] offset_chunk:%" PRIu64,
+            "[%s] size_chunk:%" PRIu64 " offset_chunk:%" PRIu64,
             key->ToString().c_str(),
+            chunk->size(),
             offset_chunk);
 
   bool do_compression = true;
@@ -120,18 +121,17 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
       compressor_.ResetThreadLocalStorage();
     }
 
-    log::trace("KingDB::PutChunkValidSize()",
-              "[%s] size_compressed:%" PRIu64,
-              key->ToString().c_str(), compressor_.size_compressed());
-
     offset_chunk_compressed = compressor_.size_compressed();
-
     uint64_t size_compressed;
     char *compressed;
     s = compressor_.Compress(chunk->data(),
                              chunk->size(),
                              &compressed,
                              &size_compressed);
+
+    log::trace("KingDB::PutChunkValidSize()",
+              "[%s] size_compressed:%" PRIu64,
+              key->ToString().c_str(), compressor_.size_compressed());
 
     // Now Checking if compression should be disabled for this entry
     uint64_t size_remaining = size_value - offset_chunk;
@@ -166,7 +166,12 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     if (ts_compression_enabled_.get() == 1) {
       size_value_compressed = compressor_.size_compressed();
     } else {
-      size_value_compressed = offset_chunk_compressed + chunk->size();
+      if (is_first_chunk) {
+        // chunk is self-contained: first ans last
+        size_value_compressed = ts_offset_.get();
+      } else {
+        size_value_compressed = offset_chunk_compressed + chunk->size();
+      }
     }
   }
 

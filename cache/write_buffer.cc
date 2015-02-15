@@ -55,8 +55,9 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** v
   if (found) {
     log::debug("WriteBuffer::Get()", "found in buffer_live");
     if (   order_found.type == OrderType::Put
-        && order_found.chunk->size() == order_found.size_value) {
-      *value_out = order_found.chunk;
+        && order_found.IsSelfContained()) {
+      *value_out = order_found.chunk->NewByteArrayClone(0, order_found.chunk->size());
+      (*value_out)->SetSizes(order_found.size_value, order_found.size_value_compressed);
       return Status::OK();
     } else if (order_found.type == OrderType::Delete) {
       return Status::DeleteOrder();
@@ -94,8 +95,9 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** v
   if (found) log::debug("WriteBuffer::Get()", "found in buffer_copy");
   if (   found
       && order_found.type == OrderType::Put
-      && order_found.chunk->size() == order_found.size_value) {
-    *value_out = order_found.chunk;
+      && order_found.IsSelfContained()) {
+    *value_out = order_found.chunk->NewByteArrayClone(0, order_found.chunk->size());
+    (*value_out)->SetSizes(order_found.size_value, order_found.size_value_compressed);
     s = Status::OK();
   } else if (   found
              && order_found.type == OrderType::Delete) {

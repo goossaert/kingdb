@@ -19,9 +19,18 @@ class ByteArray {
   virtual char* data_const() const = 0;
   virtual uint64_t size() = 0;
   virtual uint64_t size_const() const = 0;
+  virtual uint64_t size_compressed() = 0;
+  virtual uint64_t size_compressed_const() const = 0;
+  virtual uint32_t checksum() const = 0;
+  virtual uint64_t offset() const = 0;
   virtual void set_offset(int off) = 0;
   virtual bool is_compressed() = 0;
   virtual bool StartsWith(const char *substr, int n) = 0;
+  virtual void SetSizes(uint64_t size, uint64_t size_compressed) = 0;
+
+  // ByteArray management
+  virtual ByteArray* NewByteArrayChunk(char* data_out, uint64_t size_out) = 0;
+  virtual ByteArray* NewByteArrayClone(uint64_t offset, uint64_t size) = 0;
 
   // Streaming API
   virtual void Begin() = 0;

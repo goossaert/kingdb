@@ -63,7 +63,13 @@ class ByteArrayCommon: public ByteArray {
   virtual uint64_t size_const() const { return size_ - off_; }
   virtual uint64_t size_compressed() { return size_compressed_ - off_; }
   virtual uint64_t size_compressed_const() const { return size_compressed_ - off_; }
+  virtual uint32_t checksum() const { return crc32_value_; }
+  virtual uint64_t offset() const { return off_; }
   virtual bool is_compressed() { return size_compressed_ > 0; }
+  virtual void SetSizes(uint64_t size, uint64_t size_compressed) {
+    size_ = size;
+    size_compressed_ = size_compressed;
+  }
 
   virtual bool StartsWith(const char *substr, int n) {
     return (n <= size_ && strncmp(data_, substr, n) == 0);
@@ -72,6 +78,9 @@ class ByteArrayCommon: public ByteArray {
   virtual void set_offset(int off) {
     off_ = off;
   }
+
+  virtual ByteArray* NewByteArrayChunk(char* data_out, uint64_t size_out) = 0;
+  virtual ByteArray* NewByteArrayClone(uint64_t offset, uint64_t size) = 0;
 
   /*
   char& operator[](std::size_t index) {
@@ -96,25 +105,165 @@ class ByteArrayCommon: public ByteArray {
     return nullptr;
   }
 
-  // Streaming API
+  // Streaming API - START
+
+  void EnableChecksumVerification() {
+    is_enabled_checksum_verification_ = true;
+  }
+
+  void SetInitialCRC32(uint32_t c32) {
+    log::debug("SetInitialCRC32()", "Initial CRC32 0x%08" PRIx64 "\n", c32);
+    if (is_enabled_checksum_verification_) {
+      initial_crc32_ = c32;
+      crc32_.put(c32); 
+    }
+  }
+
+  void SetOffset(uint64_t offset, uint64_t size) {
+    offset_ = offset;
+    data_ = data_ + offset;
+    size_ = size;
+  }
+
+  
+  Status status_; 
+  ByteArray* chunk_;
+  bool is_valid_stream_;
+  
   virtual void Begin() {
+    if (is_enabled_checksum_verification_) {
+      crc32_.ResetThreadLocalStorage();
+      crc32_.put(initial_crc32_); 
+    }
+    if (chunk_ != nullptr) delete chunk_;
+    chunk_ = nullptr;
+    is_valid_stream_ = true;
+    is_compression_disabled_ = false;
+    offset_output_ = 0;
+    compressor_.ResetThreadLocalStorage();
+    Next();
+    status_ = Status::IOError("Steam is unfinished");
   }
 
   virtual bool IsValid() {
-    return false;
-  }
-
-  virtual bool Next() {
-    return false;
+    return is_valid_stream_;
   }
 
   virtual Status GetStatus() {
-    return Status::OK(); 
+    return status_; 
   }
 
-  virtual ByteArray* GetChunk() {
-    return nullptr;
+  // Careful here: if the call to Next() is the first one, i.e. the one in
+  // Begin(), then is_valid_stream_ must not be set to false yet, otherwise
+  // the for-loops of type for(Begin(); IsValid(); Next()) would never run,
+  // as IsValid() would prevent the first iteration to start.
+  virtual bool Next() {
+    if (is_compressed() && !is_compression_disabled_) {
+
+      if (compressor_.IsUncompressionDone(size_compressed_)) {
+        is_valid_stream_ = false;
+        if (   !is_enabled_checksum_verification_
+            || crc32_.get() == crc32_value_) {
+          log::debug("SharedMmappedByteArray::Next()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+          status_ = Status::OK();
+        } else {
+          log::debug("SharedMmappedByteArray::Next()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
+          status_ = Status::IOError("Invalid checksum.");
+        }
+        return false;
+      }
+
+      if (compressor_.HasFrameHeaderDisabledCompression(data_ + offset_output_)) {
+        log::debug("SharedMmappedByteArray::Next()", "Finds that compression is disabled\n");
+        is_compression_disabled_ = true;
+        if (is_enabled_checksum_verification_) {
+          crc32_.stream(data_ + offset_output_, compressor_.size_frame_header());
+        }
+        offset_output_ += compressor_.size_frame_header();
+      }
+
+      if (!is_compression_disabled_) {
+        char *frame;
+        uint64_t size_frame;
+
+        char *data_out;
+        uint64_t size_out;
+
+        log::trace("SharedMmappedByteArray::Next()", "before uncompress");
+        Status s = compressor_.Uncompress(data_,
+                                          size_compressed_,
+                                          &data_out,
+                                          &size_out,
+                                          &frame,
+                                          &size_frame);
+        offset_output_ += size_frame;
+
+        if (chunk_ != nullptr) delete chunk_;
+        //chunk_ = new SharedAllocatedByteArray(data_out, size_out);
+        chunk_ = NewByteArrayChunk(data_out, size_out);
+
+        if (s.IsDone()) {
+          is_valid_stream_ = false;
+          status_ = Status::OK();
+        } else if (s.IsOK()) {
+          if (is_enabled_checksum_verification_) {
+            crc32_.stream(frame, size_frame);
+          }
+        } else {
+          is_valid_stream_ = false;
+          status_ = s;
+        }
+      }
+    }
+
+    if (!is_compressed() || is_compression_disabled_) {
+      uint64_t size_left;
+      if (is_compressed() && is_compression_disabled_) {
+        size_left = size_compressed_;
+      } else {
+        size_left = size_;
+      }
+
+      if (offset_output_ == size_left) {
+        is_valid_stream_ = false;
+        status_ = Status::OK();
+        return false;
+      }
+
+      char* data_left = data_ + offset_output_;
+
+      size_t step = 1024*1024;
+      size_t size_current = offset_output_ + step < size_left ? step : size_left - offset_output_;
+      if (is_enabled_checksum_verification_) {
+        crc32_.stream(data_left, size_current);
+      }
+
+      auto chunk = NewByteArrayClone(offset_output_, size_current);
+
+      if (chunk_ != nullptr) delete chunk_;
+      chunk_ = chunk;
+      offset_output_ += size_current;
+      status_ = Status::Done();
+    }
+    return true;
   }
+  // Streaming API - END
+
+  virtual ByteArray* GetChunk() {
+    return chunk_;
+  }
+
+  CompressorLZ4 compressor_;
+  uint32_t initial_crc32_;
+  CRC32 crc32_;
+  uint64_t offset_;
+  uint64_t offset_output_;
+  bool is_compression_disabled_;
+  bool is_enabled_checksum_verification_;
+
+
+
+
 
   char *data_;
   uint64_t size_;
@@ -137,6 +286,14 @@ class SimpleByteArray: public ByteArrayCommon {
     size_ -= offset;
   }
 
+  virtual ByteArray* NewByteArrayChunk(char* data_out, uint64_t size_out) {
+    return new SimpleByteArray(data_out, size_out);
+  }
+
+  virtual ByteArray* NewByteArrayClone(uint64_t offset, uint64_t size) {
+    return new SimpleByteArray(data_ + offset, size);
+  }
+
   virtual ~SimpleByteArray() {
     //log::trace("SimpleByteArray::dtor()", "");
   }
@@ -152,15 +309,24 @@ class SmartByteArray: public ByteArrayCommon {
     size_ = size_in;
   }
 
+  virtual ~SmartByteArray() {
+    //log::trace("SmartByteArray::dtor()", "");
+    delete ba_;
+  }
+
   void AddOffset(int offset) {
     data_ += offset;
     size_ -= offset;
   }
 
-  virtual ~SmartByteArray() {
-    //log::trace("SmartByteArray::dtor()", "");
-    delete ba_;
+  virtual ByteArray* NewByteArrayChunk(char* data_out, uint64_t size_out) {
+    return ba_->NewByteArrayChunk(data_out, size_out);
   }
+
+  virtual ByteArray* NewByteArrayClone(uint64_t offset, uint64_t size) {
+    return ba_->NewByteArrayClone(offset, size);
+  }
+
 
  private:
   ByteArray* ba_;
@@ -171,19 +337,44 @@ class SmartByteArray: public ByteArrayCommon {
 class AllocatedByteArray: public ByteArrayCommon {
  public:
   AllocatedByteArray(const char* data_in, uint64_t size_in) {
+    is_valid_ = false;
+    chunk_ = nullptr;
     size_ = size_in;
     data_ = new char[size_];
     memcpy(data_, data_in, size_);
   }
 
   AllocatedByteArray(uint64_t size_in) {
+    is_valid_ = false;
+    chunk_ = nullptr;
     size_ = size_in;
     data_ = new char[size_+1];
   }
 
   virtual ~AllocatedByteArray() {
     delete[] data_;
+    if (chunk_ != nullptr) delete chunk_;
   }
+
+  virtual ByteArray* NewByteArrayChunk(char* data_out, uint64_t size_out) {
+    return new AllocatedByteArray(data_out, size_out);
+  }
+
+  virtual ByteArray* NewByteArrayClone(uint64_t offset, uint64_t size) {
+    uint64_t size_max = std::max(size_, size_compressed_);
+    AllocatedByteArray* ba = new AllocatedByteArray(data_, size_max);
+    ba->size_ = size_;
+    ba->SetOffset(offset, size);
+    ba->off_ = this->offset();
+    ba->crc32_value_ = checksum();
+    ba->size_compressed_ = size_compressed();
+    return ba;
+  }
+ 
+ private:
+  bool is_valid_;
+  ByteArray* chunk_;
+
 };
 
 
@@ -207,14 +398,19 @@ class SharedAllocatedByteArray: public ByteArrayCommon {
     //log::trace("SharedAllocatedByteArray::dtor()", "");
   }
 
-  void SetOffset(uint64_t offset, uint64_t size) {
-    offset_ = offset;
-    data_ = data_allocated_.get() + offset;
-    size_ = size;
-  }
-
   void AddSize(int add) {
     size_ += add; 
+  }
+
+  virtual ByteArray* NewByteArrayChunk(char* data_out, uint64_t size_out) {
+    return new AllocatedByteArray(data_out, size_out);
+  }
+
+  virtual ByteArray* NewByteArrayClone(uint64_t offset, uint64_t size) {
+    SharedAllocatedByteArray* ba = new SharedAllocatedByteArray();
+    *ba = *this;
+    ba->SetOffset(offset, size);
+    return ba;
   }
 
  private:
@@ -309,172 +505,27 @@ class SharedMmappedByteArray: public ByteArrayCommon {
     compressor_.ResetThreadLocalStorage();
     crc32_.ResetThreadLocalStorage();
   }
+
   virtual ~SharedMmappedByteArray() {}
 
-  void SetOffset(uint64_t offset, uint64_t size) {
-    offset_ = offset;
-    data_ = mmap_->datafile() + offset;
-    size_ = size;
+  virtual ByteArray* NewByteArrayChunk(char* data_out, uint64_t size_out) {
+    return new AllocatedByteArray(data_out, size_out);
+  }
+
+  virtual ByteArray* NewByteArrayClone(uint64_t offset, uint64_t size) {
+    SharedMmappedByteArray* ba = new SharedMmappedByteArray();
+    *ba = *this;
+    ba->SetOffset(offset, size);
+    return ba;
   }
 
   void AddSize(int add) {
     size_ += add; 
   }
-
-  void EnableChecksumVerification() {
-    is_enabled_checksum_verification_ = true;
-  }
-
-  void SetInitialCRC32(uint32_t c32) {
-    log::debug("SetInitialCRC32()", "Initial CRC32 0x%08" PRIx64 "\n", c32);
-    if (is_enabled_checksum_verification_) {
-      initial_crc32_ = c32;
-      crc32_.put(c32); 
-    }
-  }
-
-
-  // Streaming API - START
-  
-  Status status_; 
-  ByteArray* chunk_;
-  bool is_valid_stream_;
-  
-  virtual void Begin() {
-    if (is_enabled_checksum_verification_) {
-      crc32_.ResetThreadLocalStorage();
-      crc32_.put(initial_crc32_); 
-    }
-    if (chunk_ != nullptr) delete chunk_;
-    chunk_ = nullptr;
-    is_valid_stream_ = true;
-    is_compression_disabled_ = false;
-    offset_output_ = 0;
-    compressor_.ResetThreadLocalStorage();
-    Next();
-    status_ = Status::IOError("Steam is unfinished");
-  }
-
-  virtual bool IsValid() {
-    return is_valid_stream_;
-  }
-
-  virtual Status GetStatus() {
-    return status_; 
-  }
-
-  // Careful here: if the call to Next() is the first one, i.e. the one in
-  // Begin(), then is_valid_stream_ must not be set to false yet, otherwise
-  // the for-loops of type for(Begin(); IsValid(); Next()) would never run,
-  // as IsValid() would prevent the first iteration to start.
-  virtual bool Next() {
-    if (is_compressed() && !is_compression_disabled_) {
-
-      if (compressor_.IsUncompressionDone(size_compressed_)) {
-        is_valid_stream_ = false;
-        if (   !is_enabled_checksum_verification_
-            || crc32_.get() == crc32_value_) {
-          log::debug("SharedMmappedByteArray::Next()", "Good CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-          status_ = Status::OK();
-        } else {
-          log::debug("SharedMmappedByteArray::Next()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", crc32_value_, crc32_.get());
-          status_ = Status::IOError("Invalid checksum.");
-        }
-        return false;
-      }
-
-      if (compressor_.HasFrameHeaderDisabledCompression(data_ + offset_output_)) {
-        log::debug("SharedMmappedByteArray::Next()", "Finds that compression is disabled\n");
-        is_compression_disabled_ = true;
-        if (is_enabled_checksum_verification_) {
-          crc32_.stream(data_ + offset_output_, compressor_.size_frame_header());
-        }
-        offset_output_ += compressor_.size_frame_header();
-      }
-
-      if (!is_compression_disabled_) {
-        char *frame;
-        uint64_t size_frame;
-
-        char *data_out;
-        uint64_t size_out;
-
-        log::trace("SharedMmappedByteArray::Next()", "before uncompress");
-        Status s = compressor_.Uncompress(data_,
-                                          size_compressed_,
-                                          &data_out,
-                                          &size_out,
-                                          &frame,
-                                          &size_frame);
-        offset_output_ += size_frame;
-
-        if (chunk_ != nullptr) delete chunk_;
-        chunk_ = new SharedAllocatedByteArray(data_out, size_out);
-
-        if (s.IsDone()) {
-          is_valid_stream_ = false;
-          status_ = Status::OK();
-        } else if (s.IsOK()) {
-          if (is_enabled_checksum_verification_) {
-            crc32_.stream(frame, size_frame);
-          }
-        } else {
-          is_valid_stream_ = false;
-          status_ = s;
-        }
-      }
-    }
-
-    if (!is_compressed() || is_compression_disabled_) {
-      uint64_t size_left;
-      if (is_compressed() && is_compression_disabled_) {
-        size_left = size_compressed_;
-      } else {
-        size_left = size_;
-      }
-
-      if (offset_output_ == size_left) {
-        is_valid_stream_ = false;
-        status_ = Status::OK();
-        return false;
-      }
-
-      char* data_left = data_ + offset_output_;
-
-      size_t step = 1024*1024;
-      size_t size_current = offset_output_ + step < size_left ? step : size_left - offset_output_;
-      if (is_enabled_checksum_verification_) {
-        crc32_.stream(data_left, size_current);
-      }
-
-      auto chunk = new SharedMmappedByteArray();
-      *chunk = *this;
-      chunk->SetOffset(offset_output_, size_current);
-
-      if (chunk_ != nullptr) delete chunk_;
-      chunk_ = chunk;
-      offset_output_ += size_current;
-      status_ = Status::Done();
-    }
-    return true;
-  }
-  // Streaming API - END
-
-  virtual ByteArray* GetChunk() {
-    return chunk_;
-  }
-
   char* datafile() { return mmap_->datafile(); };
-
- private:
-  CompressorLZ4 compressor_;
-  uint32_t initial_crc32_;
-  CRC32 crc32_;
   std::shared_ptr<Mmap> mmap_;
-  uint64_t offset_;
-  uint64_t offset_output_;
-  bool is_compression_disabled_;
-  bool is_enabled_checksum_verification_;
+
+
 };
 
 
