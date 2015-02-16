@@ -57,7 +57,10 @@ class ByteArrayCommon: public ByteArray {
         crc32_value_(0)
   {
   }
-  virtual ~ByteArrayCommon() {}
+  virtual ~ByteArrayCommon() {
+    if (chunk_ != nullptr) delete chunk_;
+    chunk_ = nullptr;
+  }
   virtual char* data() { return data_ + off_; }
   virtual char* data_const() const { return data_ + off_; }
   virtual uint64_t size() { return size_ - off_; }
@@ -403,6 +406,7 @@ class SharedAllocatedByteArray: public ByteArrayCommon {
     SharedAllocatedByteArray* ba = new SharedAllocatedByteArray();
     *ba = *this;
     ba->SetOffset(offset, size);
+    ba->chunk_ = nullptr;
     return ba;
   }
 
@@ -507,6 +511,7 @@ class SharedMmappedByteArray: public ByteArrayCommon {
   virtual ByteArray* NewByteArrayClone(uint64_t offset, uint64_t size) {
     SharedMmappedByteArray* ba = new SharedMmappedByteArray();
     *ba = *this;
+    ba->chunk_ = nullptr;
     ba->SetOffset(offset, size);
     return ba;
   }
