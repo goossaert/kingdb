@@ -86,6 +86,7 @@ class DBTest {
     dbname_ = "db_test";
     db_ = nullptr;
     db_options_.compression.type = kLZ4Compression;
+    index_db_options_ = 0;
   }
 
   void Open() {
@@ -103,6 +104,32 @@ class DBTest {
     delete db_;
     db_ = nullptr;
     EraseDB();
+  }
+
+  bool IterateOverOptions() {
+    db_options_ = DatabaseOptions();
+    if (index_db_options_ == 0) {
+      db_options_.compression.type = kLZ4Compression;
+    } else if (index_db_options_ == 1) {
+      db_options_.compression.type = kNoCompression;
+    } else if (index_db_options_ == 2) {
+      db_options_.compression.type = kLZ4Compression;
+      db_options_.storage__hashing_algorithm = kMurmurHash3_64;
+    } else if (index_db_options_ == 3) {
+      db_options_.compression.type = kNoCompression;
+      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+      db_options_.write_buffer__size = 1024 * 256;
+      db_options_.storage__maximum_chunk_size = 1024 * 8;
+      db_options_.storage__hstable_size = 1024 * 200;
+    } else if (index_db_options_ == 4) {
+      db_options_.compression.type = kLZ4Compression;
+      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+    } else {
+      return false;
+    }
+    fprintf(stdout, "Database Options: Stage %d\n", index_db_options_);
+    index_db_options_ += 1;
+    return true;
   }
 
   void EraseDB() {
@@ -151,6 +178,7 @@ class DBTest {
  private:
   std::string dbname_;
   DatabaseOptions db_options_;
+  int index_db_options_;
 };
 
 
@@ -221,181 +249,177 @@ TEST(DBTest, KeysWithNullBytes) {
 
 
 TEST(DBTest, SingleThreadSmallEntries) {
-  Open();
   kdb::Logger::set_current_level("emerg");
+  while (IterateOverOptions()) {
+    Open();
 
-  kdb::ReadOptions read_options;
-  kdb::WriteOptions write_options;
-  write_options.sync = true;
+    kdb::ReadOptions read_options;
+    kdb::WriteOptions write_options;
+    write_options.sync = true;
 
-  int size = 101;
-  char *buffer_large = new char[size+1];
-  for (auto i = 0; i < size; i++) {
-    buffer_large[i] = 'a';
-  }
-  buffer_large[size] = '\0';
+    int size = 101;
+    char *buffer_large = new char[size+1];
+    for (auto i = 0; i < size; i++) {
+      buffer_large[i] = 'a';
+    }
+    buffer_large[size] = '\0';
 
-  int num_items = 1000;
-  std::vector<std::string> items;
-  int size_key = 16;
-  
-  for (auto i = 0; i < num_items; i++) {
-    std::stringstream ss;
-    ss << std::setfill ('0') << std::setw (size_key);
-    ss << i;
-    //std::cout << ss.str() << std::endl;
-    items.push_back(ss.str());
-  }
-
-  KeyGenerator* kg = new RandomKeyGenerator();
-
-  for (auto i = 0; i < num_items; i++) {
-    //std::string key_str = kg->GetKey(0, i, 16);
-    //kdb::ByteArray *key = new kdb::AllocatedByteArray(key_str.c_str(), key_str.size());
-    kdb::ByteArray *key = new kdb::SimpleByteArray(items[i].c_str(), items[i].size());
-    kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_large, 100);
-    kdb::Status s = db_->PutChunk(write_options,
-                                  key,
-                                  value,
-                                  0,
-                                  100);
-  }
-
-  //std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-
-  int count_items_end = 0;
-  kdb::Iterator *iterator = db_->NewIterator(read_options);
-
-  for (iterator->Begin(); iterator->IsValid(); iterator->Next()) {
-    kdb::ByteArray *value = iterator->GetValue();
-
-    for (value->Begin(); value->IsValid(); value->Next()) {
-      kdb::ByteArray *chunk = value->GetChunk();
-      chunk->data();
-      chunk->size();
+    int num_items = 1000;
+    std::vector<std::string> items;
+    int size_key = 16;
+    
+    for (auto i = 0; i < num_items; i++) {
+      std::stringstream ss;
+      ss << std::setfill ('0') << std::setw (size_key);
+      ss << i;
+      //std::cout << ss.str() << std::endl;
+      items.push_back(ss.str());
     }
 
-    kdb::Status s = value->GetStatus();
-    if (!s.IsOK()) {
-      fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
+    KeyGenerator* kg = new RandomKeyGenerator();
+
+    for (auto i = 0; i < num_items; i++) {
+      //std::string key_str = kg->GetKey(0, i, 16);
+      //kdb::ByteArray *key = new kdb::AllocatedByteArray(key_str.c_str(), key_str.size());
+      kdb::ByteArray *key = new kdb::SimpleByteArray(items[i].c_str(), items[i].size());
+      kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_large, 100);
+      kdb::Status s = db_->PutChunk(write_options,
+                                    key,
+                                    value,
+                                    0,
+                                    100);
     }
 
-    count_items_end += 1;
+    //std::this_thread::sleep_for(std::chrono::milliseconds(10000));
+
+    int count_items_end = 0;
+    kdb::Iterator *iterator = db_->NewIterator(read_options);
+
+    for (iterator->Begin(); iterator->IsValid(); iterator->Next()) {
+      kdb::ByteArray *value = iterator->GetValue();
+
+      for (value->Begin(); value->IsValid(); value->Next()) {
+        kdb::ByteArray *chunk = value->GetChunk();
+        chunk->data();
+        chunk->size();
+      }
+
+      kdb::Status s = value->GetStatus();
+      if (!s.IsOK()) {
+        fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
+      }
+
+      count_items_end += 1;
+    }
+
+    //std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+    delete iterator;
+    
+    delete[] buffer_large;
+    ASSERT_EQ(count_items_end, num_items);
+    //ASSERT_EQ(0,0);
+    Close();
   }
-
-  //std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-
-  delete iterator;
-  
-  delete[] buffer_large;
-  ASSERT_EQ(count_items_end, num_items);
-  //ASSERT_EQ(0,0);
-  Close();
 }
 
 
 
-
-
-
-
-
-
-
 TEST(DBTest, SingleThreadSingleLargeEntry) {
-  Open();
-  kdb::Logger::set_current_level("emerg");
+  while (IterateOverOptions()) {
+    Open();
+    kdb::Logger::set_current_level("emerg");
 
-  kdb::ReadOptions read_options;
-  kdb::WriteOptions write_options;
-  write_options.sync = true;
+    kdb::ReadOptions read_options;
+    kdb::WriteOptions write_options;
+    write_options.sync = true;
 
-  uint64_t total_size = (uint64_t)1 << 30;
-  //total_size *= 5;
-  total_size = 1024*1024 * 2;
-  int buffersize = 1024 * 64;
-  char buffer[buffersize];
-  for (int i = 0; i < buffersize; ++i) {
-    buffer[i] = 'a';
-  }
-  std::string key_str = "myentry";
-  kdb::Status s;
+    uint64_t total_size = (uint64_t)1 << 30;
+    //total_size *= 5;
+    total_size = 1024*1024 * 2;
+    int buffersize = 1024 * 64;
+    char buffer[buffersize];
+    for (int i = 0; i < buffersize; ++i) {
+      buffer[i] = 'a';
+    }
+    std::string key_str = "myentry";
+    kdb::Status s;
 
-  std::seed_seq seq{1, 2, 3, 4, 5, 6, 7};
-  std::mt19937 generator(seq);
-  std::uniform_int_distribution<int> random_dist(0,255);
+    std::seed_seq seq{1, 2, 3, 4, 5, 6, 7};
+    std::mt19937 generator(seq);
+    std::uniform_int_distribution<int> random_dist(0,255);
 
-  //char buffer_full[total_size];
+    //char buffer_full[total_size];
 
-  //usleep(10 * 1000000);
+    //usleep(10 * 1000000);
 
-  int fd = open("/tmp/kingdb-input", O_WRONLY|O_CREAT|O_TRUNC, 0644);
+    int fd = open("/tmp/kingdb-input", O_WRONLY|O_CREAT|O_TRUNC, 0644);
 
-  for (uint64_t i = 0; i < total_size; i += buffersize) {
+    for (uint64_t i = 0; i < total_size; i += buffersize) {
 
-    for (int j = 0; j < buffersize; ++j) {
-      char random_char = static_cast<char>(random_dist(generator));
-      buffer[j] = random_char;
+      for (int j = 0; j < buffersize; ++j) {
+        char random_char = static_cast<char>(random_dist(generator));
+        buffer[j] = random_char;
+      }
+
+      kdb::ByteArray *key = new kdb::AllocatedByteArray(key_str.c_str(), key_str.size());
+      int size_current = buffersize;
+      if (i + size_current > total_size) {
+        size_current = total_size - i;
+      }
+
+      kdb::ByteArray *value = new kdb::AllocatedByteArray(buffer, size_current);
+
+      s = db_->PutChunk(write_options,
+                        key,
+                        value,
+                        i,
+                        total_size);
+
+      write(fd, buffer, size_current);
+      //memcpy(buffer_full + i, buffer, size_current);
+      if (!s.IsOK()) {
+        fprintf(stderr, "PutChunk(): %s\n", s.ToString().c_str());
+      }
     }
 
-    kdb::ByteArray *key = new kdb::AllocatedByteArray(const_cast<char*>(key_str.c_str()), key_str.size());
-    int size_current = buffersize;
-    if (i + size_current > total_size) {
-      size_current = total_size - i;
-    }
+    close(fd);
 
-    char *buffer_temp = new char[size_current];
-    memcpy(buffer_temp, buffer, size_current);
-    kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_temp, size_current);
+    usleep(2 * 1000000);
 
-    s = db_->PutChunk(write_options,
-                      key,
-                      value,
-                      i,
-                      total_size);
-
-    write(fd, buffer, size_current);
-    //memcpy(buffer_full + i, buffer, size_current);
+    kdb::ByteArray *value_out;
+    kdb::ByteArray *key = new kdb::AllocatedByteArray(key_str.c_str(), key_str.size());
+    s = db_->Get(read_options, key, &value_out);
+    delete key;
     if (!s.IsOK()) {
-      fprintf(stderr, "PutChunk(): %s\n", s.ToString().c_str());
+      fprintf(stderr, "ClientEmbedded - Error - Get(): %s\n", s.ToString().c_str());
     }
-  }
+    ASSERT_EQ(s.IsOK(), true);
 
-  close(fd);
+    uint64_t bytes_read = 0;
+    int fd_output = open("/tmp/kingdb-output", O_WRONLY|O_CREAT|O_TRUNC, 0644);
 
-  usleep(1 * 1000000);
+    for (value_out->Begin(); value_out->IsValid(); value_out->Next()) {
+      kdb::ByteArray *chunk = value_out->GetChunk();
+      chunk->data();
+      chunk->size();
+      if (write(fd_output, chunk->data(), chunk->size()) < 0) {
+        fprintf(stderr, "ClientEmbedded - Couldn't write to output file: [%s]\n", strerror(errno));
+      }
 
-  kdb::ByteArray *value_out;
-  kdb::ByteArray *key = new kdb::SimpleByteArray(key_str.c_str(), key_str.size());
-  s = db_->Get(read_options, key, &value_out);
-  delete key;
-  if (!s.IsOK()) {
-    fprintf(stderr, "ClientEmbedded - Error - Get(): %s\n", s.ToString().c_str());
-  }
-
-  uint64_t bytes_read = 0;
-  int fd_output = open("/tmp/kingdb-output", O_WRONLY|O_CREAT|O_TRUNC, 0644);
-
-  for (value_out->Begin(); value_out->IsValid(); value_out->Next()) {
-    kdb::ByteArray *chunk = value_out->GetChunk();
-    chunk->data();
-    chunk->size();
-    if (write(fd_output, chunk->data(), chunk->size()) < 0) {
-      fprintf(stderr, "ClientEmbedded - Couldn't write to output file: [%s]\n", strerror(errno));
+      bytes_read += chunk->size();
     }
 
-    bytes_read += chunk->size();
-  }
+    s = value_out->GetStatus();
+    if (!s.IsOK()) {
+      fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
+    }
+    delete value_out;
+    close(fd_output);
 
-  s = value_out->GetStatus();
-  if (!s.IsOK()) {
-    fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
+    ASSERT_EQ(s.IsOK(), true);
+    Close();
   }
-  delete value_out;
-  close(fd_output);
-
-  ASSERT_EQ(s.IsOK(), true);
-  Close();
 }
 
 
