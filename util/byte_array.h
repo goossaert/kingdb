@@ -120,6 +120,8 @@ class ByteArrayCommon: public ByteArray {
     }
   }
 
+  // TODO: I think there is a bug here -- some subclass may later try to
+  // call delete on data_, which will fail if it was shifted.
   void SetOffset(uint64_t offset, uint64_t size) {
     offset_ = offset;
     data_ = data_ + offset;
@@ -366,9 +368,6 @@ class AllocatedByteArray: public ByteArrayCommon {
     ba->size_compressed_ = size_compressed();
     return ba;
   }
- 
- private:
-  bool is_valid_;
 };
 
 

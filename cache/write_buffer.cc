@@ -279,15 +279,7 @@ void WriteBuffer::ProcessingLoop() {
 
     // Clear flush buffer
     log::debug("WriteBuffer::ProcessingLoop()", "clear flush buffer");
-    for(auto &p: buffers_[im_copy_]) {
-      delete p.key;
-      delete p.chunk;
-    }
-    sizes_[im_copy_] = 0;
-    buffers_[im_copy_].clear();
 
-    log::trace("WriteBuffer", "ProcessingLoop() - end swap - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
- 
     /*
     if (buffers_[im_copy_].size()) {
       for(auto &p: buffers_[im_copy_]) {
@@ -305,6 +297,15 @@ void WriteBuffer::ProcessingLoop() {
       log::trace("WriteBuffer", "ProcessingLoop() ITEM no buffers_[im_live_]");
     }
     */
+
+    for(auto &p: buffers_[im_copy_]) {
+      delete p.key;
+      delete p.chunk;
+    }
+    sizes_[im_copy_] = 0;
+    buffers_[im_copy_].clear();
+
+    log::trace("WriteBuffer", "ProcessingLoop() - end swap - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
 
     mutex_copy_write_level4_.unlock();
     log::debug("LOCK", "4 unlock");

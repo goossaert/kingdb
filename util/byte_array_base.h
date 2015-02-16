@@ -25,6 +25,7 @@ class ByteArray {
   virtual uint64_t offset() const = 0;
   virtual void set_offset(int off) = 0;
   virtual bool is_compressed() = 0;
+  virtual void SetOffset(uint64_t offset, uint64_t size) = 0;
   virtual bool StartsWith(const char *substr, int n) = 0;
   virtual void SetSizes(uint64_t size, uint64_t size_compressed) = 0;
 

@@ -52,15 +52,31 @@ Status KingDB::PutChunk(WriteOptions& write_options,
   uint64_t size_chunk = chunk->size(); 
   Status s;
   for (uint64_t offset = 0; offset < size_chunk; offset += db_options_.storage__maximum_chunk_size) {
-    ByteArray *chunk_new;
+    ByteArray *key_new, *chunk_new;
     if (offset + db_options_.storage__maximum_chunk_size < chunk->size()) {
       chunk_new = new SimpleByteArray(chunk->data() + offset,
                                       db_options_.storage__maximum_chunk_size);
+      key_new = new SimpleByteArray(key->data(), key->size());
     } else {
-      chunk_new = chunk;
-      chunk_new->set_offset(offset);
+      // NOTE: there was a bug here that I was able to fix but still can't fully explain
+      // version 1
+      //chunk_new = chunk;
+      //chunk_new->SetOffset(offset, size_chunk - offset);
+      
+      // version 2
+      //chunk_new = chunk;
+      //chunk_new->set_offset(offset);
+      //chunk_new->SetSizes(size_chunk - offset, 0);
+
+      // version 3
+      chunk_new = new SmartByteArray(chunk, chunk->data(), chunk->size());
+      chunk_new->SetOffset(offset, size_chunk - offset);
+      key_new = key;
+
+      //chunk_new->set_offset(offset);
     }
-    s = PutChunkValidSize(write_options, key, chunk_new, offset_chunk + offset, size_value);
+
+    s = PutChunkValidSize(write_options, key_new, chunk_new, offset_chunk + offset, size_value);
     if (!s.IsOK()) break;
   }
 
