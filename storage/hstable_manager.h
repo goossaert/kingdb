@@ -502,8 +502,8 @@ class HSTableManager {
       entry_header.size_key = order.key->size();
       entry_header.size_value = order.size_value;
       entry_header.size_value_compressed = order.size_value_compressed;
-      entry_header.size_padding = EntryHeader::CalculatePaddingSize(order.size_value);
-      entry_header.print();
+      entry_header.size_padding = order.IsLarge() ? 0 : EntryHeader::CalculatePaddingSize(order.size_value);
+      entry_header.hash = hashed_key;
       if (!order.IsLarge() && entry_header.IsCompressed()) {
         // NOTE: entry_header.IsCompressed() makes no sense since compression is
         // handled at database level, not at entry level. All usages of
@@ -512,7 +512,7 @@ class HSTableManager {
         file_resource_manager.SetHasPaddingInValues(fileid_, true);
         entry_header.SetHasPadding(true);
       }
-      entry_header.hash = hashed_key;
+      entry_header.print();
 
       // Compute the header a first time to get the data serialized
       char buffer[sizeof(struct EntryHeader)*2];

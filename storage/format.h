@@ -223,7 +223,8 @@ struct EntryHeader {
     EncodeFixed64(ptr, input->hash);
     ptr += 8;
 
-    //log::trace("EntryHeader::EncodeTo", "size:%u", ptr - buffer + 8);
+    //log::trace("EntryHeader::EncodeTo", "size:%u", ptr - buffer);
+    //PrintHex(buffer, ptr - buffer);
     return (ptr - buffer);
   }
 
