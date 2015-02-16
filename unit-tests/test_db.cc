@@ -42,8 +42,8 @@ class KeyGenerator {
 
 class SequentialKeyGenerator: public KeyGenerator {
  public:
-  virtual ~SequentialKeyGenerator() {
-  }
+  virtual ~SequentialKeyGenerator() {}
+
   virtual std::string GetKey(uint64_t thread_id, uint64_t index, int size) {
     std::stringstream ss;
     ss << std::setfill ('0') << std::setw (size);
@@ -59,9 +59,7 @@ class RandomKeyGenerator: public KeyGenerator {
     generator = std::mt19937(seq);
     random_dist = std::uniform_int_distribution<int>(0,255);
   }
-
-  virtual ~RandomKeyGenerator() {
-  }
+  virtual ~RandomKeyGenerator() {}
 
   virtual std::string GetKey(uint64_t thread_id, uint64_t index, int size) {
     std::string str;
@@ -73,10 +71,65 @@ class RandomKeyGenerator: public KeyGenerator {
   }
 
  private:
-    std::seed_seq seq{1, 2, 3, 4, 5, 6, 7};
-    std::mt19937 generator;
-    std::uniform_int_distribution<int> random_dist;
+  std::seed_seq seq{1, 2, 3, 4, 5, 6, 7};
+  std::mt19937 generator;
+  std::uniform_int_distribution<int> random_dist;
 };
+
+
+class DataGenerator {
+ public:
+  virtual ~DataGenerator() {}
+  virtual void GenerateData(char *data, int size) = 0;
+};
+
+class IncompressibleDataGenerator: public DataGenerator {
+ public:
+  IncompressibleDataGenerator() {
+    generator = std::mt19937(seq);
+    random_dist = std::uniform_int_distribution<int>(0,255);
+  }
+  virtual ~IncompressibleDataGenerator() {}
+
+  virtual void GenerateData(char *data, int size) {
+    for (int i = 0; i < size; i++) {
+      data[i] = static_cast<char>(random_dist(generator));
+    }
+  }
+
+ private:
+  std::seed_seq seq{1, 2, 3, 4, 5, 6, 7};
+  std::mt19937 generator;
+  std::uniform_int_distribution<int> random_dist;
+};
+
+
+class CompressibleDataGenerator: public DataGenerator {
+ public:
+  CompressibleDataGenerator() {
+    generator = std::mt19937(seq);
+    random_dist = std::uniform_int_distribution<int>(0,255);
+  }
+  virtual ~CompressibleDataGenerator() {}
+
+  virtual void GenerateData(char *data, int size) {
+    int i = 0;
+    while (i < size) {
+      char c = static_cast<char>(random_dist(generator));
+      int repetition = random_dist(generator) % 30 + 1;
+      if (i + repetition > size) repetition = size - i;
+      memset(data + i, c, repetition);
+      i += repetition;
+    }
+  }
+
+ private:
+  std::seed_seq seq{1, 2, 3, 4, 5, 6, 7};
+  std::mt19937 generator;
+  std::uniform_int_distribution<int> random_dist;
+};
+
+
 
 
 
@@ -87,6 +140,7 @@ class DBTest {
     db_ = nullptr;
     db_options_.compression.type = kLZ4Compression;
     index_db_options_ = 0;
+    data_generator_ = nullptr;
   }
 
   void Open() {
@@ -109,19 +163,45 @@ class DBTest {
   bool IterateOverOptions() {
     db_options_ = DatabaseOptions();
     if (index_db_options_ == 0) {
+      data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
     } else if (index_db_options_ == 1) {
+      data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kNoCompression;
     } else if (index_db_options_ == 2) {
+      data_generator_ = new IncompressibleDataGenerator();
+      db_options_.compression.type = kNoCompression;
+    } else if (index_db_options_ == 3) {
+      data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.storage__hashing_algorithm = kMurmurHash3_64;
-    } else if (index_db_options_ == 3) {
+    } else if (index_db_options_ == 4) {
+      data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kNoCompression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
       db_options_.write_buffer__size = 1024 * 256;
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
-    } else if (index_db_options_ == 4) {
+    } else if (index_db_options_ == 5) {
+      data_generator_ = new IncompressibleDataGenerator();
+      db_options_.compression.type = kLZ4Compression;
+      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+      db_options_.write_buffer__size = 1024 * 256;
+      db_options_.storage__maximum_chunk_size = 1024 * 8;
+      db_options_.storage__hstable_size = 1024 * 200;
+    } else if (index_db_options_ == 6) {
+      data_generator_ = new CompressibleDataGenerator();
+      db_options_.compression.type = kLZ4Compression;
+      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+      db_options_.write_buffer__size = 1024 * 256;
+      db_options_.storage__maximum_chunk_size = 1024 * 8;
+      db_options_.storage__hstable_size = 1024 * 200;
+    } else if (index_db_options_ == 7) {
+      data_generator_ = new IncompressibleDataGenerator();
+      db_options_.compression.type = kLZ4Compression;
+      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+    } else if (index_db_options_ == 8) {
+      data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
     } else {
@@ -173,9 +253,9 @@ class DBTest {
     return Status::OK();
   }
 
-  kdb::KingDB* db_;
 
- private:
+  kdb::KingDB* db_;
+  DataGenerator *data_generator_;
   std::string dbname_;
   DatabaseOptions db_options_;
   int index_db_options_;
@@ -257,12 +337,12 @@ TEST(DBTest, SingleThreadSmallEntries) {
     kdb::WriteOptions write_options;
     write_options.sync = true;
 
-    int size = 101;
+    int size = 100;
     char *buffer_large = new char[size+1];
     for (auto i = 0; i < size; i++) {
       buffer_large[i] = 'a';
     }
-    buffer_large[size] = '\0';
+    buffer_large[size+1] = '\0';
 
     int num_items = 1000;
     std::vector<std::string> items;
@@ -282,7 +362,9 @@ TEST(DBTest, SingleThreadSmallEntries) {
       //std::string key_str = kg->GetKey(0, i, 16);
       //kdb::ByteArray *key = new kdb::AllocatedByteArray(key_str.c_str(), key_str.size());
       kdb::ByteArray *key = new kdb::SimpleByteArray(items[i].c_str(), items[i].size());
-      kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_large, 100);
+      //kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_large, 100);
+      data_generator_->GenerateData(buffer_large, 100);
+      kdb::ByteArray *value = new kdb::AllocatedByteArray(buffer_large, 100);
       kdb::Status s = db_->PutChunk(write_options,
                                     key,
                                     value,
@@ -302,6 +384,7 @@ TEST(DBTest, SingleThreadSmallEntries) {
         kdb::ByteArray *chunk = value->GetChunk();
         chunk->data();
         chunk->size();
+        //delete chunk;
       }
 
       kdb::Status s = value->GetStatus();
@@ -385,12 +468,11 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
 
     close(fd);
 
-    usleep(2 * 1000000);
+    usleep(4 * 1000000);
 
     kdb::ByteArray *value_out;
     kdb::ByteArray *key = new kdb::AllocatedByteArray(key_str.c_str(), key_str.size());
     s = db_->Get(read_options, key, &value_out);
-    delete key;
     if (!s.IsOK()) {
       fprintf(stderr, "ClientEmbedded - Error - Get(): %s\n", s.ToString().c_str());
     }
@@ -414,6 +496,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
     if (!s.IsOK()) {
       fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
     }
+    delete key;
     delete value_out;
     close(fd_output);
 
