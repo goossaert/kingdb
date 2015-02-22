@@ -20,7 +20,7 @@ void WriteBuffer::Flush() {
   log::trace("WriteBuffer::Flush()", "end");
 }
 
-Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
+Status WriteBuffer::Get(ReadOptions& read_options, Kitten& key, Kitten* value_out) {
   // TODO: need to fix the way the value is returned here: to create a new
   //       memory space and then return.
   // TODO: make sure the live buffer doesn't need to be protected by a mutex in
@@ -47,7 +47,7 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** v
   Order order_found;
   for (int i = 0; i < num_items; i++) {
     auto& order = buffer_live[i];
-    if (*order.key == *key) {
+    if (order.key == key) {
       found = true;
       order_found = order;
     }
@@ -56,8 +56,10 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** v
     log::debug("WriteBuffer::Get()", "found in buffer_live");
     if (   order_found.type == OrderType::Put
         && order_found.IsSelfContained()) {
-      *value_out = order_found.chunk->NewByteArrayClone(0, order_found.chunk->size());
-      (*value_out)->SetSizes(order_found.size_value, order_found.size_value_compressed);
+      // TODO: uncompressed the chunk
+      // TODO: make sure that it is clear for the code below this method
+      // whether or not the chunk is compressed
+      *value_out = order_found.chunk;
       return Status::OK();
     } else if (order_found.type == OrderType::Delete) {
       return Status::DeleteOrder();
@@ -85,7 +87,7 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** v
   mutex_indices_level3_.unlock();
   log::debug("LOCK", "3 unlock");
   for (auto& order: buffer_copy) {
-    if (*order.key == *key) {
+    if (order.key == key) {
       found = true;
       order_found = order;
     }
@@ -96,9 +98,10 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** v
   if (   found
       && order_found.type == OrderType::Put
       && order_found.IsSelfContained()) {
-    *value_out = order_found.chunk->NewByteArrayClone(0, order_found.chunk->size());
-    (*value_out)->SetSizes(order_found.size_value, order_found.size_value_compressed);
-    s = Status::OK();
+    // TODO: uncompressed the chunk
+    // TODO: make sure that it is clear for the code below this method
+    // whether or not the chunk is compressed
+    *value_out = order_found.chunk;
   } else if (   found
              && order_found.type == OrderType::Delete) {
     s = Status::DeleteOrder();
@@ -118,15 +121,15 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray* key, ByteArray** v
 }
 
 
-Status WriteBuffer::Put(WriteOptions& write_options, ByteArray* key, ByteArray* chunk) {
+Status WriteBuffer::Put(WriteOptions& write_options, Kitten& key, Kitten& chunk) {
   //return Write(OrderType::Put, key, value);
   return Status::InvalidArgument("WriteBuffer::Put() is not implemented");
 }
 
 
 Status WriteBuffer::PutChunk(WriteOptions& write_options,
-                             ByteArray* key,
-                             ByteArray* chunk,
+                             Kitten& key,
+                             Kitten& chunk,
                              uint64_t offset_chunk,
                              uint64_t size_value,
                              uint64_t size_value_compressed,
@@ -143,19 +146,16 @@ Status WriteBuffer::PutChunk(WriteOptions& write_options,
 }
 
 
-Status WriteBuffer::Delete(WriteOptions& write_options, ByteArray* key) {
-  // TODO: The storage engine is calling data() and size() on the chunk ByteArray.
-  //       The use of SimpleByteArray here is a hack to guarantee that data()
-  //       and size() won't be called on a nullptr -- this needs to be cleaned up.
-  auto empty_chunk = new SimpleByteArray(nullptr, 0);
-  return WriteChunk(write_options, OrderType::Delete, key, empty_chunk, 0, 0, 0, 0);
+Status WriteBuffer::Delete(WriteOptions& write_options, Kitten& key) {
+  auto empty = Kitten::NewEmptyKitten();
+  return WriteChunk(write_options, OrderType::Delete, key, empty, 0, 0, 0, 0);
 }
 
 
 Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
                                const OrderType& op,
-                               ByteArray* key,
-                               ByteArray* chunk,
+                               Kitten& key,
+                               Kitten& chunk,
                                uint64_t offset_chunk,
                                uint64_t size_value,
                                uint64_t size_value_compressed,
@@ -164,14 +164,14 @@ Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
 
   log::trace("WriteBuffer::WriteChunk()",
              "key:[%s] | size chunk:%" PRIu64 ", total size value:%" PRIu64 " offset_chunk:%" PRIu64 " sizeOfBuffer:%d",
-             key->ToString().c_str(), chunk->size(), size_value, offset_chunk, buffers_[im_live_].size());
+             key.ToString().c_str(), chunk.size(), size_value, offset_chunk, buffers_[im_live_].size());
 
   bool is_first_chunk = (offset_chunk == 0);
-  bool is_large = key->size() + size_value > db_options_.storage__hstable_size;
+  bool is_large = key.size() + size_value > db_options_.storage__hstable_size;
 
   uint64_t bytes_arriving = 0;
-  if (is_first_chunk) bytes_arriving += key->size();
-  bytes_arriving += chunk->size();
+  if (is_first_chunk) bytes_arriving += key.size();
+  bytes_arriving += chunk.size();
 
   if (UseRateLimiter()) rate_limiter_.Tick(bytes_arriving);
 
@@ -298,10 +298,12 @@ void WriteBuffer::ProcessingLoop() {
     }
     */
 
+    /*
     for(auto &p: buffers_[im_copy_]) {
       delete p.key;
       delete p.chunk;
     }
+    */
     sizes_[im_copy_] = 0;
     buffers_[im_copy_].clear();
 

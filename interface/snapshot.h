@@ -12,6 +12,7 @@
 #include "interface/interface.h"
 #include "util/order.h"
 #include "util/byte_array.h"
+#include "util/kitten.h"
 #include "util/options.h"
 
 namespace kdb {
@@ -51,7 +52,7 @@ class Snapshot: public Interface {
     delete se_readonly_;
   }
 
-  virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override {
+  virtual Status Get(ReadOptions& read_options, Kitten& key, Kitten* value_out) override {
     Status s = se_readonly_->Get(read_options, key, value_out);
     if (s.IsNotFound()) {
       log::trace("Snapshot::Get()", "not found in storage engine");
@@ -67,19 +68,19 @@ class Snapshot: public Interface {
     return s;
   }
 
-  virtual Status Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk) override {
+  virtual Status Put(WriteOptions& write_options, Kitten& key, Kitten& chunk) override {
     return Status::IOError("Not supported");
   }
 
   virtual Status PutChunk(WriteOptions& write_options,
-                          ByteArray *key,
-                          ByteArray *chunk,
+                          Kitten& key,
+                          Kitten& chunk,
                           uint64_t offset_chunk,
                           uint64_t size_value) override {
     return Status::IOError("Not supported");
   }
 
-  virtual Status Delete(WriteOptions& write_options, ByteArray *key) override {
+  virtual Status Delete(WriteOptions& write_options, Kitten& key) override {
     return Status::IOError("Not supported");
   }
 

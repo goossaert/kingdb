@@ -49,16 +49,16 @@ class WriteBuffer {
 
   }
   ~WriteBuffer() { Close(); }
-  Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out);
-  Status Put(WriteOptions& write_options, ByteArray* key, ByteArray* chunk);
+  Status Get(ReadOptions& read_options, Kitten& key, Kitten* value_out);
+  Status Put(WriteOptions& write_options, Kitten& key, Kitten& chunk);
   Status PutChunk(WriteOptions& write_options,
-                  ByteArray* key,
-                  ByteArray* chunk,
+                  Kitten& key,
+                  Kitten& chunk,
                   uint64_t offset_chunk,
                   uint64_t size_value,
                   uint64_t size_value_compressed,
                   uint32_t crc32);
-  Status Delete(WriteOptions& write_options, ByteArray* key);
+  Status Delete(WriteOptions& write_options, Kitten& key);
   void Flush();
 
   void Close () {
@@ -91,8 +91,8 @@ class WriteBuffer {
  private:
   Status WriteChunk(const WriteOptions& write_options,
                     const OrderType& op,
-                    ByteArray* key,
-                    ByteArray* chunk,
+                    Kitten& key,
+                    Kitten& chunk,
                     uint64_t offset_chunk,
                     uint64_t size_value,
                     uint64_t size_value_compressed,

@@ -6,15 +6,18 @@
 
 namespace kdb {
 
-Status KingDB::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) {
+Status KingDB::Get(ReadOptions& read_options,
+                   Kitten& key,
+                   Kitten* value_out,
+                   bool want_raw_data) {
   if (is_closed_) return Status::IOError("The database is not open");
-  log::trace("KingDB Get()", "[%s]", key->ToString().c_str());
+  log::trace("KingDB Get()", "[%s]", key.ToString().c_str());
   Status s = wb_->Get(read_options, key, value_out);
   if (s.IsDeleteOrder()) {
     return Status::NotFound("Unable to find entry");
   } else if (s.IsNotFound()) {
     log::trace("KingDB Get()", "not found in buffer");
-    s = se_->Get(read_options, key, value_out);
+    s = se_->Get(read_options, key, value_out, want_raw_data);
     if (s.IsNotFound()) {
       log::trace("KingDB Get()", "not found in storage engine");
       return s;
@@ -31,15 +34,19 @@ Status KingDB::Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_
   return s;
 }
 
+Status KingDB::Get(ReadOptions& read_options, Kitten& key, Kitten* value_out) {
+  return Get(read_options, key, value_out, false);
+}
 
-Status KingDB::Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk) {
-  return PutChunk(write_options, key, chunk, 0, chunk->size());
+
+Status KingDB::Put(WriteOptions& write_options, Kitten& key, Kitten& chunk) {
+  return PutChunk(write_options, key, chunk, 0, chunk.size());
 }
 
 
 Status KingDB::PutChunk(WriteOptions& write_options,
-                        ByteArray *key,
-                        ByteArray *chunk,
+                        Kitten& key,
+                        Kitten& chunk,
                         uint64_t offset_chunk,
                         uint64_t size_value) {
   if (is_closed_) return Status::IOError("The database is not open");
@@ -49,31 +56,20 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 
   // 'chunk' may be deleted by the call to PutChunkValidSize()
   // and therefore it cannot be used in the loop test condition
-  uint64_t size_chunk = chunk->size(); 
+  uint64_t size_chunk = chunk.size(); 
   Status s;
   for (uint64_t offset = 0; offset < size_chunk; offset += db_options_.storage__maximum_chunk_size) {
-    ByteArray *key_new, *chunk_new;
-    if (offset + db_options_.storage__maximum_chunk_size < chunk->size()) {
-      chunk_new = new SimpleByteArray(chunk->data() + offset,
-                                      db_options_.storage__maximum_chunk_size);
-      key_new = new SimpleByteArray(key->data(), key->size());
-    } else {
-      // NOTE: there was a bug here that I was able to fix but still can't fully explain
-      // version 1
-      //chunk_new = chunk;
-      //chunk_new->SetOffset(offset, size_chunk - offset);
-      
-      // version 2
-      //chunk_new = chunk;
-      //chunk_new->set_offset(offset);
-      //chunk_new->SetSizes(size_chunk - offset, 0);
-
-      // version 3
-      chunk_new = new SmartByteArray(chunk, chunk->data(), chunk->size());
-      chunk_new->SetOffset(offset, size_chunk - offset);
+    Kitten key_new, chunk_new;
+    if (offset + db_options_.storage__maximum_chunk_size < chunk.size()) {
+      chunk_new = chunk;
+      chunk_new.set_offset(offset);
+      chunk_new.set_size(db_options_.storage__maximum_chunk_size);
       key_new = key;
-
-      //chunk_new->set_offset(offset);
+    } else {
+      chunk_new = chunk;
+      chunk_new.set_offset(offset);
+      chunk_new.set_size(size_chunk - offset);
+      key_new = key;
     }
 
     s = PutChunkValidSize(write_options, key_new, chunk_new, offset_chunk + offset, size_value);
@@ -85,8 +81,8 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 
 
 Status KingDB::PutChunkValidSize(WriteOptions& write_options,
-                                 ByteArray *key,
-                                 ByteArray *chunk,
+                                 Kitten& key,
+                                 Kitten& chunk,
                                  uint64_t offset_chunk,
                                  uint64_t size_value) {
   if (is_closed_) return Status::IOError("The database is not open");
@@ -95,23 +91,22 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   if (!s.IsOK()) return s;
   log::trace("KingDB::PutChunkValidSize()",
             "[%s] size_chunk:%" PRIu64 " offset_chunk:%" PRIu64,
-            key->ToString().c_str(),
-            chunk->size(),
+            key.ToString().c_str(),
+            chunk.size(),
             offset_chunk);
 
   bool do_compression = true;
   uint64_t size_value_compressed = 0;
   uint64_t offset_chunk_compressed = offset_chunk;
-  ByteArray *chunk_final = nullptr;
-  SharedAllocatedByteArray *chunk_compressed = nullptr;
+  Kitten chunk_final;
 
   bool is_first_chunk = (offset_chunk == 0);
-  bool is_last_chunk = (chunk->size() + offset_chunk == size_value);
+  bool is_last_chunk = (chunk.size() + offset_chunk == size_value);
   log::trace("KingDB::PutChunkValidSize()",
             "CompressionType:%d",
             db_options_.compression.type);
 
-  if (   chunk->size() == 0
+  if (   chunk.size() == 0
       || db_options_.compression.type == kNoCompression) {
     do_compression = false;
   }
@@ -127,7 +122,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     // frame header, thus the current offset needs to account for it.
     //offset_chunk_compressed += compressor_.size_frame_header();
     offset_chunk_compressed = ts_offset_.get();
-    ts_offset_.put(offset_chunk_compressed + chunk->size());
+    ts_offset_.put(offset_chunk_compressed + chunk.size());
   }
 
   if (!do_compression || ts_compression_enabled_.get() == 0) {
@@ -140,42 +135,41 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     offset_chunk_compressed = compressor_.size_compressed();
     uint64_t size_compressed;
     char *compressed;
-    s = compressor_.Compress(chunk->data(),
-                             chunk->size(),
+    s = compressor_.Compress(chunk.data(),
+                             chunk.size(),
                              &compressed,
                              &size_compressed);
 
     log::trace("KingDB::PutChunkValidSize()",
               "[%s] size_compressed:%" PRIu64,
-              key->ToString().c_str(), compressor_.size_compressed());
+              key.ToString().c_str(), compressor_.size_compressed());
 
     // Now Checking if compression should be disabled for this entry
     uint64_t size_remaining = size_value - offset_chunk;
     uint64_t space_left = size_value + EntryHeader::CalculatePaddingSize(size_value) - offset_chunk_compressed;
-    if (  size_remaining - chunk->size() + compressor_.size_frame_header()
+    if (  size_remaining - chunk.size() + compressor_.size_frame_header()
         > space_left - size_compressed) {
       delete[] compressed;
-      compressed = new char[compressor_.size_uncompressed_frame(chunk->size())];
+      compressed = new char[compressor_.size_uncompressed_frame(chunk.size())];
       compressor_.DisableCompressionInFrameHeader(compressed);
-      memcpy(compressed + compressor_.size_frame_header(), chunk->data(), chunk->size());
+      memcpy(compressed + compressor_.size_frame_header(), chunk.data(), chunk.size());
       compressor_.AdjustCompressedSize(- size_compressed);
-      size_compressed = chunk->size() + compressor_.size_frame_header();
+      size_compressed = chunk.size() + compressor_.size_frame_header();
       ts_compression_enabled_.put(0);
       ts_offset_.put(compressor_.size_compressed() + size_compressed);
     }
 
     if (!s.IsOK()) return s;
-    chunk_compressed = new SharedAllocatedByteArray(compressed, size_compressed);
+    Kitten chunk_compressed = Kitten::NewShallowCopyKitten(compressed, size_compressed);
 
     log::trace("KingDB::PutChunkValidSize()",
               "[%s] (%" PRIu64 ") compressed size %" PRIu64 " - offset_chunk_compressed %" PRIu64,
-              key->ToString().c_str(),
-              chunk->size(),
-              chunk_compressed->size(),
+              key.ToString().c_str(),
+              chunk.size(),
+              chunk_compressed.size(),
               offset_chunk_compressed);
 
     chunk_final = chunk_compressed;
-    delete chunk;
   }
 
   if (do_compression && is_last_chunk) {
@@ -186,7 +180,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
         // chunk is self-contained: first ans last
         size_value_compressed = ts_offset_.get();
       } else {
-        size_value_compressed = offset_chunk_compressed + chunk->size();
+        size_value_compressed = offset_chunk_compressed + chunk.size();
       }
     }
   }
@@ -195,15 +189,15 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   uint32_t crc32 = 0;
   if (is_first_chunk) {
     crc32_.ResetThreadLocalStorage();
-    crc32_.stream(key->data(), key->size());
+    crc32_.stream(key.data(), key.size());
   }
-  crc32_.stream(chunk_final->data(), chunk_final->size());
+  crc32_.stream(chunk_final.data(), chunk_final.size());
   if (is_last_chunk) crc32 = crc32_.get();
 
-  log::trace("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%" PRIu64 " crc32:0x%" PRIx64 " END", key->ToString().c_str(), size_value_compressed, crc32);
+  log::trace("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%" PRIu64 " crc32:0x%" PRIx64 " END", key.ToString().c_str(), size_value_compressed, crc32);
 
   uint64_t size_padding = do_compression ? EntryHeader::CalculatePaddingSize(size_value) : 0;
-  if (  offset_chunk_compressed + chunk_final->size()
+  if (  offset_chunk_compressed + chunk_final.size()
       > size_value + size_padding) {
     log::emerg("KingDB::PutChunkValidSize()", "Error: write was attempted outside of the allocated memory.");
     return Status::IOError("Prevented write to occur outside of the allocated memory.");
@@ -221,9 +215,9 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 
 
 Status KingDB::Delete(WriteOptions& write_options,
-                      ByteArray *key) {
+                      Kitten& key) {
   if (is_closed_) return Status::IOError("The database is not open");
-  log::trace("KingDB::Delete()", "[%s]", key->ToString().c_str());
+  log::trace("KingDB::Delete()", "[%s]", key.ToString().c_str());
   Status s = se_->FileSystemStatus();
   if (!s.IsOK()) return s;
   return wb_->Delete(write_options, key);

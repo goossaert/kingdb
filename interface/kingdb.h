@@ -23,6 +23,7 @@
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
+#include "util/kitten.h"
 #include "util/options.h"
 #include "util/file.h"
 #include "interface/iterator.h"
@@ -151,22 +152,68 @@ class KingDB: public Interface {
     delete em_;
   }
 
-  virtual Status Get(ReadOptions& read_options, ByteArray* key, ByteArray** value_out) override;
-  virtual Status Put(WriteOptions& write_options, ByteArray *key, ByteArray *chunk) override;
+  virtual Status Get(ReadOptions& read_options, Kitten& key, Kitten* value_out) override;
+
+  virtual Status Get(ReadOptions& read_options, Kitten& key, std::string* value_out) {
+    return Interface::Get(read_options, key, value_out);
+  }
+
+  virtual Status Get(ReadOptions& read_options, std::string& key, Kitten* value_out) {
+    return Interface::Get(read_options, key, value_out);
+  }
+
+  virtual Status Get(ReadOptions& read_options, std::string& key, std::string* value_out) {
+    return Interface::Get(read_options, key, value_out);
+  }
+
+  virtual Status Put(WriteOptions& write_options, Kitten& key, Kitten& value) override;
+
+  virtual Status Put(WriteOptions& write_options, Kitten& key, std::string& chunk) {
+    return Interface::Put(write_options, key, chunk);
+  }
+
+  virtual Status Put(WriteOptions& write_options, std::string& key, Kitten& chunk) {
+    return Interface::Put(write_options, key, chunk);
+  }
+
+  virtual Status Put(WriteOptions& write_options, std::string& key, std::string& chunk) {
+    return Interface::Put(write_options, key, chunk);
+  }
+
   virtual Status PutChunk(WriteOptions& write_options,
-                          ByteArray *key,
-                          ByteArray *chunk,
+                          Kitten& key,
+                          Kitten& chunk,
                           uint64_t offset_chunk, // TODO: could the offset be handled by the method itself?
                           uint64_t size_value) override;
-  virtual Status Delete(WriteOptions& write_options, ByteArray *key) override;
+  virtual Status Delete(WriteOptions& write_options, Kitten& key) override;
   virtual Interface* NewSnapshot() override;
   virtual Iterator* NewIterator(ReadOptions& read_options) override;
 
+  MultipartReader NewMultipartReader(ReadOptions& read_options, Kitten& key) {
+    Kitten value;
+    Status s = Get(read_options, key, &value, true);
+    if (!s.IsOK()) {
+      return MultipartReader();
+    } else {
+      return MultipartReader(read_options, value);
+    }
+  }
+
+  MultipartWriter NewMultipartWriter(WriteOptions& write_options, Kitten& key, uint64_t size_value_total) {
+    return MultipartWriter(write_options, key, size_value_total);
+  }
+
+
+
  private:
+  Status Get(ReadOptions& read_options,
+             Kitten& key,
+             Kitten* value_out,
+             bool want_raw_data);
 
   Status PutChunkValidSize(WriteOptions& write_options,
-                           ByteArray *key,
-                           ByteArray *chunk,
+                           Kitten& key,
+                           Kitten& chunk,
                            uint64_t offset_chunk,
                            uint64_t size_value);
 

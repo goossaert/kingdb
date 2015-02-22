@@ -29,6 +29,7 @@
 #include "util/options.h"
 #include "algorithm/hash.h"
 #include "util/order.h"
+#include "util/kitten.h"
 #include "util/byte_array.h"
 #include "algorithm/crc32c.h"
 #include "util/file.h"
@@ -315,10 +316,10 @@ class StorageEngine {
     }
   }
 
-  // NOTE: key_out and value_out must be deleted by the caller
   Status Get(ReadOptions& read_options,
-             ByteArray* key,
-             ByteArray** value_out,
+             Kitten& key,
+             Kitten* value_out,
+             bool want_raw_data=false,
              uint64_t *location_out=nullptr) {
     mutex_write_.lock();
     mutex_read_.lock();
@@ -335,9 +336,14 @@ class StorageEngine {
     if (!has_compaction_index) {
       s = GetWithIndex(read_options, index_, key, value_out, location_out);
     } else {
+      // TODO-35: fix bug in the calls to GetWithIndex() -- if the first call
+      // returns NotFound() because the entry was deleted, then the second call
+      // should not be made.
       s = GetWithIndex(read_options, index_compaction_, key, value_out, location_out);
       if (!s.IsOK()) s = GetWithIndex(read_options, index_, key, value_out, location_out);
     }
+
+    // TODO: return uncompressed entry if needed
 
     mutex_read_.lock();
     num_readers_ -= 1;
@@ -351,8 +357,8 @@ class StorageEngine {
   // IMPORTANT: value_out must be deleled by the caller
   Status GetWithIndex(ReadOptions& read_options,
                       std::multimap<uint64_t, uint64_t>& index,
-                      ByteArray* key,
-                      ByteArray** value_out,
+                      Kitten& key,
+                      Kitten* value_out,
                       uint64_t *location_out=nullptr) {
     //std::unique_lock<std::mutex> lock(mutex_index_);
     // TODO-26: should not be locking here, instead, should store the hashed key
@@ -361,40 +367,36 @@ class StorageEngine {
 
     // NOTE: Since C++11, the relative ordering of elements with equivalent keys
     //       in a multimap is preserved.
-    uint64_t hashed_key = hash_->HashFunction(key->data(), key->size());
-    log::trace("StorageEngine::GetWithIndex()", "num entries in index:[%d] content:[%s] size:[%d] hashed_key:[0x%" PRIx64 "]", index.size(), key->ToString().c_str(), key->size(), hashed_key);
+    uint64_t hashed_key = hash_->HashFunction(key.data(), key.size());
+    log::trace("StorageEngine::GetWithIndex()", "num entries in index:[%d] content:[%s] size:[%d] hashed_key:[0x%" PRIx64 "]", index.size(), key.ToString().c_str(), key.size(), hashed_key);
 
     auto range = index.equal_range(hashed_key);
     auto rbegin = --range.second;
     auto rend  = --range.first;
     for (auto it = rbegin; it != rend; --it) {
-      ByteArray *key_temp = nullptr;
+      Kitten key_temp;
       Status s = GetEntry(read_options, it->second, &key_temp, value_out);
-      log::trace("StorageEngine::GetWithIndex()", "key ptr:[%p]", key);
       //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
       //std::string temp(key_temp->data(), key_temp->size());
       //log::trace("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
-      if (key_temp != nullptr && *key_temp == *key) {
+      if (s.IsOK() && key_temp == key) {
         // NOTE: should this be testing (s.IsOK() || s.IsDeleteOrder()) ?
-        delete key_temp;
         if (s.IsDeleteOrder()) {
           s = Status::NotFound("Unable to find the entry in the storage engine (remove order)");
         }
         if (location_out != nullptr) *location_out = it->second;
         return s;
       }
-      delete key_temp;
-      delete *value_out;
     }
-    log::trace("StorageEngine::GetWithIndex()", "%s - not found!", key->ToString().c_str());
+    log::trace("StorageEngine::GetWithIndex()", "%s - not found!", key.ToString().c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
   }
 
   // IMPORTANT: key_out and value_out must be deleted by the caller
   Status GetEntry(ReadOptions& read_options,
                   uint64_t location,
-                  ByteArray **key_out,
-                  ByteArray **value_out) {
+                  Kitten* key_out,
+                  Kitten* value_out) {
     log::trace("StorageEngine::GetEntry()", "start");
     Status s = Status::OK();
     // TODO: check that the offset falls into the
@@ -411,16 +413,15 @@ class StorageEngine {
     log::trace("StorageEngine::GetEntry()", "location:%" PRIu64 " fileid:%u offset_file:%u filesize:%" PRIu64, location, fileid, offset_file, filesize);
     std::string filepath = hstable_manager_.GetFilepath(fileid); // TODO: optimize here
 
-    auto key_temp = new SharedMmappedByteArray(filepath, filesize);
-    auto value_temp = new SharedMmappedByteArray();
-    *value_temp = *key_temp;
+    auto key_temp = Kitten::NewMmappedKitten(filepath, filesize);
+    auto value_temp = key_temp;
     // NOTE: verify that value_temp.size() is indeed filesize -- verified and
     // the size was 0: should the size of an mmapped byte array be the size of
     // the file by default?
 
     struct EntryHeader entry_header;
     uint32_t size_header;
-    s = EntryHeader::DecodeFrom(db_options_, value_temp->datafile() + offset_file, filesize - offset_file, &entry_header, &size_header);
+    s = EntryHeader::DecodeFrom(db_options_, value_temp.data() + offset_file, filesize - offset_file, &entry_header, &size_header);
     if (!s.IsOK()) return s;
 
     if (   !entry_header.AreSizesValid(offset_file, filesize)
@@ -429,25 +430,25 @@ class StorageEngine {
       return Status::IOError("Entry has invalid header");
     }
 
-    key_temp->SetOffset(offset_file + size_header, entry_header.size_key);
-    value_temp->SetOffset(offset_file + size_header + entry_header.size_key, entry_header.size_value);
-    value_temp->SetSizeCompressed(entry_header.size_value_compressed);
-    value_temp->SetCRC32(entry_header.crc32);
+    key_temp.set_offset(offset_file + size_header);
+    key_temp.set_size(entry_header.size_key);
+
+    value_temp.set_offset(offset_file + size_header + entry_header.size_key);
+    value_temp.set_size(entry_header.size_value);
+    value_temp.set_size_compressed(entry_header.size_value_compressed);
+    value_temp.set_checksum(entry_header.crc32);
 
     if (read_options.verify_checksums) {
-      value_temp->EnableChecksumVerification();
-      uint32_t crc32_headerkey = crc32c::Value(value_temp->datafile() + offset_file + 4, size_header + entry_header.size_key - 4);
-      value_temp->SetInitialCRC32(crc32_headerkey);
+      uint32_t crc32_headerkey = crc32c::Value(value_temp.data() + offset_file + 4, size_header + entry_header.size_key - 4);
+      value_temp.set_checksum_initial(crc32_headerkey);
     }
 
     if (entry_header.IsTypeDelete()) {
       s = Status::DeleteOrder();
-      delete value_temp;
-      value_temp = nullptr;
     }
 
     log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeDelete());
-    log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " size_value_compressed:%" PRIu64 " filesize:%" PRIu64, key_temp->size(), value_temp->size(), value_temp->size_compressed(), filesize);
+    log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " size_value_compressed:%" PRIu64 " filesize:%" PRIu64, key_temp.size(), value_temp.size(), value_temp.size_compressed(), filesize);
 
     *key_out = key_temp;
     *value_out = value_temp;
@@ -589,7 +590,7 @@ class StorageEngine {
     std::reverse(index_compaction_se.begin(), index_compaction_se.end());
     ReadOptions read_options;
     for (auto &p: index_compaction_se) {
-      ByteArray *key, *value;
+      Kitten key, value;
       uint64_t& location = p.second;
       uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
       if (fileid > fileid_end_actual) {
@@ -599,9 +600,7 @@ class StorageEngine {
       }
       fileids_compaction.insert(fileid);
       Status s = GetEntry(read_options, location, &key, &value);
-      std::string str_key = key->ToString();
-      delete key;
-      delete value;
+      std::string str_key = key.ToString();
 
       // For any given key, only the first occurrence, which is the most recent one,
       // has to be kept. The other ones will be deleted. If the first occurrence
@@ -800,8 +799,8 @@ class StorageEngine {
           Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
 
           log::trace("Compaction()", "order list loop - create byte arrays");
-          ByteArray *key   = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header, entry_header.size_key);
-          ByteArray *chunk = new SimpleByteArray(mmap_location->datafile() + offset_file + size_header + entry_header.size_key, entry_header.size_value_used());
+          Kitten key = Kitten::NewPointerKitten(mmap_location->datafile() + offset_file + size_header, entry_header.size_key);
+          Kitten chunk = Kitten::NewPointerKitten(mmap_location->datafile() + offset_file + size_header + entry_header.size_key, entry_header.size_value_used());
           log::trace("Compaction()", "order list loop - push_back() orders");
 
           // NOTE: Need to recompute the crc32 of the key and value, as entry_header.crc32

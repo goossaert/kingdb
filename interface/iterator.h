@@ -10,6 +10,7 @@
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
+#include "util/kitten.h"
 #include "util/options.h"
 #include "interface/interface.h"
 #include "storage/storage_engine.h"
@@ -29,12 +30,6 @@ class BasicIterator: public Iterator {
   }
 
   ~BasicIterator() {
-    if (key_ != nullptr) {
-      delete key_;
-      delete value_;
-      key_ = nullptr;
-      value_ = nullptr;
-    }
     if (snapshot_ != nullptr) {
       delete snapshot_;
     }
@@ -51,8 +46,6 @@ class BasicIterator: public Iterator {
     has_file_ = false;
     index_fileid_ = 0;
     is_valid_ = true;
-    key_ = nullptr;
-    value_ = nullptr;
     mutex_.unlock();
     Next();
     log::trace("BasicIterator::Begin()", "end");
@@ -72,12 +65,6 @@ class BasicIterator: public Iterator {
     Status s;
 
     while (true) { 
-      if (key_ != nullptr) {
-        delete key_;
-        delete value_;
-        key_ = nullptr;
-        value_ = nullptr;
-      }
       log::trace("BasicIterator::Next()", "loop index_file:[%u] index_location:[%u]", index_fileid_, index_location_);
       if (index_fileid_ >= fileids_iterator_->size()) {
         is_valid_ = false;
@@ -113,8 +100,6 @@ class BasicIterator: public Iterator {
         }
         std::sort(locations_current_.begin(), locations_current_.end());
         index_location_ = 0;
-        key_ = nullptr;
-        value_ = nullptr;
         has_file_ = true;
       }
 
@@ -127,14 +112,11 @@ class BasicIterator: public Iterator {
       }
 
       // Get entry at the location
-      ByteArray *key = nullptr;
-      ByteArray *value = nullptr;
+      Kitten key, value;
       uint64_t location_current = locations_current_[index_location_];
       Status s = se_readonly_->GetEntry(read_options_, location_current, &key, &value);
       if (!s.IsOK()) {
         log::trace("BasicIterator::Next()", "GetEntry() failed: %s", s.ToString().c_str());
-        delete key; 
-        delete value;
         index_location_ += 1;
         continue;
       }
@@ -142,23 +124,17 @@ class BasicIterator: public Iterator {
       // Get entry for the key found at the location, and continue if the
       // locations mismatch -- i.e. the current entry has been overwritten
       // by a later entry.
-      ByteArray *value_alt = nullptr;
+      Kitten value_alt;
       uint64_t location_out;
       s = se_readonly_->Get(read_options_, key, &value_alt, &location_out);
       if (!s.IsOK()) {
         log::trace("BasicIterator::Next()", "Get(): failed: %s", s.ToString().c_str());
-        delete key;
-        delete value;
-        delete value_alt;
         index_fileid_ += 1;
         continue;
       }
         
       if (location_current != location_out) {
         log::trace("BasicIterator::Next()", "Get(): wrong location");
-        delete key;
-        delete value;
-        delete value_alt;
         index_location_ += 1;
         continue;
       }
@@ -166,7 +142,6 @@ class BasicIterator: public Iterator {
       log::trace("BasicIterator::Next()", "has a valid key/value pair");
       key_ = key;
       value_ = value;
-      delete value_alt;
       index_location_ += 1;
       return true;
     }
@@ -174,12 +149,16 @@ class BasicIterator: public Iterator {
     return false;
   }
 
-  ByteArray *GetKey() {
+  Kitten GetKey() {
     return key_;
   }
 
-  ByteArray *GetValue() {
+  Kitten GetValue() {
     return value_;
+  }
+
+  MultipartReader GetMultipartValue() {
+    return MultipartReader(read_options_, value_);
   }
 
  private:
@@ -196,8 +175,8 @@ class BasicIterator: public Iterator {
   bool has_file_;
   bool is_valid_;
 
-  ByteArray* key_;
-  ByteArray* value_;
+  Kitten key_;
+  Kitten value_;
 };
 
 } // end namespace kdb

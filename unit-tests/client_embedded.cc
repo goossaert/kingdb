@@ -23,6 +23,7 @@
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
+#include "util/kitten.h"
 
 #include "interface/snapshot.h"
 #include "interface/iterator.h"
@@ -79,8 +80,8 @@ int main() {
 
   std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
   for (auto i = 0; i < num_items; i++) {
-    kdb::ByteArray *key = new kdb::SimpleByteArray(items[i].c_str(), items[i].size());
-    kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_large, 100);
+    kdb::Kitten key = kdb::Kitten::NewDeepCopyKitten(items[i].c_str(), items[i].size());
+    kdb::Kitten value = kdb::Kitten::NewDeepCopyKitten(buffer_large, 100);
     kdb::Status s = db.PutChunk(write_options,
                                 key,
                                 value,
@@ -97,19 +98,8 @@ int main() {
 
   auto count_items = 0;
   for (iterator->Begin(); iterator->IsValid(); iterator->Next()) {
-    //std::cout << "key: " << iterator->GetKey()->ToString() << std::endl;
-    //std::cout << "value: ";
-
-    kdb::ByteArray *value = iterator->GetValue();
-
-    for (value->Begin(); value->IsValid(); value->Next()) {
-      kdb::ByteArray* chunk = value->GetChunk();
-    }
-
-    kdb::Status s = value->GetStatus();
-    if (!s.IsOK()) {
-      fprintf(stderr, "ClientEmbedded - Error: %s", s.ToString().c_str());
-    }
+    kdb::Kitten key = iterator->GetKey();
+    kdb::Kitten value = iterator->GetValue();
     count_items += 1;
   }
 

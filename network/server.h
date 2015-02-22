@@ -34,6 +34,7 @@
 #include "kingdb/kdb.h"
 #include "thread/threadpool.h"
 #include "interface/kingdb.h"
+#include "util/kitten.h"
 #include "util/byte_array.h"
 
 

@@ -24,6 +24,7 @@
 #include "algorithm/crc32c.h"
 #include "util/byte_array_base.h"
 #include "util/byte_array.h"
+#include "util/kitten.h"
 #include "util/options.h"
 
 namespace kdb {
@@ -34,8 +35,8 @@ struct Order {
   std::thread::id tid;
   WriteOptions write_options;
   OrderType type;
-  ByteArray* key;
-  ByteArray* chunk;
+  Kitten key;
+  Kitten chunk;
   uint64_t offset_chunk;
   uint64_t size_value;
   uint64_t size_value_compressed;
@@ -51,8 +52,8 @@ struct Order {
   }
 
   bool IsLastChunk() {
-    return (   (size_value_compressed == 0 && chunk->size() + offset_chunk == size_value)
-            || (size_value_compressed != 0 && chunk->size() + offset_chunk == size_value_compressed));
+    return (   (size_value_compressed == 0 && chunk.size() + offset_chunk == size_value)
+            || (size_value_compressed != 0 && chunk.size() + offset_chunk == size_value_compressed));
   }
 
   bool IsSelfContained() {
