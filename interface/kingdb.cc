@@ -31,6 +31,13 @@ Status KingDB::Get(ReadOptions& read_options,
     log::trace("KingDB Get()", "found in buffer");
   }
 
+  // TODO-36: There is technical debt here:
+  // 1. The uncompression should be able to proceed without having to call a
+  //    Multipart Reader.
+  // 2. The uncompression should be able to operate within a single buffer, and
+  //    not have to copy data into intermediate buffers through the Multipart
+  //    Reader as it is done here. Having intermediate buffers means that there
+  //    is more data copy than necessary, thus more time wasted
   log::trace("KingDB Get()", "Before Multipart - want_raw_data:%d value_out->is_compressed():%d", want_raw_data, value_out->is_compressed());
   if (want_raw_data == false && value_out->is_compressed()) {
     char* buffer = new char[value_out->size()];

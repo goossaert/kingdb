@@ -157,6 +157,8 @@ class BasicIterator: public Iterator {
   Kitten GetValue() {
     if (!value_.is_compressed()) return value_;
 
+    // TODO-36: Uncompression should have to go through a MultipartReader. See
+    //          the notes about this TODO in kingdb.cc.
     char* buffer = new char[value_.size()];
     uint64_t offset = 0;
     MultipartReader mp_reader(read_options_, value_);
