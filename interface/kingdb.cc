@@ -17,7 +17,7 @@ Status KingDB::Get(ReadOptions& read_options,
     return Status::NotFound("Unable to find entry");
   } else if (s.IsNotFound()) {
     log::trace("KingDB Get()", "not found in buffer");
-    s = se_->Get(read_options, key, value_out, want_raw_data);
+    s = se_->Get(read_options, key, value_out);
     if (s.IsNotFound()) {
       log::trace("KingDB Get()", "not found in storage engine");
       return s;

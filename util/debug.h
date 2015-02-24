@@ -19,7 +19,7 @@
 
 namespace kdb {
 
-void PrintHex(char *buffer, int size);
+void PrintHex(const char* buffer, int size);
 
 } // namespace kdb
 

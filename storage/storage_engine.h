@@ -319,7 +319,6 @@ class StorageEngine {
   Status Get(ReadOptions& read_options,
              Kitten& key,
              Kitten* value_out,
-             bool want_raw_data=false,
              uint64_t *location_out=nullptr) {
     mutex_write_.lock();
     mutex_read_.lock();
@@ -384,6 +383,7 @@ class StorageEngine {
         if (s.IsDeleteOrder()) {
           s = Status::NotFound("Unable to find the entry in the storage engine (remove order)");
         }
+        log::trace("StorageEngine::GetWithIndex()", "Entry [%s] found at location: 0x%08" PRIx64, key.ToString().c_str(), it->second);
         if (location_out != nullptr) *location_out = it->second;
         return s;
       }
@@ -437,7 +437,7 @@ class StorageEngine {
     value_temp.set_size(entry_header.size_value);
     value_temp.set_size_compressed(entry_header.size_value_compressed);
     value_temp.set_checksum(entry_header.crc32);
-    PrintHex(value_temp.data(), 16);
+    //PrintHex(value_temp.data(), 16);
 
     if (read_options.verify_checksums) {
       uint32_t crc32_headerkey = crc32c::Value(value_temp.data() + offset_file + 4, size_header + entry_header.size_key - 4);

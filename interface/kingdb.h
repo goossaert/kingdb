@@ -28,6 +28,7 @@
 #include "util/file.h"
 #include "interface/iterator.h"
 #include "interface/snapshot.h"
+#include "interface/multipart.h"
 #include "thread/threadstorage.h"
 
 #include "algorithm/compressor.h"
@@ -201,7 +202,7 @@ class KingDB: public Interface {
 
 
   MultipartWriter NewMultipartWriter(WriteOptions& write_options, Kitten& key, uint64_t size_value_total) {
-    return MultipartWriter(write_options, key, size_value_total);
+    return MultipartWriter(this, write_options, key, size_value_total);
   }
 
 

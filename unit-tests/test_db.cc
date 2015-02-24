@@ -20,6 +20,7 @@
 
 #include "interface/kingdb.h"
 #include "kingdb/kdb.h"
+#include "util/debug.h"
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
@@ -246,19 +247,18 @@ class DBTest {
 };
 
 
-
 TEST(DBTest, KeysWithNullBytes) {
   Open();
   kdb::Status s;
-  kdb::Logger::set_current_level("trace");
+  kdb::Logger::set_current_level("emerg");
 
   kdb::ReadOptions read_options;
   kdb::WriteOptions write_options;
   write_options.sync = true;
   int num_count_valid = 0;
 
-  kdb::Kitten kitten = kdb::Kitten::NewDeepCopyKitten("blahblah", 8);
-  fprintf(stderr, "kitten: %s\n", kitten.ToString().c_str());
+  //kdb::Kitten kitten = kdb::Kitten::NewDeepCopyKitten("blahblah", 8);
+  //fprintf(stderr, "kitten: %s\n", kitten.ToString().c_str());
 
   std::string key1("000000000000key1");
   std::string key2("000000000000key2");
@@ -275,22 +275,22 @@ TEST(DBTest, KeysWithNullBytes) {
   std::string out_str;
   s = db_->Get(read_options, key1, &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
-  fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
+  //fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
   s = db_->Get(read_options, key2, &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
-  fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
+  //fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
   // Sleeping to let the buffer store the entries on secondary storage
   std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
   s = db_->Get(read_options, key1, &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
-  fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
+  //fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
   s = db_->Get(read_options, key2, &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
-  fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
+  //fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
   ASSERT_EQ(num_count_valid, 4);
   Close();
@@ -328,20 +328,21 @@ TEST(DBTest, SingleThreadSmallEntries) {
 
     KeyGenerator* kg = new RandomKeyGenerator();
 
+    std::map<std::string, std::string> saved_data;
+
     for (auto i = 0; i < num_items; i++) {
-      /*
-      //std::string key_str = kg->GetKey(0, i, 16);
-      //kdb::ByteArray *key = new kdb::AllocatedByteArray(key_str.c_str(), key_str.size());
-      kdb::ByteArray *key = new kdb::SimpleByteArray(items[i].c_str(), items[i].size());
-      //kdb::ByteArray *value = new kdb::SimpleByteArray(buffer_large, 100);
+      std::string key_str = kg->GetKey(0, i, 16);
+      kdb::Kitten key = kdb::Kitten::NewDeepCopyKitten(key_str.c_str(), key_str.size());
+
       data_generator_->GenerateData(buffer_large, 100);
-      kdb::ByteArray *value = new kdb::AllocatedByteArray(buffer_large, 100);
-      kdb::Status s = db_->PutChunk(write_options,
-                                    key,
-                                    value,
-                                    0,
-                                    100);
-      */
+      kdb::Kitten value = kdb::Kitten::NewDeepCopyKitten(buffer_large, 100);
+
+      kdb::Status s = db_->Put(write_options, key, value);
+      if (!s.IsOK()) {
+        fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
+      }
+      std::string value_str(buffer_large, 100);
+      saved_data[key_str] = value_str;
     }
 
     //std::this_thread::sleep_for(std::chrono::milliseconds(10000));
@@ -358,17 +359,34 @@ TEST(DBTest, SingleThreadSmallEntries) {
 
       for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
         kdb::Kitten part;
-        Status s = mp_reader.GetPart(&part);
+        kdb::Status s = mp_reader.GetPart(&part);
         part.data();
         part.size();
       }
 
       kdb::Status s = mp_reader.GetStatus();
-      if (!s.IsOK()) {
+      if (s.IsOK()) {
+        count_items_end += 1;
+      } else {
         fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
       }
 
-      count_items_end += 1;
+      //fprintf(stderr, "MultipartReader %d\n", count_items_end);
+      /*
+      Kitten key = iterator->GetKey();
+      Kitten value = iterator->GetValue();
+      std::string key_str(key.data(), key.size());
+      if (   value.size() == 100
+          && memcmp(value.data(), saved_data[key_str].c_str(), 100) == 0) {
+        count_items_end += 1;
+      } else {
+        fprintf(stderr, "Read error - size:%d\n", value.size());
+        fprintf(stderr, "Value saved:\n");
+        PrintHex(saved_data[key_str].c_str(), 100);
+        fprintf(stderr, "Value found:\n");
+        PrintHex(value.data(), value.size());
+      }
+      */
     }
 
     //std::this_thread::sleep_for(std::chrono::milliseconds(2000));

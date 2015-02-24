@@ -13,6 +13,7 @@
 #include "util/kitten.h"
 #include "util/options.h"
 #include "interface/interface.h"
+#include "interface/multipart.h"
 #include "storage/storage_engine.h"
 
 namespace kdb {
@@ -134,7 +135,7 @@ class BasicIterator: public Iterator {
       }
         
       if (location_current != location_out) {
-        log::trace("BasicIterator::Next()", "Get(): wrong location");
+        log::trace("BasicIterator::Next()", "Get(): wrong location - 0x%08" PRIx64 " - 0x%08" PRIx64, location_current, location_out);
         index_location_ += 1;
         continue;
       }
@@ -154,7 +155,21 @@ class BasicIterator: public Iterator {
   }
 
   Kitten GetValue() {
-    return value_;
+    if (!value_.is_compressed()) return value_;
+
+    char* buffer = new char[value_.size()];
+    uint64_t offset = 0;
+    MultipartReader mp_reader(read_options_, value_);
+    for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
+      Kitten part;
+      mp_reader.GetPart(&part);
+      log::trace("KingDB Get()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
+      memcpy(buffer + offset, part.data(), part.size());
+      offset += part.size();
+    }
+    kdb::Status s = mp_reader.GetStatus();
+    if (!s.IsOK()) fprintf(stderr, "Error in GetValue(): %s\n", s.ToString().c_str());
+    return Kitten::NewShallowCopyKitten(buffer, value_.size());
   }
 
   MultipartReader GetMultipartValue() {

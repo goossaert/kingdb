@@ -13,6 +13,8 @@
 
 namespace kdb {
 
+class MultipartReader;
+
 class Iterator {
  public:
   virtual ~Iterator() {}
