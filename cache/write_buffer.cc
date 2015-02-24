@@ -60,6 +60,8 @@ Status WriteBuffer::Get(ReadOptions& read_options, Kitten& key, Kitten* value_ou
       // TODO: make sure that it is clear for the code below this method
       // whether or not the chunk is compressed
       *value_out = order_found.chunk;
+      (*value_out).set_size(order_found.size_value);
+      (*value_out).set_size_compressed(order_found.size_value_compressed);
       return Status::OK();
     } else if (order_found.type == OrderType::Delete) {
       return Status::DeleteOrder();
@@ -102,6 +104,8 @@ Status WriteBuffer::Get(ReadOptions& read_options, Kitten& key, Kitten* value_ou
     // TODO: make sure that it is clear for the code below this method
     // whether or not the chunk is compressed
     *value_out = order_found.chunk;
+    (*value_out).set_size(order_found.size_value);
+    (*value_out).set_size_compressed(order_found.size_value_compressed);
   } else if (   found
              && order_found.type == OrderType::Delete) {
     s = Status::DeleteOrder();
@@ -280,10 +284,9 @@ void WriteBuffer::ProcessingLoop() {
     // Clear flush buffer
     log::debug("WriteBuffer::ProcessingLoop()", "clear flush buffer");
 
-    /*
     if (buffers_[im_copy_].size()) {
       for(auto &p: buffers_[im_copy_]) {
-        log::trace("WriteBuffer", "ProcessingLoop() ITEM im_copy - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
+        log::trace("WriteBuffer", "ProcessingLoop() ITEM im_copy - key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key.ToString().c_str(), p.chunk.size(), p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
       }
     } else {
       log::trace("WriteBuffer", "ProcessingLoop() ITEM no buffers_[im_copy_]");
@@ -291,11 +294,12 @@ void WriteBuffer::ProcessingLoop() {
 
     if (buffers_[im_live_].size()) {
       for(auto &p: buffers_[im_live_]) {
-        log::trace("WriteBuffer", "ProcessingLoop() ITEM im_live - key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_live_]:%d", p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
+        log::trace("WriteBuffer", "ProcessingLoop() ITEM im_live - key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_live_]:%d", p.key.ToString().c_str(), p.chunk.size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
       }
     } else {
       log::trace("WriteBuffer", "ProcessingLoop() ITEM no buffers_[im_live_]");
     }
+    /*
     */
 
     /*

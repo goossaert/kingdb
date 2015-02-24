@@ -100,7 +100,7 @@ class KittenResource {
 class MmappedKittenResource: public KittenResource {
  friend class Kitten;
  public:
-  virtual ~MmappedKittenResource() {}
+  virtual ~MmappedKittenResource() { fprintf(stderr, "MmappedKittenResource::dtor()\n"); }
 
   virtual char* data() { return data_; }
   virtual const char* data_const() { return data_; }
@@ -113,11 +113,13 @@ class MmappedKittenResource: public KittenResource {
   MmappedKittenResource(std::string& filepath, uint64_t filesize)
     : data_(nullptr),
       size_(0),
+      size_compressed_(0),
       mmap_(filepath, filesize) {
     if (mmap_.is_valid()) {
       data_ = mmap_.datafile(); 
       size_ = mmap_.filesize(); 
     }
+    fprintf(stderr, "MmappedKittenResource::ctor()\n"); 
   }
 
   KittenMmap mmap_;
@@ -130,7 +132,7 @@ class MmappedKittenResource: public KittenResource {
 class AllocatedKittenResource: public KittenResource {
  friend class Kitten;
  public:
-  virtual ~AllocatedKittenResource() { delete[] data_; }
+  virtual ~AllocatedKittenResource() { fprintf(stderr, "AllocatedKittenResource::dtor()\n"); delete[] data_; }
 
   virtual char* data() { return data_; }
   virtual const char* data_const() { return data_; }
@@ -143,6 +145,7 @@ class AllocatedKittenResource: public KittenResource {
   AllocatedKittenResource(char *data, uint64_t size, bool deep_copy)
     : data_(nullptr),
       size_(0),
+      size_compressed_(0),
       deep_copy_(false) {
     if (deep_copy) {
       size_ = size;
@@ -152,6 +155,7 @@ class AllocatedKittenResource: public KittenResource {
       size_ = size;
       data_ = data;
     }
+    fprintf(stderr, "AllocatedKittenResource::ctor()\n"); 
   }
 
   char *data_;
@@ -176,6 +180,7 @@ class PointerKittenResource: public KittenResource {
  private:
   PointerKittenResource(const char *data, uint64_t size)
     : size_(size),
+      size_compressed_(0),
       data_(data) {
   }
 
@@ -193,9 +198,14 @@ class Kitten {
  friend class MultipartReader;
  friend class StorageEngine;
  friend class KingDB;
+ friend class WriteBuffer;
  public:
   Kitten()
-  {
+    : size_(0),
+      size_compressed_(0),
+      offset_(0),
+      checksum_(0),
+      checksum_initial_(0) {
   }
 
   virtual ~Kitten() {
@@ -245,6 +255,7 @@ class Kitten {
   static Kitten NewPointerKitten(const char* data, uint64_t size) {
     Kitten kitten;
     kitten.resource_ = std::shared_ptr<KittenResource>(new PointerKittenResource(data, size));
+    kitten.size_ = size;
     return kitten;
   }
 
@@ -264,6 +275,7 @@ class Kitten {
   virtual void set_size_compressed(uint64_t s) { size_compressed_ = s; }
   virtual uint64_t is_compressed() { return (size_compressed_ != 0); }
   virtual void set_offset(uint64_t o) { offset_ = o; }
+  virtual void increment_offset(uint64_t inc) { offset_ += inc; }
 
   virtual uint32_t checksum() { return checksum_; }
   virtual uint32_t checksum_initial() { return checksum_initial_; }
@@ -271,7 +283,6 @@ class Kitten {
   virtual void set_checksum_initial(uint32_t c) { checksum_initial_ = c; }
 
   std::shared_ptr<KittenResource> resource_;
-  char *data_;
   uint64_t size_;
   uint64_t size_compressed_;
   uint64_t offset_;
@@ -373,7 +384,7 @@ class MultipartReader {
                                           &frame,
                                           &size_frame);
         offset_output_ += size_frame;
-        chunk_ = Kitten::NewDeepCopyKitten(data_out, size_out);
+        chunk_ = Kitten::NewShallowCopyKitten(data_out, size_out);
 
         if (s.IsDone()) {
           is_valid_stream_ = false;
@@ -410,11 +421,15 @@ class MultipartReader {
       if (read_options_.verify_checksums) {
         crc32_.stream(data_left, size_current);
       }
+      
 
-      auto chunk_ = value_;
-      chunk_.set_offset(offset_output_);
+      chunk_ = value_;
+      fprintf(stderr, "decompress - offset_output_:%d\n", offset_output_);
+      PrintHex(chunk_.data(), 14);
+      chunk_.increment_offset(offset_output_);
       chunk_.set_size(size_current);
       chunk_.set_size_compressed(0);
+      PrintHex(chunk_.data(), 14);
       offset_output_ += size_current;
       status_ = Status::Done();
     }
@@ -422,6 +437,9 @@ class MultipartReader {
   }
 
   virtual Status GetPart(Kitten* part) {
+    fprintf(stderr, "GetPart()\n");
+    PrintHex(chunk_.data(), 14);
+    *part = chunk_;
     return Status::OK();
   }
 

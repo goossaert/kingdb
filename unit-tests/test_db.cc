@@ -250,12 +250,15 @@ class DBTest {
 TEST(DBTest, KeysWithNullBytes) {
   Open();
   kdb::Status s;
-  kdb::Logger::set_current_level("emerg");
+  kdb::Logger::set_current_level("trace");
 
   kdb::ReadOptions read_options;
   kdb::WriteOptions write_options;
   write_options.sync = true;
   int num_count_valid = 0;
+
+  kdb::Kitten kitten = kdb::Kitten::NewDeepCopyKitten("blahblah", 8);
+  fprintf(stderr, "kitten: %s\n", kitten.ToString().c_str());
 
   std::string key1("000000000000key1");
   std::string key2("000000000000key2");
@@ -272,18 +275,22 @@ TEST(DBTest, KeysWithNullBytes) {
   std::string out_str;
   s = db_->Get(read_options, key1, &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
+  fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
   s = db_->Get(read_options, key2, &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
+  fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
   // Sleeping to let the buffer store the entries on secondary storage
   std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
   s = db_->Get(read_options, key1, &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
+  fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
   s = db_->Get(read_options, key2, &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
+  fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
   ASSERT_EQ(num_count_valid, 4);
   Close();

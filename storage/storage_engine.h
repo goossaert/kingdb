@@ -413,8 +413,8 @@ class StorageEngine {
     log::trace("StorageEngine::GetEntry()", "location:%" PRIu64 " fileid:%u offset_file:%u filesize:%" PRIu64, location, fileid, offset_file, filesize);
     std::string filepath = hstable_manager_.GetFilepath(fileid); // TODO: optimize here
 
-    auto key_temp = Kitten::NewMmappedKitten(filepath, filesize);
-    auto value_temp = key_temp;
+    Kitten key_temp = Kitten::NewMmappedKitten(filepath, filesize);
+    Kitten value_temp = key_temp;
     // NOTE: verify that value_temp.size() is indeed filesize -- verified and
     // the size was 0: should the size of an mmapped byte array be the size of
     // the file by default?
@@ -437,6 +437,7 @@ class StorageEngine {
     value_temp.set_size(entry_header.size_value);
     value_temp.set_size_compressed(entry_header.size_value_compressed);
     value_temp.set_checksum(entry_header.crc32);
+    PrintHex(value_temp.data(), 16);
 
     if (read_options.verify_checksums) {
       uint32_t crc32_headerkey = crc32c::Value(value_temp.data() + offset_file + 4, size_header + entry_header.size_key - 4);

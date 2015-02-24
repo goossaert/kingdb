@@ -199,6 +199,7 @@ class KingDB: public Interface {
     }
   }
 
+
   MultipartWriter NewMultipartWriter(WriteOptions& write_options, Kitten& key, uint64_t size_value_total) {
     return MultipartWriter(write_options, key, size_value_total);
   }

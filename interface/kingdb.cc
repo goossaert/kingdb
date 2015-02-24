@@ -23,14 +23,29 @@ Status KingDB::Get(ReadOptions& read_options,
       return s;
     } else if (s.IsOK()) {
       log::trace("KingDB Get()", "found in storage engine");
-      return s;
     } else {
       log::trace("KingDB Get()", "unidentified error");
       return s;
     }
+  } else {
+    log::trace("KingDB Get()", "found in buffer");
   }
 
-  log::trace("KingDB Get()", "found in buffer");
+  log::trace("KingDB Get()", "Before Multipart - want_raw_data:%d value_out->is_compressed():%d", want_raw_data, value_out->is_compressed());
+  if (want_raw_data == false && value_out->is_compressed()) {
+    char* buffer = new char[value_out->size()];
+    uint64_t offset = 0;
+    MultipartReader mp_reader(read_options, *value_out);
+    for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
+      Kitten part;
+      mp_reader.GetPart(&part);
+      log::trace("KingDB Get()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
+      memcpy(buffer + offset, part.data(), part.size());
+      offset += part.size();
+    }
+    *value_out = Kitten::NewShallowCopyKitten(buffer, value_out->size());
+  }
+
   return s;
 }
 
