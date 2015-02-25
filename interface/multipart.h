@@ -204,13 +204,17 @@ class MultipartReader {
     }
   }
 
+  uint64_t size() { return value_.size(); }
+
  private:
 
-  MultipartReader() {
+  MultipartReader(Status s)
+    : status_(s) {
   }
   MultipartReader(ReadOptions& read_options, Kitten& value)
     : read_options_(read_options),
-      value_(value) {
+      value_(value),
+      status_(Status::OK()) {
   }
 
   ReadOptions read_options_;

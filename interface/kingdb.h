@@ -194,7 +194,7 @@ class KingDB: public Interface {
     Kitten value;
     Status s = Get(read_options, key, &value, true);
     if (!s.IsOK()) {
-      return MultipartReader();
+      return MultipartReader(s);
     } else {
       return MultipartReader(read_options, value);
     }

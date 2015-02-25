@@ -148,8 +148,7 @@ class AllocatedKittenResource: public KittenResource {
   AllocatedKittenResource(char *data, uint64_t size, bool deep_copy)
     : data_(nullptr),
       size_(0),
-      size_compressed_(0),
-      deep_copy_(false) {
+      size_compressed_(0) {
     if (deep_copy) {
       size_ = size;
       data_ = new char[size_];
@@ -161,10 +160,17 @@ class AllocatedKittenResource: public KittenResource {
     //fprintf(stderr, "AllocatedKittenResource::ctor()\n"); 
   }
 
+  AllocatedKittenResource(uint64_t size)
+    : data_(nullptr),
+      size_(0),
+      size_compressed_(0) {
+    size_ = size;
+    data_ = new char[size_];
+  }
+
   char *data_;
   uint64_t size_;
   uint64_t size_compressed_;
-  bool deep_copy_;
 };
 
 
@@ -203,6 +209,7 @@ class Kitten {
  friend class KingDB;
  friend class WriteBuffer;
  friend class BasicIterator;
+ friend class NetworkTask;
  public:
   Kitten()
     : size_(0),
@@ -241,6 +248,13 @@ class Kitten {
 
   static Kitten NewDeepCopyKitten(std::string& str) {
     return NewDeepCopyKitten(str.c_str(), str.size());
+  }
+
+  static Kitten NewAllocatedMemoryKitten(uint64_t size) {
+    Kitten kitten;
+    kitten.resource_ = std::shared_ptr<KittenResource>(new AllocatedKittenResource(size));
+    kitten.size_ = size;
+    return kitten;
   }
 
   static Kitten NewMmappedKitten(std::string& filepath, uint64_t filesize) {
