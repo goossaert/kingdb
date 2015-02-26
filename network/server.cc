@@ -96,14 +96,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         uint64_t offset_end_key = 4; // skipping 'set '
         while (buffer.data()[offset_end_key] != ' ') offset_end_key++;
 
-        /*
-        delete key; // TODO: Should be placed at the beginning of the "if (is_new)"
-                    //       so that the keys could be cleaned up for any new
-                    //       command and not just for put.
-        key = new SharedAllocatedByteArray();
-        */
         key = buffer;
-        //key.SetOffset(4, offset_end_key-4);
         key.set_offset(4);
         key.set_size(offset_end_key - 4);
 
@@ -118,9 +111,9 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         if (std::regex_search(str_buffer, matches, regex_put)) {
           size_value = atoi(std::string(matches[2]).c_str());
           bytes_expected = offset_value + size_value + 2;
-          std::string str_debug = std::string(matches[2]);
-          log::trace("NetworkTask", "[%s] expected [%s] [%" PRIu64 "]", key.ToString().c_str(), str_debug.c_str(), bytes_expected);
           // +2: because of the final \r\n
+          //std::string str_debug = std::string(matches[2]);
+          //log::trace("NetworkTask", "[%s] expected [%s] [%" PRIu64 "]", key.ToString().c_str(), str_debug.c_str(), bytes_expected);
         } else {
           // should never happen, keeping it here until fully tested
           log::emerg("NetworkTask", "Could not match put command [%s]", str_buffer.c_str());
@@ -158,11 +151,6 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       std::smatch matches;
       std::string str_buffer = buffer.ToString();
       if (std::regex_search(str_buffer, matches, regex_get)) {
-        /*
-        ByteArray *value = nullptr; // TODO: beware, possible memory leak here -- value is not deleted in case of break
-                                    // TODO: replace the pointer with a reference count
-        buffer.SetOffset(4, buffer.size() - 4 - 2);
-        */
         buffer.set_offset(4);
         buffer.set_size(buffer.size() - 4 - 2);
         kdb::MultipartReader mp_reader = db_->NewMultipartReader(read_options, buffer);
@@ -220,13 +208,11 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       std::smatch matches;
       std::string str_buffer = buffer.ToString();
       if (std::regex_search(str_buffer, matches, regex_delete)) {
-        //buffer.SetOffset(7, buffer.size() - 7 - 2);
         buffer.set_offset(7);
         buffer.set_size(buffer.size() - 7 - 2);
         Status s = db_->Delete(write_options, buffer);
         if (s.IsOK()) {
-          // TODO: check for [noreply], which may be present (see Memcached
-          // protocol specs)
+          // TODO: check for [noreply], which may be present (see Memcached protocol specs)
           log::trace("NetworkTask", "REMOVE: ok");
           if (send(sockfd_, "DELETED\r\n", 9, 0) == -1) {
             log::emerg("NetworkTask", "Error - send() %s", strerror(errno));
@@ -244,38 +230,26 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       }
     } else if (is_command_put) {
       uint64_t offset_chunk;
-      //SharedAllocatedByteArray *chunk = buffer;
       Kitten chunk = buffer;
 
       if(bytes_received_total == bytes_received_buffer) {
         // chunk is a first chunk, need to skip all the characters before the value data
-        //chunk->SetOffset(offset_value, bytes_received_buffer - offset_value);
         chunk.set_offset(offset_value);
         chunk.set_size(bytes_received_buffer - offset_value);
         offset_chunk = 0;
       } else {
-        //chunk->SetOffset(0, bytes_received_buffer);
         chunk.set_offset(0);
         chunk.set_size(bytes_received_buffer);
         offset_chunk = bytes_received_total - bytes_received_buffer - offset_value;
       }
 
       if (bytes_received_total == bytes_expected) {
-        // chunk is a last chunk
-        // in case this is the last buffer, the size of the buffer needs to be
-        // adjusted to ignore the final \r\n
+        // Chunk is a last chunk: in case this is the last buffer, the size of the
+        // buffer needs to be adjusted to ignore the final \r\n
         chunk.set_size(chunk.size()-2);
       }
 
       if (chunk.size() > 0) {
-        // TODO-8: make sure that 'key_current' is not created as a new allocated
-        // ByteArray but just a shared copy of 'key' -- there is currently a bug
-        // in the ByteArray code so new allocated is an acceptable temporary
-        // solution. Once the bug is fixed, memory must be shared.
-        /*
-        ByteArray *key_current = new SharedAllocatedByteArray(key.size());
-        memcpy(key_current->data(), key.data(), key.size());
-        */
         log::trace("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%" PRIu64 " bytes_received_total:%" PRIu64 " bytes_expected:%" PRIu64 " size_chunk:%" PRIu64, key.ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk.size());
         Status s = db_->PutChunk(write_options,
                                  key,

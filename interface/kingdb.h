@@ -153,6 +153,10 @@ class KingDB: public Interface {
     delete em_;
   }
 
+  // TODO: make sure that if an entry cannot be returned because memory cannot
+  // be allocated, a proper error message is returned -- same for the Iterator
+  // and Snapshot
+
   virtual Status Get(ReadOptions& read_options, Kitten& key, Kitten* value_out) override;
 
   virtual Status Get(ReadOptions& read_options, Kitten& key, std::string* value_out) {

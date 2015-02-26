@@ -164,6 +164,9 @@ class DBTest {
 
   bool IterateOverOptions() {
     db_options_ = DatabaseOptions();
+    read_options_ = ReadOptions();
+    write_options_ = WriteOptions();
+
     if (index_db_options_ == 0) {
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
@@ -179,36 +182,53 @@ class DBTest {
       db_options_.storage__hashing_algorithm = kMurmurHash3_64;
     } else if (index_db_options_ == 4) {
       data_generator_ = new IncompressibleDataGenerator();
+      db_options_.compression.type = kLZ4Compression;
+      read_options_.verify_checksums = true;
+    } else if (index_db_options_ == 5) {
+      data_generator_ = new CompressibleDataGenerator();
+      db_options_.compression.type = kLZ4Compression;
+      read_options_.verify_checksums = true;
+    } else if (index_db_options_ == 6) {
+      data_generator_ = new IncompressibleDataGenerator();
+      db_options_.compression.type = kNoCompression;
+      read_options_.verify_checksums = true;
+    } else if (index_db_options_ == 7) {
+      data_generator_ = new IncompressibleDataGenerator();
+      db_options_.compression.type = kLZ4Compression;
+      write_options_.sync = true;
+    } else if (index_db_options_ == 8) {
+      data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kNoCompression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
       db_options_.write_buffer__size = 1024 * 256;
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
-    } else if (index_db_options_ == 5) {
+    } else if (index_db_options_ == 9) {
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
       db_options_.write_buffer__size = 1024 * 256;
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
-    } else if (index_db_options_ == 6) {
+    } else if (index_db_options_ == 10) {
       data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
       db_options_.write_buffer__size = 1024 * 256;
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
-    } else if (index_db_options_ == 7) {
+    } else if (index_db_options_ == 11) {
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
-    } else if (index_db_options_ == 8) {
+    } else if (index_db_options_ == 12) {
       data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
     } else {
       return false;
     }
+
     fprintf(stdout, "Database Options: Stage %d\n", index_db_options_);
     index_db_options_ += 1;
     return true;
@@ -230,7 +250,7 @@ class DBTest {
     rmdir(dbname_.c_str());
   }
 
-  kdb::Status Get(ReadOptions& read_options, const std::string& key, std::string *value_out) {
+  kdb::Status Get(ReadOptions& read_options_, const std::string& key, std::string *value_out) {
     return Status::OK();
   }
 
@@ -243,6 +263,8 @@ class DBTest {
   DataGenerator *data_generator_;
   std::string dbname_;
   DatabaseOptions db_options_;
+  ReadOptions read_options_;
+  WriteOptions write_options_;
   int index_db_options_;
 };
 
@@ -252,9 +274,6 @@ TEST(DBTest, KeysWithNullBytes) {
   kdb::Status s;
   kdb::Logger::set_current_level("emerg");
 
-  kdb::ReadOptions read_options;
-  kdb::WriteOptions write_options;
-  write_options.sync = true;
   int num_count_valid = 0;
 
   //kdb::Kitten kitten = kdb::Kitten::NewDeepCopyKitten("blahblah", 8);
@@ -269,26 +288,26 @@ TEST(DBTest, KeysWithNullBytes) {
   std::string value1("value1");
   std::string value2("value2");
 
-  s = db_->Put(write_options, key1, value1);
-  s = db_->Put(write_options, key2, value2);
+  s = db_->Put(write_options_, key1, value1);
+  s = db_->Put(write_options_, key2, value2);
 
   std::string out_str;
-  s = db_->Get(read_options, key1, &out_str);
+  s = db_->Get(read_options_, key1, &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
   //fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
-  s = db_->Get(read_options, key2, &out_str);
+  s = db_->Get(read_options_, key2, &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
   //fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
   // Sleeping to let the buffer store the entries on secondary storage
   std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
-  s = db_->Get(read_options, key1, &out_str);
+  s = db_->Get(read_options_, key1, &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
   //fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
-  s = db_->Get(read_options, key2, &out_str);
+  s = db_->Get(read_options_, key2, &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
   //fprintf(stderr, "num_count_valid:%d\n", num_count_valid);
 
@@ -302,10 +321,6 @@ TEST(DBTest, SingleThreadSmallEntries) {
   kdb::Logger::set_current_level("emerg");
   while (IterateOverOptions()) {
     Open();
-
-    kdb::ReadOptions read_options;
-    kdb::WriteOptions write_options;
-    write_options.sync = true;
 
     int size = 100;
     char *buffer_large = new char[size+1];
@@ -337,7 +352,7 @@ TEST(DBTest, SingleThreadSmallEntries) {
       data_generator_->GenerateData(buffer_large, 100);
       kdb::Kitten value = kdb::Kitten::NewDeepCopyKitten(buffer_large, 100);
 
-      kdb::Status s = db_->Put(write_options, key, value);
+      kdb::Status s = db_->Put(write_options_, key, value);
       if (!s.IsOK()) {
         fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
       }
@@ -348,7 +363,7 @@ TEST(DBTest, SingleThreadSmallEntries) {
     //std::this_thread::sleep_for(std::chrono::milliseconds(10000));
 
     int count_items_end = 0;
-    kdb::Iterator* iterator = db_->NewIterator(read_options);
+    kdb::Iterator* iterator = db_->NewIterator(read_options_);
     /*
     kdb::Iterator iterator;
     Status s = db_->NewIterator(read_options, &iterator);
@@ -407,10 +422,6 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
     Open();
     kdb::Logger::set_current_level("emerg");
 
-    kdb::ReadOptions read_options;
-    kdb::WriteOptions write_options;
-    write_options.sync = true;
-
     uint64_t total_size = (uint64_t)1 << 30;
     //total_size *= 5;
     total_size = 1024*1024 * 2;
@@ -430,7 +441,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
 
     //usleep(10 * 1000000);
     kdb::Kitten key = kdb::Kitten::NewDeepCopyKitten(key_str.c_str(), key_str.size());
-    kdb::MultipartWriter mp_writer = db_->NewMultipartWriter(write_options, key, total_size);
+    kdb::MultipartWriter mp_writer = db_->NewMultipartWriter(write_options_, key, total_size);
 
     int fd = open("/tmp/kingdb-input", O_WRONLY|O_CREAT|O_TRUNC, 0644);
 
@@ -460,7 +471,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
 
     usleep(4 * 1000000);
 
-    kdb::MultipartReader mp_reader = db_->NewMultipartReader(read_options, key);
+    kdb::MultipartReader mp_reader = db_->NewMultipartReader(read_options_, key);
     Kitten value_out;
 
     uint64_t bytes_read = 0;

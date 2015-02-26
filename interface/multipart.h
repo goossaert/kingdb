@@ -31,27 +31,11 @@ class MultipartReader {
  friend class BasicIterator;
  public:
   ~MultipartReader() {}
-  
-  // Streaming API - START
-
-  /*
-  void EnableChecksumVerification() {
-    is_enabled_checksum_verification_ = true;
-  }
-
-  void SetInitialCRC32(uint32_t c32) {
-    log::debug("SetInitialCRC32()", "Initial CRC32 0x%08" PRIx64 "\n", c32);
-    if (is_enabled_checksum_verification_) {
-      initial_crc32_ = c32;
-      crc32_.put(c32); 
-    }
-  }
-  */
-
+ 
   virtual void Begin() {
     if (read_options_.verify_checksums) {
       crc32_.ResetThreadLocalStorage();
-      crc32_.put(initial_crc32_); 
+      crc32_.put(value_.checksum_initial()); 
     }
     is_valid_stream_ = true;
     is_compression_disabled_ = false;
@@ -150,15 +134,11 @@ class MultipartReader {
       if (read_options_.verify_checksums) {
         crc32_.stream(data_left, size_current);
       }
-      
 
       chunk_ = value_;
-      //fprintf(stderr, "decompress - offset_output_:%d\n", offset_output_);
-      //PrintHex(chunk_.data(), 14);
       chunk_.increment_offset(offset_output_);
       chunk_.set_size(size_current);
       chunk_.set_size_compressed(0);
-      //PrintHex(chunk_.data(), 14);
       offset_output_ += size_current;
       status_ = Status::OK();
     }
@@ -166,13 +146,11 @@ class MultipartReader {
   }
 
   virtual Status GetPart(Kitten* part) {
-    //PrintHex(chunk_.data(), 14);
     *part = chunk_;
     return Status::OK();
   }
 
   CompressorLZ4 compressor_;
-  uint32_t initial_crc32_;
   CRC32 crc32_;
   uint64_t offset_output_;
   bool is_compression_disabled_;
@@ -184,18 +162,6 @@ class MultipartReader {
   bool is_compressed() {
     return value_.is_compressed();
   }
-
-  // Streaming API - END
- 
-  // Added an empty copy assignment operator to avoid error messages of the type:
-  // "object of type '...' cannot be assigned because its copy assignment
-  //  operator is implicitly deleted"
-  /*
-  MultipartReader& operator=(const MultipartReader& r) {
-    if(&r == this) return *this;
-    return *this;
-  }
-  */
 
   MultipartReader(const MultipartReader& r) {
     if(&r != this) {

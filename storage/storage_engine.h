@@ -430,6 +430,11 @@ class StorageEngine {
       return Status::IOError("Entry has invalid header");
     }
 
+    if (read_options.verify_checksums) {
+      uint32_t crc32_headerkey = crc32c::Value(value_temp.data() + offset_file + 4, size_header + entry_header.size_key - 4);
+      value_temp.set_checksum_initial(crc32_headerkey);
+    }
+
     key_temp.set_offset(offset_file + size_header);
     key_temp.set_size(entry_header.size_key);
 
@@ -438,11 +443,6 @@ class StorageEngine {
     value_temp.set_size_compressed(entry_header.size_value_compressed);
     value_temp.set_checksum(entry_header.crc32);
     //PrintHex(value_temp.data(), 16);
-
-    if (read_options.verify_checksums) {
-      uint32_t crc32_headerkey = crc32c::Value(value_temp.data() + offset_file + 4, size_header + entry_header.size_key - 4);
-      value_temp.set_checksum_initial(crc32_headerkey);
-    }
 
     if (entry_header.IsTypeDelete()) {
       s = Status::DeleteOrder();
