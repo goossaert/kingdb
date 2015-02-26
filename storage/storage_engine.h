@@ -41,6 +41,7 @@
 namespace kdb {
 
 class StorageEngine {
+ friend class BasicIterator;
  public:
   StorageEngine(DatabaseOptions db_options,
                 EventManager *event_manager,
@@ -279,7 +280,7 @@ class StorageEngine {
       mutex_compaction_.unlock();
 
 
-      int num_iterations_per_lock = db_options_.storage__num_iterations_per_lock;
+      int num_iterations_per_lock = db_options_.internal__num_iterations_per_lock;
       int counter_iterations = 0;
 
       for (auto& p: index_updates) {
@@ -900,7 +901,7 @@ class StorageEngine {
     //     been compacted, and making sure that the locations that have been
     //     added while the compaction was taking place are not removed
     log::trace("Compaction()", "Step 12: Update the storage engine index_");
-    int num_iterations_per_lock = db_options_.storage__num_iterations_per_lock;
+    int num_iterations_per_lock = db_options_.internal__num_iterations_per_lock;
     int counter_iterations = 0;
     for (auto it = map_index_shifted.begin(); it != map_index_shifted.end(); it = map_index_shifted.upper_bound(it->first)) {
 

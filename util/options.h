@@ -41,8 +41,9 @@ struct DatabaseOptions {
  public:
   DatabaseOptions()
       : internal__hstable_header_size(8192),  // bytes
-        storage__num_iterations_per_lock(10),
-        write_buffer__close_timeout(500),     // milliseconds
+        internal__num_iterations_per_lock(10),
+        internal__close_timeout(500),     // milliseconds
+        internal__size_multipart_required(1024*1024), // bytes
         hash(kxxHash_64),
         compression(kLZ4Compression),
         checksum(kCRC32C),
@@ -60,11 +61,16 @@ struct DatabaseOptions {
   // number of iterations done for each locking of the dedicated mutex.
   // This allows to throttle the locking and prevents the starvation
   // of other processes.
-  uint64_t storage__num_iterations_per_lock; 
+  uint64_t internal__num_iterations_per_lock; 
 
   // The time that a closing process will have to wait when flushing the vectors
   // in the Writer Buffer.
-  uint64_t write_buffer__close_timeout;
+  uint64_t internal__close_timeout;
+
+  // Size of an entry value for which using a multipart is required. Below this
+  // size, a byte array will be allocated an the entry will be uncompressed
+  // in it.
+  uint64_t internal__size_multipart_required;
 
 
   // *** Constant options (cannot be changed after the db is created)

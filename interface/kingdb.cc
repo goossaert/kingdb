@@ -40,6 +40,9 @@ Status KingDB::Get(ReadOptions& read_options,
   //    is more data copy than necessary, thus more time wasted
   log::trace("KingDB Get()", "Before Multipart - want_raw_data:%d value_out->is_compressed():%d", want_raw_data, value_out->is_compressed());
   if (want_raw_data == false && value_out->is_compressed()) {
+    if (value_out->size() > db_options_.internal__size_multipart_required) {
+      return Status::MultipartRequired();
+    }
     char* buffer = new char[value_out->size()];
     uint64_t offset = 0;
     MultipartReader mp_reader(read_options, *value_out);

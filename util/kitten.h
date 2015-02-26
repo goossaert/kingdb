@@ -134,7 +134,7 @@ class AllocatedKittenResource: public KittenResource {
  public:
   virtual ~AllocatedKittenResource() {
     //fprintf(stderr, "AllocatedKittenResource::dtor()\n");
-    //delete[] data_;
+    delete[] data_;
   }
 
   virtual char* data() { return data_; }

@@ -21,12 +21,12 @@ namespace kdb {
 class BasicIterator: public Iterator {
  public:
   BasicIterator(ReadOptions& read_options,
-                   StorageEngine *se_readonly,
-                   std::vector<uint32_t>* fileids_iterator)
-      : se_readonly_(se_readonly),
-        read_options_(read_options),
-        snapshot_(nullptr),
-        fileids_iterator_(fileids_iterator) {
+                StorageEngine *se_readonly,
+                std::vector<uint32_t>* fileids_iterator)
+    : se_readonly_(se_readonly),
+      read_options_(read_options),
+      snapshot_(nullptr),
+      fileids_iterator_(fileids_iterator) {
     log::trace("BasicIterator::ctor()", "start");
   }
 
@@ -63,9 +63,10 @@ class BasicIterator: public Iterator {
     log::trace("BasicIterator::Next()", "start");
     std::unique_lock<std::mutex> lock(mutex_);
     if (!is_valid_) return false;
+    status_ = Status::OK();
     Status s;
 
-    while (true) { 
+    while (true) {
       log::trace("BasicIterator::Next()", "loop index_file:[%u] index_location:[%u]", index_fileid_, index_location_);
       if (index_fileid_ >= fileids_iterator_->size()) {
         is_valid_ = false;
@@ -144,6 +145,11 @@ class BasicIterator: public Iterator {
       key_ = key;
       value_ = value;
       index_location_ += 1;
+
+      if (value_.size() > se_readonly_->db_options_.internal__size_multipart_required) {
+        status_ = Status::MultipartRequired();
+      }
+
       return true;
     }
 
@@ -151,11 +157,17 @@ class BasicIterator: public Iterator {
   }
 
   Kitten GetKey() {
+    std::unique_lock<std::mutex> lock(mutex_);
     return key_;
   }
 
   Kitten GetValue() {
+    std::unique_lock<std::mutex> lock(mutex_);
     if (!value_.is_compressed()) return value_;
+
+    if (value_.size() > se_readonly_->db_options_.internal__size_multipart_required) {
+      return Kitten();
+    }
 
     // TODO-36: Uncompression should have to go through a MultipartReader. See
     //          the notes about this TODO in kingdb.cc.
@@ -169,13 +181,18 @@ class BasicIterator: public Iterator {
       memcpy(buffer + offset, part.data(), part.size());
       offset += part.size();
     }
-    kdb::Status s = mp_reader.GetStatus();
-    if (!s.IsOK()) fprintf(stderr, "Error in GetValue(): %s\n", s.ToString().c_str());
+    status_ = mp_reader.GetStatus();
+    if (!status_.IsOK()) log::trace("KingDB Get()", "Error in GetValue(): %s\n", status_.ToString().c_str());
     return Kitten::NewShallowCopyKitten(buffer, value_.size());
   }
 
   MultipartReader GetMultipartValue() {
     return MultipartReader(read_options_, value_);
+  }
+
+  Status GetStatus() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return status_;
   }
 
  private:
@@ -191,6 +208,7 @@ class BasicIterator: public Iterator {
   std::vector<uint64_t> locations_current_;
   bool has_file_;
   bool is_valid_;
+  Status status_;
 
   Kitten key_;
   Kitten value_;

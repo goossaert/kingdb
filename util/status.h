@@ -35,6 +35,8 @@ class Status {
 
   static Status Done() { return Status(kDone); }
 
+  static Status MultipartRequired() { return Status(kMultipartRequired); }
+
   static Status DeleteOrder() { return Status(kDeleteOrder); }
 
   static Status NotFound(const std::string& message1, const std::string& message2="") {
@@ -55,6 +57,7 @@ class Status {
   bool IsInvalidArgument() const { return code() == kInvalidArgument; }
   bool IsIOError() const { return code() == kIOError; }
   bool IsDone() const { return code() == kDone; }
+  bool IsMultipartRequired() const { return code() == kMultipartRequired; }
 
   std::string ToString() const;
 
@@ -72,7 +75,8 @@ class Status {
     kDeleteOrder = 2,
     kInvalidArgument = 3,
     kIOError = 4,
-    kDone = 5
+    kDone = 5,
+    kMultipartRequired = 6
   };
 };
 

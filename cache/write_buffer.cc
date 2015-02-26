@@ -15,7 +15,7 @@ void WriteBuffer::Flush() {
   for (auto i = 0; i < 2; i++) {
     log::debug("LOCK", "2 lock");
     cv_flush_.notify_one();
-    cv_flush_done_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.write_buffer__close_timeout));
+    cv_flush_done_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.internal__close_timeout));
   }
   log::trace("WriteBuffer::Flush()", "end");
 }

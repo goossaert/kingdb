@@ -147,7 +147,7 @@ class MultipartReader {
 
   virtual Status GetPart(Kitten* part) {
     *part = chunk_;
-    return Status::OK();
+    return status_;
   }
 
   CompressorLZ4 compressor_;

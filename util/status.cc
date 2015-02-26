@@ -28,6 +28,12 @@ std::string Status::ToString() const {
       case kIOError:
         type = "IO error: ";
         break;
+      case kDone:
+        type = "Done: ";
+        break;
+      case kMultipartRequired:
+        type = "MultipartRequired: the entry is too large to fit in memory, use the multipart API instead.";
+        break;
       default:
         snprintf(tmp, sizeof(tmp), "Unknown code (%d): ",
                  static_cast<int>(code()));
