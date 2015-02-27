@@ -14,7 +14,9 @@
 namespace kdb {
 
 class MultipartReader;
+class Iterator;
 
+/*
 class Iterator {
  public:
   virtual ~Iterator() {}
@@ -25,6 +27,7 @@ class Iterator {
   virtual Kitten GetValue() = 0;
   virtual MultipartReader GetMultipartValue() = 0;
 };
+*/
 
 
 class Interface {
@@ -80,7 +83,7 @@ class Interface {
                           uint64_t size_value) = 0;
   virtual Status Delete(WriteOptions& write_options, Kitten& key) = 0;
   virtual Interface* NewSnapshot() = 0;
-  virtual Iterator* NewIterator(ReadOptions& read_options) = 0;
+  virtual Iterator NewIterator(ReadOptions& read_options) = 0;
   virtual Status Open() = 0;
   virtual void Close() = 0;
 };

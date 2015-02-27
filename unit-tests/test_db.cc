@@ -363,14 +363,14 @@ TEST(DBTest, SingleThreadSmallEntries) {
     //std::this_thread::sleep_for(std::chrono::milliseconds(10000));
 
     int count_items_end = 0;
-    kdb::Iterator* iterator = db_->NewIterator(read_options_);
-    /*
-    kdb::Iterator iterator;
-    Status s = db_->NewIterator(read_options, &iterator);
-    */
+    kdb::Iterator iterator = db_->NewIterator(read_options_);
+    kdb::Status s = iterator.GetStatus();
+    if (!s.IsOK()) {
+      fprintf(stderr, "Error: %s\n", s.ToString().c_str());
+    }
 
-    for (iterator->Begin(); iterator->IsValid(); iterator->Next()) {
-      kdb::MultipartReader mp_reader = iterator->GetMultipartValue();
+    for (iterator.Begin(); iterator.IsValid(); iterator.Next()) {
+      kdb::MultipartReader mp_reader = iterator.GetMultipartValue();
 
       for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
         kdb::Kitten part;
@@ -405,12 +405,11 @@ TEST(DBTest, SingleThreadSmallEntries) {
     }
 
     //std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-
-    delete iterator;
     
     delete[] buffer_large;
     ASSERT_EQ(count_items_end, num_items);
     //ASSERT_EQ(0,0);
+    iterator.Close();
     Close();
   }
 }

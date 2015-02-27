@@ -94,16 +94,15 @@ int main() {
   std::cout << "done in " << duration << " ms" << std::endl;
 
   kdb::Interface *snapshot = db.NewSnapshot();
-  kdb::Iterator *iterator = snapshot->NewIterator(read_options);
+  kdb::Iterator iterator = snapshot->NewIterator(read_options);
 
   auto count_items = 0;
-  for (iterator->Begin(); iterator->IsValid(); iterator->Next()) {
-    kdb::Kitten key = iterator->GetKey();
-    kdb::Kitten value = iterator->GetValue();
+  for (iterator.Begin(); iterator.IsValid(); iterator.Next()) {
+    kdb::Kitten key = iterator.GetKey();
+    kdb::Kitten value = iterator.GetValue();
     count_items += 1;
   }
 
-  delete iterator;
   delete snapshot;
 
   std::cout << "count items: " << count_items << std::endl;

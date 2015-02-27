@@ -192,7 +192,7 @@ class KingDB: public Interface {
                           uint64_t size_value) override;
   virtual Status Delete(WriteOptions& write_options, Kitten& key) override;
   virtual Interface* NewSnapshot() override;
-  virtual Iterator* NewIterator(ReadOptions& read_options) override;
+  virtual Iterator NewIterator(ReadOptions& read_options) override;
 
   MultipartReader NewMultipartReader(ReadOptions& read_options, Kitten& key) {
     Kitten value;

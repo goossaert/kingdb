@@ -278,12 +278,12 @@ Interface* KingDB::NewSnapshot() {
 }
 
 
-Iterator* KingDB::NewIterator(ReadOptions& read_options) {
-  if (is_closed_) return nullptr;
+Iterator KingDB::NewIterator(ReadOptions& read_options) {
+  if (is_closed_) return Iterator();
   Interface* snapshot = NewSnapshot();
-  Iterator* it = snapshot->NewIterator(read_options);
-  BasicIterator *si = static_cast<BasicIterator*>(it);
-  si->SetParentSnapshot(snapshot);
+  Iterator it = snapshot->NewIterator(read_options);
+  //Iterator *si = static_cast<BasicIterator*>(it);
+  it.SetParentSnapshot(snapshot);
   return it;
 }
 

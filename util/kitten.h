@@ -208,7 +208,7 @@ class Kitten {
  friend class StorageEngine;
  friend class KingDB;
  friend class WriteBuffer;
- friend class BasicIterator;
+ friend class Iterator;
  friend class NetworkTask;
  public:
   Kitten()

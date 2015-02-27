@@ -18,30 +18,64 @@
 
 namespace kdb {
 
-class BasicIterator: public Iterator {
+class Iterator {
  public:
-  BasicIterator(ReadOptions& read_options,
-                StorageEngine *se_readonly,
-                std::vector<uint32_t>* fileids_iterator)
-    : se_readonly_(se_readonly),
-      read_options_(read_options),
+  Iterator()
+    : is_closed_(false),
+      se_readonly_(nullptr),
       snapshot_(nullptr),
-      fileids_iterator_(fileids_iterator) {
-    log::trace("BasicIterator::ctor()", "start");
+      status_(Status::IOError("Invalid iterator")) {
   }
 
-  ~BasicIterator() {
-    if (snapshot_ != nullptr) {
-      delete snapshot_;
+  Iterator(ReadOptions& read_options,
+           StorageEngine *se_readonly,
+           std::vector<uint32_t>* fileids_iterator)
+    : is_closed_(false),
+      se_readonly_(se_readonly),
+      read_options_(read_options),
+      snapshot_(nullptr),
+      fileids_iterator_(fileids_iterator),
+      status_(Status::OK()) {
+    log::trace("Iterator::ctor()", "start");
+    log::trace("Iterator::ctor()", "fileids_iterator_->size():%u", fileids_iterator_->size());
+  }
+
+  ~Iterator() {
+    Close();
+  }
+
+  void Close() {
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (!is_closed_) {
+      is_closed_ = true;
+      if (snapshot_ != nullptr) {
+        delete snapshot_;
+        snapshot_ = nullptr;
+      }
     }
   }
 
+  Iterator(Iterator&& it)
+    : mutex_() {
+    log::trace("StorageEngine::move-ctor()", "start");
+    this->se_readonly_ = it.se_readonly_;
+    this->read_options_ = it.read_options_;
+    this->snapshot_ = it.snapshot_;
+    this->fileids_iterator_ = it.fileids_iterator_;
+    this->is_closed_ = false;
+    it.snapshot_ = nullptr;
+  }
+
   void SetParentSnapshot(Interface *snapshot) {
-    snapshot_ = snapshot; 
+    snapshot_ = snapshot;
   }
 
   void Begin() {
-    log::trace("BasicIterator::Begin()", "start");
+    log::trace("Iterator::Begin()", "start");
+    if (se_readonly_ == nullptr) {
+      is_valid_ = false;
+      return;
+    }
     mutex_.lock();
     fileid_current_ = 0;
     has_file_ = false;
@@ -49,32 +83,33 @@ class BasicIterator: public Iterator {
     is_valid_ = true;
     mutex_.unlock();
     Next();
-    log::trace("BasicIterator::Begin()", "end");
+    log::trace("Iterator::Begin()", "end");
   }
 
   bool IsValid() {
-    log::trace("BasicIterator::IsValid()", "start");
+    log::trace("Iterator::IsValid()", "start");
     std::unique_lock<std::mutex> lock(mutex_);
-    log::trace("BasicIterator::IsValid()", "end");
+    log::trace("Iterator::IsValid()", "end");
     return is_valid_;
   }
 
   bool Next() {
-    log::trace("BasicIterator::Next()", "start");
+    log::trace("Iterator::Next()", "start");
     std::unique_lock<std::mutex> lock(mutex_);
     if (!is_valid_) return false;
     status_ = Status::OK();
     Status s;
 
     while (true) {
-      log::trace("BasicIterator::Next()", "loop index_file:[%u] index_location:[%u]", index_fileid_, index_location_);
+      log::trace("Iterator::Next()", "loop index_file:[%u] index_location:[%u]", index_fileid_, index_location_);
       if (index_fileid_ >= fileids_iterator_->size()) {
+        log::trace("Iterator::Next()", "invalid index_fileid_:[%u] fileids_iterator_->size():[%u]", index_fileid_, fileids_iterator_->size());
         is_valid_ = false;
         break;
       }
 
       if (!has_file_) {
-        log::trace("BasicIterator::Next()", "initialize file");
+        log::trace("Iterator::Next()", "initialize file");
         fileid_current_ = fileids_iterator_->at(index_fileid_);
         filepath_current_ = se_readonly_->GetFilepath(fileid_current_);
         struct stat info;
@@ -105,9 +140,9 @@ class BasicIterator: public Iterator {
         has_file_ = true;
       }
 
-      log::trace("BasicIterator::Next()", "has file");
+      log::trace("Iterator::Next()", "has file");
       if (index_location_ >= locations_current_.size()) {
-        log::trace("BasicIterator::Next()", "index_location_ is out");
+        log::trace("Iterator::Next()", "index_location_ is out");
         has_file_ = false;
         index_fileid_ += 1;
         continue;
@@ -118,7 +153,7 @@ class BasicIterator: public Iterator {
       uint64_t location_current = locations_current_[index_location_];
       Status s = se_readonly_->GetEntry(read_options_, location_current, &key, &value);
       if (!s.IsOK()) {
-        log::trace("BasicIterator::Next()", "GetEntry() failed: %s", s.ToString().c_str());
+        log::trace("Iterator::Next()", "GetEntry() failed: %s", s.ToString().c_str());
         index_location_ += 1;
         continue;
       }
@@ -130,18 +165,18 @@ class BasicIterator: public Iterator {
       uint64_t location_out;
       s = se_readonly_->Get(read_options_, key, &value_alt, &location_out);
       if (!s.IsOK()) {
-        log::trace("BasicIterator::Next()", "Get(): failed: %s", s.ToString().c_str());
+        log::trace("Iterator::Next()", "Get(): failed: %s", s.ToString().c_str());
         index_fileid_ += 1;
         continue;
       }
         
       if (location_current != location_out) {
-        log::trace("BasicIterator::Next()", "Get(): wrong location - 0x%08" PRIx64 " - 0x%08" PRIx64, location_current, location_out);
+        log::trace("Iterator::Next()", "Get(): wrong location - 0x%08" PRIx64 " - 0x%08" PRIx64, location_current, location_out);
         index_location_ += 1;
         continue;
       }
 
-      log::trace("BasicIterator::Next()", "has a valid key/value pair");
+      log::trace("Iterator::Next()", "has a valid key/value pair");
       key_ = key;
       value_ = value;
       index_location_ += 1;
@@ -197,7 +232,7 @@ class BasicIterator: public Iterator {
 
  private:
   StorageEngine *se_readonly_;
-  Interface *snapshot_;
+  Interface* snapshot_;
   ReadOptions read_options_;
   std::mutex mutex_;
   uint32_t fileid_current_;
@@ -209,6 +244,7 @@ class BasicIterator: public Iterator {
   bool has_file_;
   bool is_valid_;
   Status status_;
+  bool is_closed_;
 
   Kitten key_;
   Kitten value_;

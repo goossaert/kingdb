@@ -41,7 +41,7 @@
 namespace kdb {
 
 class StorageEngine {
- friend class BasicIterator;
+ friend class Iterator;
  public:
   StorageEngine(DatabaseOptions db_options,
                 EventManager *event_manager,

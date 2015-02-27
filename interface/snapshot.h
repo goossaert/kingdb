@@ -36,6 +36,7 @@ class Snapshot: public Interface {
   }
 
   virtual ~Snapshot() {
+    log::trace("Snapshot::dtor()", "");
     Close();
   }
 
@@ -44,12 +45,14 @@ class Snapshot: public Interface {
   }
 
   virtual void Close() override {
+    log::trace("Snapshot::Close()", "start");
     std::unique_lock<std::mutex> lock(mutex_close_);
     if (is_closed_) return;
     is_closed_ = true;
     delete fileids_iterator_;
     se_live_->ReleaseSnapshot(snapshot_id_);
     delete se_readonly_;
+    log::trace("Snapshot::Close()", "end");
   }
 
   virtual Status Get(ReadOptions& read_options, Kitten& key, Kitten* value_out) override {
@@ -88,9 +91,8 @@ class Snapshot: public Interface {
     return nullptr;
   }
 
-  virtual Iterator* NewIterator(ReadOptions& read_options) override {
-    Iterator* it = new BasicIterator(read_options, se_readonly_, fileids_iterator_);
-    return it;
+  virtual Iterator NewIterator(ReadOptions& read_options) override {
+    return Iterator(read_options, se_readonly_, fileids_iterator_);
   }
 
  private:

@@ -28,7 +28,7 @@ namespace kdb {
 
 class MultipartReader {
  friend class KingDB;
- friend class BasicIterator;
+ friend class Iterator;
  public:
   ~MultipartReader() {}
  
@@ -190,7 +190,7 @@ class MultipartReader {
 
 class MultipartWriter {
  friend class KingDB;
- friend class BasicIterator;
+ friend class Iterator;
  public:
   ~MultipartWriter() {}
 
