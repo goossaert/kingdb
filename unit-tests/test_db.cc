@@ -330,19 +330,7 @@ TEST(DBTest, SingleThreadSmallEntries) {
     buffer_large[size+1] = '\0';
 
     int num_items = 1000;
-    std::vector<std::string> items;
-    int size_key = 16;
-    
-    for (auto i = 0; i < num_items; i++) {
-      std::stringstream ss;
-      ss << std::setfill ('0') << std::setw (size_key);
-      ss << i;
-      //std::cout << ss.str() << std::endl;
-      items.push_back(ss.str());
-    }
-
     KeyGenerator* kg = new RandomKeyGenerator();
-
     std::map<std::string, std::string> saved_data;
 
     for (auto i = 0; i < num_items; i++) {
@@ -360,8 +348,6 @@ TEST(DBTest, SingleThreadSmallEntries) {
       saved_data[key_str] = value_str;
     }
 
-    //std::this_thread::sleep_for(std::chrono::milliseconds(10000));
-
     int count_items_end = 0;
     kdb::Iterator iterator = db_->NewIterator(read_options_);
     kdb::Status s = iterator.GetStatus();
@@ -375,8 +361,6 @@ TEST(DBTest, SingleThreadSmallEntries) {
       for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
         kdb::Kitten part;
         kdb::Status s = mp_reader.GetPart(&part);
-        part.data();
-        part.size();
       }
 
       kdb::Status s = mp_reader.GetStatus();
@@ -385,34 +369,82 @@ TEST(DBTest, SingleThreadSmallEntries) {
       } else {
         fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
       }
-
-      //fprintf(stderr, "MultipartReader %d\n", count_items_end);
-      /*
-      Kitten key = iterator->GetKey();
-      Kitten value = iterator->GetValue();
-      std::string key_str(key.data(), key.size());
-      if (   value.size() == 100
-          && memcmp(value.data(), saved_data[key_str].c_str(), 100) == 0) {
-        count_items_end += 1;
-      } else {
-        fprintf(stderr, "Read error - size:%d\n", value.size());
-        fprintf(stderr, "Value saved:\n");
-        PrintHex(saved_data[key_str].c_str(), 100);
-        fprintf(stderr, "Value found:\n");
-        PrintHex(value.data(), value.size());
-      }
-      */
     }
-
-    //std::this_thread::sleep_for(std::chrono::milliseconds(2000));
     
     delete[] buffer_large;
     ASSERT_EQ(count_items_end, num_items);
-    //ASSERT_EQ(0,0);
     iterator.Close();
     Close();
   }
 }
+
+
+
+TEST(DBTest, SingleThreadSnapshot) {
+  kdb::Logger::set_current_level("emerg");
+  while (IterateOverOptions()) {
+    Open();
+
+    int size = 100;
+    char *buffer_large = new char[size+1];
+    for (auto i = 0; i < size; i++) {
+      buffer_large[i] = 'a';
+    }
+    buffer_large[size+1] = '\0';
+
+    int num_items = 1000;
+    KeyGenerator* kg = new RandomKeyGenerator();
+    std::map<std::string, std::string> saved_data;
+
+    for (auto i = 0; i < num_items; i++) {
+      std::string key_str = kg->GetKey(0, i, 16);
+      kdb::Kitten key = kdb::Kitten::NewDeepCopyKitten(key_str.c_str(), key_str.size());
+
+      data_generator_->GenerateData(buffer_large, 100);
+      kdb::Kitten value = kdb::Kitten::NewDeepCopyKitten(buffer_large, 100);
+
+      kdb::Status s = db_->Put(write_options_, key, value);
+      if (!s.IsOK()) {
+        fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
+      }
+      std::string value_str(buffer_large, 100);
+      saved_data[key_str] = value_str;
+    }
+
+    int count_items_end = 0;
+    kdb::Snapshot snapshot = db_->NewSnapshot();
+    kdb::Iterator iterator = snapshot.NewIterator(read_options_);
+    kdb::Status s = iterator.GetStatus();
+    if (!s.IsOK()) {
+      fprintf(stderr, "Error: %s\n", s.ToString().c_str());
+    }
+
+    for (iterator.Begin(); iterator.IsValid(); iterator.Next()) {
+      kdb::MultipartReader mp_reader = iterator.GetMultipartValue();
+
+      for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
+        kdb::Kitten part;
+        kdb::Status s = mp_reader.GetPart(&part);
+      }
+
+      kdb::Status s = mp_reader.GetStatus();
+      if (s.IsOK()) {
+        count_items_end += 1;
+      } else {
+        fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
+      }
+    }
+    
+    delete[] buffer_large;
+    ASSERT_EQ(count_items_end, num_items);
+    iterator.Close();
+    snapshot.Close();
+    Close();
+  }
+}
+
+
+
 
 
 

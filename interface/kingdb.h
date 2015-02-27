@@ -191,7 +191,7 @@ class KingDB: public Interface {
                           uint64_t offset_chunk, // TODO: could the offset be handled by the method itself?
                           uint64_t size_value) override;
   virtual Status Delete(WriteOptions& write_options, Kitten& key) override;
-  virtual Interface* NewSnapshot() override;
+  virtual Snapshot NewSnapshot();
   virtual Iterator NewIterator(ReadOptions& read_options) override;
 
   MultipartReader NewMultipartReader(ReadOptions& read_options, Kitten& key) {
@@ -212,6 +212,7 @@ class KingDB: public Interface {
 
 
  private:
+  Interface* NewSnapshotPointer();
   Status Get(ReadOptions& read_options,
              Kitten& key,
              Kitten* value_out,

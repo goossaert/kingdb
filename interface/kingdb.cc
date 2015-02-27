@@ -249,9 +249,38 @@ Status KingDB::Delete(WriteOptions& write_options,
 }
 
 
-Interface* KingDB::NewSnapshot() {
-  if (is_closed_) return nullptr;
+Snapshot KingDB::NewSnapshot() {
+  if (is_closed_) return Snapshot();
   log::trace("KingDB::NewSnapshot()", "start");
+
+  wb_->Flush();
+  uint32_t fileid_end = se_->FlushCurrentFileForSnapshot();
+
+  std::set<uint32_t>* fileids_ignore;
+  uint32_t snapshot_id;
+  Status s = se_->GetNewSnapshotData(&snapshot_id, &fileids_ignore);
+  if (!s.IsOK()) return Snapshot();
+
+  StorageEngine *se_readonly = new StorageEngine(db_options_,
+                                                 nullptr,
+                                                 dbname_,
+                                                 true,
+                                                 fileids_ignore,
+                                                 fileid_end);
+  std::vector<uint32_t> *fileids_iterator = se_readonly->GetFileidsIterator();
+  Snapshot snapshot(db_options_,
+                    dbname_,
+                    se_,
+                    se_readonly,
+                    fileids_iterator,
+                    snapshot_id);
+  return snapshot;
+}
+
+
+Interface* KingDB::NewSnapshotPointer() {
+  if (is_closed_) return nullptr;
+  log::trace("KingDB::NewSnapshotPointer()", "start");
 
   wb_->Flush();
   uint32_t fileid_end = se_->FlushCurrentFileForSnapshot();
@@ -278,9 +307,11 @@ Interface* KingDB::NewSnapshot() {
 }
 
 
+
+
 Iterator KingDB::NewIterator(ReadOptions& read_options) {
   if (is_closed_) return Iterator();
-  Interface* snapshot = NewSnapshot();
+  Interface* snapshot = NewSnapshotPointer();
   Iterator it = snapshot->NewIterator(read_options);
   //Iterator *si = static_cast<BasicIterator*>(it);
   it.SetParentSnapshot(snapshot);

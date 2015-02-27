@@ -93,8 +93,8 @@ int main() {
   uint64_t duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
   std::cout << "done in " << duration << " ms" << std::endl;
 
-  kdb::Interface *snapshot = db.NewSnapshot();
-  kdb::Iterator iterator = snapshot->NewIterator(read_options);
+  kdb::Snapshot snapshot = db.NewSnapshot();
+  kdb::Iterator iterator = snapshot.NewIterator(read_options);
 
   auto count_items = 0;
   for (iterator.Begin(); iterator.IsValid(); iterator.Next()) {
@@ -102,8 +102,6 @@ int main() {
     kdb::Kitten value = iterator.GetValue();
     count_items += 1;
   }
-
-  delete snapshot;
 
   std::cout << "count items: " << count_items << std::endl;
   delete[] buffer_large;

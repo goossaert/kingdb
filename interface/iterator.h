@@ -21,7 +21,7 @@ namespace kdb {
 class Iterator {
  public:
   Iterator()
-    : is_closed_(false),
+    : is_closed_(true),
       se_readonly_(nullptr),
       snapshot_(nullptr),
       status_(Status::IOError("Invalid iterator")) {
@@ -62,7 +62,7 @@ class Iterator {
     this->read_options_ = it.read_options_;
     this->snapshot_ = it.snapshot_;
     this->fileids_iterator_ = it.fileids_iterator_;
-    this->is_closed_ = false;
+    this->is_closed_ = it.is_closed_;
     it.snapshot_ = nullptr;
   }
 

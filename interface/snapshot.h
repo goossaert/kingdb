@@ -19,6 +19,13 @@ namespace kdb {
 
 class Snapshot: public Interface {
  public:
+  Snapshot()
+      : se_live_(nullptr),
+        se_readonly_(nullptr),
+        fileids_iterator_(nullptr),
+        is_closed_(true) {
+  }
+
   Snapshot(const DatabaseOptions& db_options,
            const std::string dbname,
            StorageEngine *se_live,
@@ -31,9 +38,22 @@ class Snapshot: public Interface {
         se_readonly_(se_readonly),
         snapshot_id_(snapshot_id),
         fileids_iterator_(fileids_iterator),
-        is_closed_(false)
-  {
+        is_closed_(false) {
   }
+
+  Snapshot(Snapshot&& s)
+      : mutex_close_() {
+    this->db_options_ = s.db_options_;
+    this->dbname_ = s.dbname_;
+    this->se_live_ = s.se_live_;
+    this->se_readonly_ = s.se_readonly_;
+    this->snapshot_id_ = s.snapshot_id_;
+    this->fileids_iterator_ = s.fileids_iterator_;
+    this->is_closed_ = s.is_closed_;
+    s.fileids_iterator_ = nullptr;
+    s.se_readonly_ = nullptr;
+  }
+
 
   virtual ~Snapshot() {
     log::trace("Snapshot::dtor()", "");
@@ -85,10 +105,6 @@ class Snapshot: public Interface {
 
   virtual Status Delete(WriteOptions& write_options, Kitten& key) override {
     return Status::IOError("Not supported");
-  }
-
-  virtual Interface* NewSnapshot() override {
-    return nullptr;
   }
 
   virtual Iterator NewIterator(ReadOptions& read_options) override {
