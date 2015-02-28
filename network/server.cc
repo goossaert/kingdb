@@ -24,8 +24,8 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   bool is_command_put = false;
   bool is_command_delete = false;
   char *buffer_send = new char[server_options_.size_buffer_send];
-  Kitten buffer;
-  Kitten key;
+  ByteArray buffer;
+  ByteArray key;
   int size_key = 0;
   log::trace("NetworkTask", "ENTER");
   // TODO-7: replace the memory allocation performed for 'key' and 'buffer' by a
@@ -52,7 +52,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
     if (is_new_buffer) {
       log::trace("NetworkTask", "is_new_buffer");
       bytes_received_buffer = 0;
-      buffer = Kitten::NewAllocatedMemoryKitten(server_options_.size_buffer_recv);
+      buffer = ByteArray::NewAllocatedMemoryByteArray(server_options_.size_buffer_recv);
       log::trace("NetworkTask", "allocated");
     }
 
@@ -169,7 +169,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
           }
 
           for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
-            kdb::Kitten part;
+            kdb::ByteArray part;
             kdb::Status s = mp_reader.GetPart(&part);
             if (!s.IsOK()) {
               log::trace("NetworkTask", "Error: MultipartReader - %s", s.ToString().c_str());
@@ -230,7 +230,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       }
     } else if (is_command_put) {
       uint64_t offset_chunk;
-      Kitten chunk = buffer;
+      ByteArray chunk = buffer;
 
       if(bytes_received_total == bytes_received_buffer) {
         // chunk is a first chunk, need to skip all the characters before the value data

@@ -23,7 +23,6 @@
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
-#include "util/kitten.h"
 #include "util/options.h"
 #include "util/file.h"
 #include "interface/iterator.h"
@@ -157,13 +156,13 @@ class KingDB: public Interface {
   // be allocated, a proper error message is returned -- same for the Iterator
   // and Snapshot
 
-  virtual Status Get(ReadOptions& read_options, Kitten& key, Kitten* value_out) override;
+  virtual Status Get(ReadOptions& read_options, ByteArray& key, ByteArray* value_out) override;
 
-  virtual Status Get(ReadOptions& read_options, Kitten& key, std::string* value_out) {
+  virtual Status Get(ReadOptions& read_options, ByteArray& key, std::string* value_out) {
     return Interface::Get(read_options, key, value_out);
   }
 
-  virtual Status Get(ReadOptions& read_options, std::string& key, Kitten* value_out) {
+  virtual Status Get(ReadOptions& read_options, std::string& key, ByteArray* value_out) {
     return Interface::Get(read_options, key, value_out);
   }
 
@@ -171,13 +170,13 @@ class KingDB: public Interface {
     return Interface::Get(read_options, key, value_out);
   }
 
-  virtual Status Put(WriteOptions& write_options, Kitten& key, Kitten& value) override;
+  virtual Status Put(WriteOptions& write_options, ByteArray& key, ByteArray& value) override;
 
-  virtual Status Put(WriteOptions& write_options, Kitten& key, std::string& chunk) {
+  virtual Status Put(WriteOptions& write_options, ByteArray& key, std::string& chunk) {
     return Interface::Put(write_options, key, chunk);
   }
 
-  virtual Status Put(WriteOptions& write_options, std::string& key, Kitten& chunk) {
+  virtual Status Put(WriteOptions& write_options, std::string& key, ByteArray& chunk) {
     return Interface::Put(write_options, key, chunk);
   }
 
@@ -186,16 +185,16 @@ class KingDB: public Interface {
   }
 
   virtual Status PutChunk(WriteOptions& write_options,
-                          Kitten& key,
-                          Kitten& chunk,
+                          ByteArray& key,
+                          ByteArray& chunk,
                           uint64_t offset_chunk, // TODO: could the offset be handled by the method itself?
                           uint64_t size_value) override;
-  virtual Status Delete(WriteOptions& write_options, Kitten& key) override;
+  virtual Status Delete(WriteOptions& write_options, ByteArray& key) override;
   virtual Snapshot NewSnapshot();
   virtual Iterator NewIterator(ReadOptions& read_options) override;
 
-  MultipartReader NewMultipartReader(ReadOptions& read_options, Kitten& key) {
-    Kitten value;
+  MultipartReader NewMultipartReader(ReadOptions& read_options, ByteArray& key) {
+    ByteArray value;
     Status s = Get(read_options, key, &value, true);
     if (!s.IsOK()) {
       return MultipartReader(s);
@@ -205,7 +204,7 @@ class KingDB: public Interface {
   }
 
 
-  MultipartWriter NewMultipartWriter(WriteOptions& write_options, Kitten& key, uint64_t size_value_total) {
+  MultipartWriter NewMultipartWriter(WriteOptions& write_options, ByteArray& key, uint64_t size_value_total) {
     return MultipartWriter(this, write_options, key, size_value_total);
   }
 
@@ -214,13 +213,13 @@ class KingDB: public Interface {
  private:
   Interface* NewSnapshotPointer();
   Status Get(ReadOptions& read_options,
-             Kitten& key,
-             Kitten* value_out,
+             ByteArray& key,
+             ByteArray* value_out,
              bool want_raw_data);
 
   Status PutChunkValidSize(WriteOptions& write_options,
-                           Kitten& key,
-                           Kitten& chunk,
+                           ByteArray& key,
+                           ByteArray& chunk,
                            uint64_t offset_chunk,
                            uint64_t size_value);
 

@@ -33,8 +33,6 @@ extern void PutFixed64(std::string* dst, uint64_t value);
 extern void PutVarint32(std::string* dst, uint32_t value);
 extern void PutVarint64(std::string* dst, uint64_t value);
 
-// Standard Get... routines parse a value from the beginning of a ByteArray
-// and returns the number of bytes that were read from the ByteArray.
 extern int GetVarint32(char* input, uint64_t size, uint32_t* value);
 extern int GetVarint64(char* input, uint64_t size, uint64_t* value);
 

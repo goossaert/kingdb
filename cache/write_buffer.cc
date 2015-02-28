@@ -20,7 +20,7 @@ void WriteBuffer::Flush() {
   log::trace("WriteBuffer::Flush()", "end");
 }
 
-Status WriteBuffer::Get(ReadOptions& read_options, Kitten& key, Kitten* value_out) {
+Status WriteBuffer::Get(ReadOptions& read_options, ByteArray& key, ByteArray* value_out) {
   // TODO: need to fix the way the value is returned here: to create a new
   //       memory space and then return.
   // TODO: make sure the live buffer doesn't need to be protected by a mutex in
@@ -125,15 +125,15 @@ Status WriteBuffer::Get(ReadOptions& read_options, Kitten& key, Kitten* value_ou
 }
 
 
-Status WriteBuffer::Put(WriteOptions& write_options, Kitten& key, Kitten& chunk) {
+Status WriteBuffer::Put(WriteOptions& write_options, ByteArray& key, ByteArray& chunk) {
   //return Write(OrderType::Put, key, value);
   return Status::InvalidArgument("WriteBuffer::Put() is not implemented");
 }
 
 
 Status WriteBuffer::PutChunk(WriteOptions& write_options,
-                             Kitten& key,
-                             Kitten& chunk,
+                             ByteArray& key,
+                             ByteArray& chunk,
                              uint64_t offset_chunk,
                              uint64_t size_value,
                              uint64_t size_value_compressed,
@@ -150,16 +150,16 @@ Status WriteBuffer::PutChunk(WriteOptions& write_options,
 }
 
 
-Status WriteBuffer::Delete(WriteOptions& write_options, Kitten& key) {
-  auto empty = Kitten::NewEmptyKitten();
+Status WriteBuffer::Delete(WriteOptions& write_options, ByteArray& key) {
+  auto empty = ByteArray::NewEmptyByteArray();
   return WriteChunk(write_options, OrderType::Delete, key, empty, 0, 0, 0, 0);
 }
 
 
 Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
                                const OrderType& op,
-                               Kitten& key,
-                               Kitten& chunk,
+                               ByteArray& key,
+                               ByteArray& chunk,
                                uint64_t offset_chunk,
                                uint64_t size_value,
                                uint64_t size_value_compressed,

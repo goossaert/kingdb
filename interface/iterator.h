@@ -10,8 +10,8 @@
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
-#include "util/kitten.h"
 #include "util/options.h"
+#include "util/file.h"
 #include "interface/interface.h"
 #include "interface/multipart.h"
 #include "storage/storage_engine.h"
@@ -149,7 +149,7 @@ class Iterator {
       }
 
       // Get entry at the location
-      Kitten key, value;
+      ByteArray key, value;
       uint64_t location_current = locations_current_[index_location_];
       Status s = se_readonly_->GetEntry(read_options_, location_current, &key, &value);
       if (!s.IsOK()) {
@@ -161,7 +161,7 @@ class Iterator {
       // Get entry for the key found at the location, and continue if the
       // locations mismatch -- i.e. the current entry has been overwritten
       // by a later entry.
-      Kitten value_alt;
+      ByteArray value_alt;
       uint64_t location_out;
       s = se_readonly_->Get(read_options_, key, &value_alt, &location_out);
       if (!s.IsOK()) {
@@ -191,17 +191,17 @@ class Iterator {
     return false;
   }
 
-  Kitten GetKey() {
+  ByteArray GetKey() {
     std::unique_lock<std::mutex> lock(mutex_);
     return key_;
   }
 
-  Kitten GetValue() {
+  ByteArray GetValue() {
     std::unique_lock<std::mutex> lock(mutex_);
     if (!value_.is_compressed()) return value_;
 
     if (value_.size() > se_readonly_->db_options_.internal__size_multipart_required) {
-      return Kitten();
+      return ByteArray();
     }
 
     // TODO-36: Uncompression should have to go through a MultipartReader. See
@@ -210,7 +210,7 @@ class Iterator {
     uint64_t offset = 0;
     MultipartReader mp_reader(read_options_, value_);
     for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
-      Kitten part;
+      ByteArray part;
       mp_reader.GetPart(&part);
       log::trace("KingDB Get()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
       memcpy(buffer + offset, part.data(), part.size());
@@ -218,7 +218,7 @@ class Iterator {
     }
     status_ = mp_reader.GetStatus();
     if (!status_.IsOK()) log::trace("KingDB Get()", "Error in GetValue(): %s\n", status_.ToString().c_str());
-    return Kitten::NewShallowCopyKitten(buffer, value_.size());
+    return ByteArray::NewShallowCopyByteArray(buffer, value_.size());
   }
 
   MultipartReader GetMultipartValue() {
@@ -246,8 +246,8 @@ class Iterator {
   Status status_;
   bool is_closed_;
 
-  Kitten key_;
-  Kitten value_;
+  ByteArray key_;
+  ByteArray value_;
 };
 
 } // end namespace kdb

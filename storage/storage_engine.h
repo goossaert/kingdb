@@ -27,12 +27,11 @@
 
 #include "kingdb/kdb.h"
 #include "util/options.h"
-#include "algorithm/hash.h"
 #include "util/order.h"
-#include "util/kitten.h"
 #include "util/byte_array.h"
-#include "algorithm/crc32c.h"
 #include "util/file.h"
+#include "algorithm/crc32c.h"
+#include "algorithm/hash.h"
 #include "storage/format.h"
 #include "storage/resource_manager.h"
 #include "storage/hstable_manager.h"
@@ -318,8 +317,8 @@ class StorageEngine {
   }
 
   Status Get(ReadOptions& read_options,
-             Kitten& key,
-             Kitten* value_out,
+             ByteArray& key,
+             ByteArray* value_out,
              uint64_t *location_out=nullptr) {
     mutex_write_.lock();
     mutex_read_.lock();
@@ -357,8 +356,8 @@ class StorageEngine {
   // IMPORTANT: value_out must be deleled by the caller
   Status GetWithIndex(ReadOptions& read_options,
                       std::multimap<uint64_t, uint64_t>& index,
-                      Kitten& key,
-                      Kitten* value_out,
+                      ByteArray& key,
+                      ByteArray* value_out,
                       uint64_t *location_out=nullptr) {
     //std::unique_lock<std::mutex> lock(mutex_index_);
     // TODO-26: should not be locking here, instead, should store the hashed key
@@ -374,7 +373,7 @@ class StorageEngine {
     auto rbegin = --range.second;
     auto rend  = --range.first;
     for (auto it = rbegin; it != rend; --it) {
-      Kitten key_temp;
+      ByteArray key_temp;
       Status s = GetEntry(read_options, it->second, &key_temp, value_out);
       //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
       //std::string temp(key_temp->data(), key_temp->size());
@@ -396,8 +395,8 @@ class StorageEngine {
   // IMPORTANT: key_out and value_out must be deleted by the caller
   Status GetEntry(ReadOptions& read_options,
                   uint64_t location,
-                  Kitten* key_out,
-                  Kitten* value_out) {
+                  ByteArray* key_out,
+                  ByteArray* value_out) {
     log::trace("StorageEngine::GetEntry()", "start");
     Status s = Status::OK();
     // TODO: check that the offset falls into the
@@ -414,8 +413,8 @@ class StorageEngine {
     log::trace("StorageEngine::GetEntry()", "location:%" PRIu64 " fileid:%u offset_file:%u filesize:%" PRIu64, location, fileid, offset_file, filesize);
     std::string filepath = hstable_manager_.GetFilepath(fileid); // TODO: optimize here
 
-    Kitten key_temp = Kitten::NewMmappedKitten(filepath, filesize);
-    Kitten value_temp = key_temp;
+    ByteArray key_temp = ByteArray::NewMmappedByteArray(filepath, filesize);
+    ByteArray value_temp = key_temp;
     // NOTE: verify that value_temp.size() is indeed filesize -- verified and
     // the size was 0: should the size of an mmapped byte array be the size of
     // the file by default?
@@ -592,7 +591,7 @@ class StorageEngine {
     std::reverse(index_compaction_se.begin(), index_compaction_se.end());
     ReadOptions read_options;
     for (auto &p: index_compaction_se) {
-      Kitten key, value;
+      ByteArray key, value;
       uint64_t& location = p.second;
       uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
       if (fileid > fileid_end_actual) {
@@ -801,8 +800,8 @@ class StorageEngine {
           Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
 
           log::trace("Compaction()", "order list loop - create byte arrays");
-          Kitten key = Kitten::NewPointerKitten(mmap_location->datafile() + offset_file + size_header, entry_header.size_key);
-          Kitten chunk = Kitten::NewPointerKitten(mmap_location->datafile() + offset_file + size_header + entry_header.size_key, entry_header.size_value_used());
+          ByteArray key = ByteArray::NewPointerByteArray(mmap_location->datafile() + offset_file + size_header, entry_header.size_key);
+          ByteArray chunk = ByteArray::NewPointerByteArray(mmap_location->datafile() + offset_file + size_header + entry_header.size_key, entry_header.size_value_used());
           log::trace("Compaction()", "order list loop - push_back() orders");
 
           // NOTE: Need to recompute the crc32 of the key and value, as entry_header.crc32

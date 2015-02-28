@@ -9,8 +9,13 @@
 
 #include <sys/resource.h>
 #include <sys/statvfs.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <dirent.h>
+#include <memory>
 
 #include "util/status.h"
 
@@ -142,6 +147,64 @@ class FileUtil {
     return ret;
   }
 };
+
+
+class Mmap {
+ public:
+  Mmap(std::string filepath, int64_t filesize)
+      : filepath_(filepath),
+        filesize_(filesize),
+        is_valid_(false) {
+    if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
+      log::emerg("Mmap()::ctor()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
+      return;
+    }
+
+    log::trace("Mmap::ctor()", "open file: ok");
+
+    datafile_ = static_cast<char*>(mmap(0,
+                                       filesize, 
+                                       PROT_READ,
+                                       MAP_SHARED,
+                                       fd_,
+                                       0));
+    if (datafile_ == MAP_FAILED) {
+      log::emerg("Could not mmap() file [%s]: %s", filepath.c_str(), strerror(errno));
+      return;
+    }
+
+    is_valid_ = true;
+  }
+
+  virtual ~Mmap() {
+    Close();
+  }
+
+  void Close() {
+    if (datafile_ != nullptr) {
+      munmap(datafile_, filesize_);
+      close(fd_);
+      datafile_ = nullptr;
+      log::debug("Mmap::~Mmap()", "released mmap on file: [%s]", filepath_.c_str());
+    }
+  }
+
+  char* datafile() { return datafile_; }
+  int64_t filesize() { return filesize_; }
+  bool is_valid_;
+  bool is_valid() { return is_valid_; }
+
+  int fd_;
+  int64_t filesize_;
+  char *datafile_;
+
+  // For debugging
+  const char* filepath() const { return filepath_.c_str(); }
+  std::string filepath_;
+};
+
+
+
 
 } // namespace kdb
 

@@ -26,14 +26,13 @@
 
 #include "kingdb/kdb.h"
 #include "util/options.h"
-#include "algorithm/hash.h"
 #include "util/order.h"
-#include "util/kitten.h"
 #include "util/byte_array.h"
-#include "algorithm/crc32c.h"
 #include "util/file.h"
-#include "storage/resource_manager.h"
+#include "algorithm/crc32c.h"
+#include "algorithm/hash.h"
 #include "storage/format.h"
+#include "storage/resource_manager.h"
 
 
 namespace kdb {

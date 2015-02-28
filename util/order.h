@@ -22,9 +22,7 @@
 #include "util/status.h"
 #include "algorithm/coding.h"
 #include "algorithm/crc32c.h"
-#include "util/byte_array_base.h"
 #include "util/byte_array.h"
-#include "util/kitten.h"
 #include "util/options.h"
 
 namespace kdb {
@@ -35,8 +33,8 @@ struct Order {
   std::thread::id tid;
   WriteOptions write_options;
   OrderType type;
-  Kitten key;
-  Kitten chunk;
+  ByteArray key;
+  ByteArray chunk;
   uint64_t offset_chunk;
   uint64_t size_value;
   uint64_t size_value_compressed;

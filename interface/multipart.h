@@ -19,7 +19,7 @@
 
 #include "util/logger.h"
 #include "util/options.h"
-#include "util/kitten.h"
+#include "util/byte_array.h"
 #include "algorithm/compressor.h"
 #include "algorithm/crc32c.h"
 #include "interface/interface.h"
@@ -97,7 +97,7 @@ class MultipartReader {
                                           &frame,
                                           &size_frame);
         offset_output_ += size_frame;
-        chunk_ = Kitten::NewShallowCopyKitten(data_out, size_out);
+        chunk_ = ByteArray::NewShallowCopyByteArray(data_out, size_out);
 
         if (s.IsDone()) {
           is_valid_stream_ = false;
@@ -145,7 +145,7 @@ class MultipartReader {
     return true;
   }
 
-  virtual Status GetPart(Kitten* part) {
+  virtual Status GetPart(ByteArray* part) {
     *part = chunk_;
     return status_;
   }
@@ -156,7 +156,7 @@ class MultipartReader {
   bool is_compression_disabled_;
  
   Status status_; 
-  Kitten chunk_;
+  ByteArray chunk_;
   bool is_valid_stream_;
 
   bool is_compressed() {
@@ -177,14 +177,14 @@ class MultipartReader {
   MultipartReader(Status s)
     : status_(s) {
   }
-  MultipartReader(ReadOptions& read_options, Kitten& value)
+  MultipartReader(ReadOptions& read_options, ByteArray& value)
     : read_options_(read_options),
       value_(value),
       status_(Status::OK()) {
   }
 
   ReadOptions read_options_;
-  Kitten value_;
+  ByteArray value_;
 };
 
 
@@ -194,13 +194,13 @@ class MultipartWriter {
  public:
   ~MultipartWriter() {}
 
-  Status PutPart(Kitten& part) {
+  Status PutPart(ByteArray& part) {
     Status s = db_->PutChunk(write_options_, key_, part, offset_, size_value_total_);
     if (s.IsOK()) offset_ += part.size();
     return s;
   }
  private:
-  MultipartWriter(Interface* db, WriteOptions& write_options, Kitten& key, uint64_t size_value_total)
+  MultipartWriter(Interface* db, WriteOptions& write_options, ByteArray& key, uint64_t size_value_total)
     : db_(db),
       write_options_(write_options),
       key_(key),
@@ -210,7 +210,7 @@ class MultipartWriter {
 
   Interface* db_;
   WriteOptions write_options_;
-  Kitten key_;
+  ByteArray key_;
   uint64_t size_value_total_;
   uint64_t offset_;
 };

@@ -24,7 +24,6 @@
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
-#include "util/kitten.h"
 #include "util/file.h"
 
 #include "interface/snapshot.h"
@@ -276,8 +275,8 @@ TEST(DBTest, KeysWithNullBytes) {
 
   int num_count_valid = 0;
 
-  //kdb::Kitten kitten = kdb::Kitten::NewDeepCopyKitten("blahblah", 8);
-  //fprintf(stderr, "kitten: %s\n", kitten.ToString().c_str());
+  //kdb::ByteArray byte_array = kdb::ByteArray::NewDeepCopyByteArray("blahblah", 8);
+  //fprintf(stderr, "byte_array: %s\n", byte_array.ToString().c_str());
 
   std::string key1("000000000000key1");
   std::string key2("000000000000key2");
@@ -335,10 +334,10 @@ TEST(DBTest, SingleThreadSmallEntries) {
 
     for (auto i = 0; i < num_items; i++) {
       std::string key_str = kg->GetKey(0, i, 16);
-      kdb::Kitten key = kdb::Kitten::NewDeepCopyKitten(key_str.c_str(), key_str.size());
+      kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
 
       data_generator_->GenerateData(buffer_large, 100);
-      kdb::Kitten value = kdb::Kitten::NewDeepCopyKitten(buffer_large, 100);
+      kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
 
       kdb::Status s = db_->Put(write_options_, key, value);
       if (!s.IsOK()) {
@@ -359,7 +358,7 @@ TEST(DBTest, SingleThreadSmallEntries) {
       kdb::MultipartReader mp_reader = iterator.GetMultipartValue();
 
       for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
-        kdb::Kitten part;
+        kdb::ByteArray part;
         kdb::Status s = mp_reader.GetPart(&part);
       }
 
@@ -398,10 +397,10 @@ TEST(DBTest, SingleThreadSnapshot) {
 
     for (auto i = 0; i < num_items; i++) {
       std::string key_str = kg->GetKey(0, i, 16);
-      kdb::Kitten key = kdb::Kitten::NewDeepCopyKitten(key_str.c_str(), key_str.size());
+      kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
 
       data_generator_->GenerateData(buffer_large, 100);
-      kdb::Kitten value = kdb::Kitten::NewDeepCopyKitten(buffer_large, 100);
+      kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
 
       kdb::Status s = db_->Put(write_options_, key, value);
       if (!s.IsOK()) {
@@ -423,7 +422,7 @@ TEST(DBTest, SingleThreadSnapshot) {
       kdb::MultipartReader mp_reader = iterator.GetMultipartValue();
 
       for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
-        kdb::Kitten part;
+        kdb::ByteArray part;
         kdb::Status s = mp_reader.GetPart(&part);
       }
 
@@ -471,7 +470,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
     //char buffer_full[total_size];
 
     //usleep(10 * 1000000);
-    kdb::Kitten key = kdb::Kitten::NewDeepCopyKitten(key_str.c_str(), key_str.size());
+    kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
     kdb::MultipartWriter mp_writer = db_->NewMultipartWriter(write_options_, key, total_size);
 
     int fd = open("/tmp/kingdb-input", O_WRONLY|O_CREAT|O_TRUNC, 0644);
@@ -488,7 +487,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
         size_current = total_size - i;
       }
 
-      kdb::Kitten value = kdb::Kitten::NewDeepCopyKitten(buffer, size_current);
+      kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer, size_current);
       s = mp_writer.PutPart(value);
 
       write(fd, buffer, size_current);
@@ -503,13 +502,13 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
     usleep(4 * 1000000);
 
     kdb::MultipartReader mp_reader = db_->NewMultipartReader(read_options_, key);
-    Kitten value_out;
+    ByteArray value_out;
 
     uint64_t bytes_read = 0;
     int fd_output = open("/tmp/kingdb-output", O_WRONLY|O_CREAT|O_TRUNC, 0644);
 
     for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
-      Kitten part;
+      ByteArray part;
       Status s = mp_reader.GetPart(&part);
       if (write(fd_output, part.data(), part.size()) < 0) {
         fprintf(stderr, "ClientEmbedded - Couldn't write to output file: [%s]\n", strerror(errno));

@@ -23,7 +23,6 @@
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"
-#include "util/kitten.h"
 
 #include "interface/snapshot.h"
 #include "interface/iterator.h"
@@ -80,8 +79,8 @@ int main() {
 
   std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
   for (auto i = 0; i < num_items; i++) {
-    kdb::Kitten key = kdb::Kitten::NewDeepCopyKitten(items[i].c_str(), items[i].size());
-    kdb::Kitten value = kdb::Kitten::NewDeepCopyKitten(buffer_large, 100);
+    kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(items[i].c_str(), items[i].size());
+    kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
     kdb::Status s = db.PutChunk(write_options,
                                 key,
                                 value,
@@ -98,8 +97,8 @@ int main() {
 
   auto count_items = 0;
   for (iterator.Begin(); iterator.IsValid(); iterator.Next()) {
-    kdb::Kitten key = iterator.GetKey();
-    kdb::Kitten value = iterator.GetValue();
+    kdb::ByteArray key = iterator.GetKey();
+    kdb::ByteArray value = iterator.GetValue();
     count_items += 1;
   }
 

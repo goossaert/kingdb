@@ -7,8 +7,8 @@
 namespace kdb {
 
 Status KingDB::Get(ReadOptions& read_options,
-                   Kitten& key,
-                   Kitten* value_out,
+                   ByteArray& key,
+                   ByteArray* value_out,
                    bool want_raw_data) {
   if (is_closed_) return Status::IOError("The database is not open");
   log::trace("KingDB Get()", "[%s]", key.ToString().c_str());
@@ -47,31 +47,31 @@ Status KingDB::Get(ReadOptions& read_options,
     uint64_t offset = 0;
     MultipartReader mp_reader(read_options, *value_out);
     for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
-      Kitten part;
+      ByteArray part;
       mp_reader.GetPart(&part);
       log::trace("KingDB Get()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
       memcpy(buffer + offset, part.data(), part.size());
       offset += part.size();
     }
-    *value_out = Kitten::NewShallowCopyKitten(buffer, value_out->size());
+    *value_out = ByteArray::NewShallowCopyByteArray(buffer, value_out->size());
   }
 
   return s;
 }
 
-Status KingDB::Get(ReadOptions& read_options, Kitten& key, Kitten* value_out) {
+Status KingDB::Get(ReadOptions& read_options, ByteArray& key, ByteArray* value_out) {
   return Get(read_options, key, value_out, false);
 }
 
 
-Status KingDB::Put(WriteOptions& write_options, Kitten& key, Kitten& chunk) {
+Status KingDB::Put(WriteOptions& write_options, ByteArray& key, ByteArray& chunk) {
   return PutChunk(write_options, key, chunk, 0, chunk.size());
 }
 
 
 Status KingDB::PutChunk(WriteOptions& write_options,
-                        Kitten& key,
-                        Kitten& chunk,
+                        ByteArray& key,
+                        ByteArray& chunk,
                         uint64_t offset_chunk,
                         uint64_t size_value) {
   if (is_closed_) return Status::IOError("The database is not open");
@@ -84,7 +84,7 @@ Status KingDB::PutChunk(WriteOptions& write_options,
   uint64_t size_chunk = chunk.size(); 
   Status s;
   for (uint64_t offset = 0; offset < size_chunk; offset += db_options_.storage__maximum_chunk_size) {
-    Kitten key_new, chunk_new;
+    ByteArray key_new, chunk_new;
     if (offset + db_options_.storage__maximum_chunk_size < chunk.size()) {
       chunk_new = chunk;
       chunk_new.set_offset(offset);
@@ -106,8 +106,8 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 
 
 Status KingDB::PutChunkValidSize(WriteOptions& write_options,
-                                 Kitten& key,
-                                 Kitten& chunk,
+                                 ByteArray& key,
+                                 ByteArray& chunk,
                                  uint64_t offset_chunk,
                                  uint64_t size_value) {
   if (is_closed_) return Status::IOError("The database is not open");
@@ -123,7 +123,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   bool do_compression = true;
   uint64_t size_value_compressed = 0;
   uint64_t offset_chunk_compressed = offset_chunk;
-  Kitten chunk_final;
+  ByteArray chunk_final;
 
   bool is_first_chunk = (offset_chunk == 0);
   bool is_last_chunk = (chunk.size() + offset_chunk == size_value);
@@ -185,7 +185,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     }
 
     if (!s.IsOK()) return s;
-    Kitten chunk_compressed = Kitten::NewShallowCopyKitten(compressed, size_compressed);
+    ByteArray chunk_compressed = ByteArray::NewShallowCopyByteArray(compressed, size_compressed);
 
     log::trace("KingDB::PutChunkValidSize()",
               "[%s] (%" PRIu64 ") compressed size %" PRIu64 " - offset_chunk_compressed %" PRIu64,
@@ -240,7 +240,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 
 
 Status KingDB::Delete(WriteOptions& write_options,
-                      Kitten& key) {
+                      ByteArray& key) {
   if (is_closed_) return Status::IOError("The database is not open");
   log::trace("KingDB::Delete()", "[%s]", key.ToString().c_str());
   Status s = se_->FileSystemStatus();
