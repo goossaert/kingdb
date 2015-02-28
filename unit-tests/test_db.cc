@@ -443,6 +443,31 @@ TEST(DBTest, SingleThreadSnapshot) {
 }
 
 
+std::string compute_external_md5(const char* filepath) {
+  // Compute the md5 of a file using an external source
+  FILE *file;
+  char res[256];
+
+  std::string command("md5 ");
+  command += filepath;
+
+  file = popen(command.c_str(), "r");
+  if (file == NULL) {
+    fprintf(stderr, "compute_external_md5(): %s\n", strerror(errno));
+    exit(1);
+  }
+
+  std::string ret;
+  while (fgets(res, sizeof(res), file) != NULL) {
+    ret = std::string(res);
+  }
+
+  std::size_t pos = ret.find("=");
+  std::string md5 = ret.substr(pos);
+
+  pclose(file);
+  return md5;
+}
 
 
 
@@ -499,6 +524,8 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
 
     close(fd);
 
+    std::string md5_input = compute_external_md5("/tmp/kingdb-input");
+
     usleep(4 * 1000000);
 
     kdb::MultipartReader mp_reader = db_->NewMultipartReader(read_options_, key);
@@ -522,8 +549,12 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
       fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
     }
     close(fd_output);
-
     ASSERT_EQ(s.IsOK(), true);
+
+    std::string md5_output = compute_external_md5("/tmp/kingdb-output");
+    bool is_md5_valid = (md5_input == md5_output);
+    ASSERT_EQ(is_md5_valid, true);
+
     Close();
   }
 }
