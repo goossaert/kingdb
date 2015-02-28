@@ -24,7 +24,6 @@
 #include <string>
 #include "algorithm/endian.h"
 #include "util/status.h"
-#include "util/byte_array_base.h"
 
 namespace kdb {
 
@@ -36,8 +35,8 @@ extern void PutVarint64(std::string* dst, uint64_t value);
 
 // Standard Get... routines parse a value from the beginning of a ByteArray
 // and returns the number of bytes that were read from the ByteArray.
-extern int GetVarint32(ByteArray* input, uint32_t* value);
-extern int GetVarint64(ByteArray* input, uint64_t* value);
+extern int GetVarint32(char* input, uint64_t size, uint32_t* value);
+extern int GetVarint64(char* input, uint64_t size, uint64_t* value);
 
 // Pointer-based variants of GetVarint...  These either store a value
 // in *v and return a pointer just past the parsed value, or return

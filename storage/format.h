@@ -21,8 +21,6 @@
 #include "util/status.h"
 #include "algorithm/coding.h"
 #include "algorithm/crc32c.h"
-#include "util/byte_array_base.h"
-#include "util/byte_array.h"
 #include "util/options.h"
 
 namespace kdb {
@@ -147,7 +145,11 @@ struct EntryHeader {
     }
   }
 
-  static Status DecodeFrom(const DatabaseOptions& db_options, const char* buffer_in, uint64_t num_bytes_max, struct EntryHeader *output, uint32_t *num_bytes_read) {
+  static Status DecodeFrom(const DatabaseOptions& db_options,
+                           const char* buffer_in,
+                           uint64_t num_bytes_max,
+                           struct EntryHeader *output,
+                           uint32_t *num_bytes_read) {
     /*
     // Dumb serialization for debugging
     log::trace("EntryHeader::DecodeFrom", "start num_bytes_max:%" PRIu64 " - sizeof(EntryHeader):%d", num_bytes_max, sizeof(struct EntryHeader));
@@ -159,46 +161,55 @@ struct EntryHeader {
     */
 
     int length;
-    char *buffer = const_cast<char*>(buffer_in);
-    SimpleByteArray array(buffer, num_bytes_max);
+    char *ptr = const_cast<char*>(buffer_in);
+    int size = num_bytes_max;
 
-    GetFixed32(array.data(), &(output->crc32));
-    array.AddOffset(4);
+    GetFixed32(ptr, &(output->crc32));
+    ptr += 4;
+    size -= 4;
 
-    length = GetVarint32(&array, &(output->flags));
+    length = GetVarint32(ptr, size, &(output->flags));
     if (length == -1) return Status::IOError("Decoding error");
-    array.AddOffset(length);
+    ptr += length;
+    size -= length;
 
-    length = GetVarint64(&array, &(output->size_key));
+    length = GetVarint64(ptr, size, &(output->size_key));
     if (length == -1) return Status::IOError("Decoding error");
-    array.AddOffset(length);
+    ptr += length;
+    size -= length;
 
-    length = GetVarint64(&array, &(output->size_value));
+    length = GetVarint64(ptr, size, &(output->size_value));
     if (length == -1) return Status::IOError("Decoding error");
-    array.AddOffset(length);
+    ptr += length;
+    size -= length;
 
     if (db_options.compression.type != kNoCompression) {
-      GetFixed64(array.data(), &(output->size_value_compressed));
-      array.AddOffset(8);
-      length = GetVarint64(&array, &(output->size_padding));
+      GetFixed64(ptr, &(output->size_value_compressed));
+      ptr += 8;
+      size -= 8;
+      length = GetVarint64(ptr, size, &(output->size_padding));
       if (length == -1) return Status::IOError("Decoding error");
-      array.AddOffset(length);
+      ptr += length;
+      size -= length;
     } else {
       output->size_value_compressed = 0;
       output->size_padding = 0;
     }
 
-    if (array.size() < 8) return Status::IOError("Decoding error");
-    GetFixed64(array.data(), &(output->hash));
-    array.AddOffset(8);
+    if (size < 8) return Status::IOError("Decoding error");
+    GetFixed64(ptr, &(output->hash));
+    ptr += 8;
+    size -= 8;
 
-    *num_bytes_read = num_bytes_max - array.size();
+    *num_bytes_read = num_bytes_max - size;
     output->size_header_serialized = *num_bytes_read;
     //log::trace("EntryHeader::DecodeFrom", "size:%u", *num_bytes_read);
     return Status::OK();
   }
 
-  static uint32_t EncodeTo(const DatabaseOptions& db_options, const struct EntryHeader *input, char* buffer) {
+  static uint32_t EncodeTo(const DatabaseOptions& db_options,
+                           const struct EntryHeader *input,
+                           char* buffer) {
     /*
     // Dumb serialization for debugging
     struct EntryHeader *input_noncast = const_cast<struct EntryHeader*>(input);
@@ -295,7 +306,9 @@ struct HSTableHeader {
     return false;
   }
 
-  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct HSTableHeader *output) {
+  static Status DecodeFrom(const char* buffer_in,
+                           uint64_t num_bytes_max,
+                           struct HSTableHeader *output) {
     if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
     GetFixed32(buffer_in     , &(output->crc32));
     GetFixed32(buffer_in +  4, &(output->version_data_format_major));
@@ -358,7 +371,9 @@ struct HSTableFooter {
     flags |= kHasInvalidEntries;
   }
 
-  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct HSTableFooter *output) {
+  static Status DecodeFrom(const char* buffer_in,
+                           uint64_t num_bytes_max,
+                           struct HSTableFooter *output) {
     if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
     GetFixed32(buffer_in,      &(output->filetype));
     GetFixed32(buffer_in +  4, &(output->flags));
@@ -369,7 +384,8 @@ struct HSTableFooter {
     return Status::OK();
   }
 
-  static uint32_t EncodeTo(const struct HSTableFooter *input, char* buffer) {
+  static uint32_t EncodeTo(const struct HSTableFooter *input,
+                           char* buffer) {
     EncodeFixed32(buffer,      input->filetype);
     EncodeFixed32(buffer +  4, input->flags);
     EncodeFixed64(buffer +  8, input->offset_indexes);
@@ -389,20 +405,25 @@ struct OffsetArrayRow {
   uint64_t hashed_key;
   uint32_t offset_entry;
 
-  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct OffsetArrayRow *output, uint32_t *num_bytes_read) {
+  static Status DecodeFrom(const char* buffer_in,
+                           uint64_t num_bytes_max,
+                           struct OffsetArrayRow *output,
+                           uint32_t *num_bytes_read) {
     int length;
-    char *buffer = const_cast<char*>(buffer_in);
-    SimpleByteArray array(buffer, num_bytes_max);
+    char *ptr = const_cast<char*>(buffer_in);
+    int size = num_bytes_max;
 
-    length = GetVarint64(&array, &(output->hashed_key));
+    length = GetVarint64(ptr, size, &(output->hashed_key));
     if (length == -1) return Status::IOError("Decoding error");
-    array.AddOffset(length);
+    ptr += length;
+    size -= length;
 
-    length = GetVarint32(&array, &(output->offset_entry));
+    length = GetVarint32(ptr, size, &(output->offset_entry));
     if (length == -1) return Status::IOError("Decoding error");
-    array.AddOffset(length);
+    ptr += length;
+    size -= length;
 
-    *num_bytes_read = num_bytes_max - array.size();
+    *num_bytes_read = num_bytes_max - size;
     return Status::OK();
   }
 
@@ -416,7 +437,9 @@ struct OffsetArrayRow {
 
 
 struct DatabaseOptionEncoder {
-  static Status DecodeFrom(const char* buffer_in, uint64_t num_bytes_max, struct DatabaseOptions *output) {
+  static Status DecodeFrom(const char* buffer_in,
+                           uint64_t num_bytes_max,
+                           struct DatabaseOptions *output) {
     if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
 
     uint32_t crc32_computed = crc32c::Value(buffer_in + 4, GetFixedSize() - 4);

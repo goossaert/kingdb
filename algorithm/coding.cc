@@ -159,9 +159,9 @@ const char* GetVarint32PtrFallback(const char* p,
   return NULL;
 }
 
-int GetVarint32(ByteArray* input, uint32_t* value) {
-  const char* p = input->data();
-  const char* limit = p + input->size();
+int GetVarint32(char* data, uint64_t size, uint32_t* value) {
+  const char* p = data;
+  const char* limit = p + size;
   const char* q = GetVarint32Ptr(p, limit, value);
   if (q == NULL) {
     return -1;
@@ -187,9 +187,9 @@ const char* GetVarint64Ptr(const char* p, const char* limit, uint64_t* value) {
   return NULL;
 }
 
-int GetVarint64(ByteArray* input, uint64_t* value) {
-  const char* p = input->data();
-  const char* limit = p + input->size();
+int GetVarint64(char* data, uint64_t size, uint64_t* value) {
+  const char* p = data;
+  const char* limit = p + size;
   const char* q = GetVarint64Ptr(p, limit, value);
   if (q == NULL) {
     return -1;
