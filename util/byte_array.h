@@ -42,8 +42,18 @@ class ByteArrayResource {
 class MmappedByteArrayResource: public ByteArrayResource {
  friend class ByteArray;
  public:
+  MmappedByteArrayResource(std::string& filepath, uint64_t filesize)
+    : data_(nullptr),
+      size_(0),
+      size_compressed_(0),
+      mmap_(filepath, filesize) {
+    if (mmap_.is_valid()) {
+      data_ = mmap_.datafile(); 
+      size_ = mmap_.filesize(); 
+    }
+  }
+
   virtual ~MmappedByteArrayResource() {
-    //fprintf(stderr, "MmappedByteArrayResource::dtor()\n");
   }
 
   virtual char* data() { return data_; }
@@ -54,18 +64,6 @@ class MmappedByteArrayResource: public ByteArrayResource {
   virtual const uint64_t size_compressed_const() { return size_compressed_; }
 
  private:
-  MmappedByteArrayResource(std::string& filepath, uint64_t filesize)
-    : data_(nullptr),
-      size_(0),
-      size_compressed_(0),
-      mmap_(filepath, filesize) {
-    if (mmap_.is_valid()) {
-      data_ = mmap_.datafile(); 
-      size_ = mmap_.filesize(); 
-    }
-    //fprintf(stderr, "MmappedByteArrayResource::ctor()\n"); 
-  }
-
   Mmap mmap_;
   char *data_;
   uint64_t size_;
@@ -76,19 +74,6 @@ class MmappedByteArrayResource: public ByteArrayResource {
 class AllocatedByteArrayResource: public ByteArrayResource {
  friend class ByteArray;
  public:
-  virtual ~AllocatedByteArrayResource() {
-    //fprintf(stderr, "AllocatedByteArrayResource::dtor()\n");
-    delete[] data_;
-  }
-
-  virtual char* data() { return data_; }
-  virtual const char* data_const() { return data_; }
-  virtual uint64_t size() { return size_; }
-  virtual const uint64_t size_const() { return size_; }
-  virtual uint64_t size_compressed() { return size_compressed_; }
-  virtual const uint64_t size_compressed_const() { return size_compressed_; }
-
- private:
   AllocatedByteArrayResource(char *data, uint64_t size, bool deep_copy)
     : data_(nullptr),
       size_(0),
@@ -101,7 +86,6 @@ class AllocatedByteArrayResource: public ByteArrayResource {
       size_ = size;
       data_ = data;
     }
-    //fprintf(stderr, "AllocatedByteArrayResource::ctor()\n"); 
   }
 
   AllocatedByteArrayResource(uint64_t size)
@@ -112,6 +96,18 @@ class AllocatedByteArrayResource: public ByteArrayResource {
     data_ = new char[size_];
   }
 
+  virtual ~AllocatedByteArrayResource() {
+    delete[] data_;
+  }
+
+  virtual char* data() { return data_; }
+  virtual const char* data_const() { return data_; }
+  virtual uint64_t size() { return size_; }
+  virtual const uint64_t size_const() { return size_; }
+  virtual uint64_t size_compressed() { return size_compressed_; }
+  virtual const uint64_t size_compressed_const() { return size_compressed_; }
+
+ private:
   char *data_;
   uint64_t size_;
   uint64_t size_compressed_;
@@ -121,6 +117,11 @@ class AllocatedByteArrayResource: public ByteArrayResource {
 class PointerByteArrayResource: public ByteArrayResource {
  friend class ByteArray;
  public:
+  PointerByteArrayResource(const char *data, uint64_t size)
+    : size_(size),
+      size_compressed_(0),
+      data_(data) {
+  }
   virtual ~PointerByteArrayResource() {}
 
   virtual char* data() { return const_cast<char*>(data_); }
@@ -129,14 +130,8 @@ class PointerByteArrayResource: public ByteArrayResource {
   virtual const uint64_t size_const() { return size_; }
   virtual uint64_t size_compressed() { return size_compressed_; }
   virtual const uint64_t size_compressed_const() { return size_compressed_; }
-
+ 
  private:
-  PointerByteArrayResource(const char *data, uint64_t size)
-    : size_(size),
-      size_compressed_(0),
-      data_(data) {
-  }
-
   const char *data_;
   uint64_t size_;
   uint64_t size_compressed_;
@@ -177,7 +172,7 @@ class ByteArray {
 
   static ByteArray NewShallowCopyByteArray(char* data, uint64_t size) {
     ByteArray byte_array;
-    byte_array.resource_ = std::shared_ptr<ByteArrayResource>(new AllocatedByteArrayResource(data, size, false));
+    byte_array.resource_ = std::make_shared<AllocatedByteArrayResource>(data, size, false);
     byte_array.size_ = size;
     return byte_array;
   }
@@ -185,7 +180,7 @@ class ByteArray {
   static ByteArray NewDeepCopyByteArray(const char* data, uint64_t size) {
     char* data_non_const = const_cast<char*>(data);
     ByteArray byte_array;
-    byte_array.resource_ = std::shared_ptr<ByteArrayResource>(new AllocatedByteArrayResource(data_non_const, size, true));
+    byte_array.resource_ = std::make_shared<AllocatedByteArrayResource>(data_non_const, size, true);
     byte_array.size_ = size;
     return byte_array;
   }
@@ -196,14 +191,14 @@ class ByteArray {
 
   static ByteArray NewAllocatedMemoryByteArray(uint64_t size) {
     ByteArray byte_array;
-    byte_array.resource_ = std::shared_ptr<ByteArrayResource>(new AllocatedByteArrayResource(size));
+    byte_array.resource_ = std::make_shared<AllocatedByteArrayResource>(size);
     byte_array.size_ = size;
     return byte_array;
   }
 
   static ByteArray NewMmappedByteArray(std::string& filepath, uint64_t filesize) {
     ByteArray byte_array;
-    byte_array.resource_ = std::shared_ptr<ByteArrayResource>(new MmappedByteArrayResource(filepath, filesize));
+    byte_array.resource_ = std::make_shared<MmappedByteArrayResource>(filepath, filesize);
     byte_array.size_ = filesize;
     return byte_array;
   }
@@ -216,7 +211,7 @@ class ByteArray {
 
   static ByteArray NewPointerByteArray(const char* data, uint64_t size) {
     ByteArray byte_array;
-    byte_array.resource_ = std::shared_ptr<ByteArrayResource>(new PointerByteArrayResource(data, size));
+    byte_array.resource_ = std::make_shared<PointerByteArrayResource>(data, size);
     byte_array.size_ = size;
     return byte_array;
   }
