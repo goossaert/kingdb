@@ -23,7 +23,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   bool is_command_get = false;
   bool is_command_put = false;
   bool is_command_delete = false;
-  char *buffer_send = new char[server_options_.size_buffer_send];
+  char *buffer_send = new char[server_options_.internal__size_buffer_send];
   ByteArray buffer;
   ByteArray key;
   int size_key = 0;
@@ -158,8 +158,8 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
 
         if (s.IsOK()) {
           log::trace("NetworkTask", "GET: found");
-          int ret = snprintf(buffer_send, server_options_.size_buffer_send, "VALUE %s 0 %" PRIu64 "\r\n", buffer.ToString().c_str(), mp_reader.size());
-          if (ret < 0 || ret >= server_options_.size_buffer_send) {
+          int ret = snprintf(buffer_send, server_options_.internal__size_buffer_send, "VALUE %s 0 %" PRIu64 "\r\n", buffer.ToString().c_str(), mp_reader.size());
+          if (ret < 0 || ret >= server_options_.internal__size_buffer_send) {
             log::emerg("NetworkTask", "Network send buffer is too small"); 
           }
           log::trace("NetworkTask", "GET: buffer_send [%s]", buffer_send);

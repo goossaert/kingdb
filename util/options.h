@@ -205,12 +205,18 @@ struct WriteOptions {
 };
 
 struct ServerOptions {
-  ServerOptions() {}
+  ServerOptions()
+    : internal__size_buffer_send(1024) {
+  }
+
+  // *** Internal options
+  uint64_t internal__size_buffer_send;
+
   uint32_t interface__memcached_port;
   uint32_t listen_backlog;
   uint32_t num_threads;
   uint64_t size_buffer_recv;
-  uint64_t size_buffer_send;
+
 
   // TODO: change size-buffer-recv to recv-socket-buffer-size ?
   // TODO: add a max-connections parameter?
@@ -219,9 +225,6 @@ struct ServerOptions {
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "server.size-buffer-recv", "64KB", &server_options.size_buffer_recv, false,
                          "Size of the buffer used to receive data from the network. Each thread of the server has one such buffer."));
-    parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "server.size-buffer-send", "1KB", &server_options.size_buffer_send, false,
-                         "Size of send buffer."));
     parser.AddParameter(new kdb::UnsignedInt32Parameter(
                          "server.listen-backlog", "150", &server_options.listen_backlog, false,
                          "Size of the listen() backlog."));

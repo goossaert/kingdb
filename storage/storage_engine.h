@@ -335,14 +335,11 @@ class StorageEngine {
     if (!has_compaction_index) {
       s = GetWithIndex(read_options, index_, key, value_out, location_out);
     } else {
-      // TODO-35: fix bug in the calls to GetWithIndex() -- if the first call
-      // returns NotFound() because the entry was deleted, then the second call
-      // should not be made.
       s = GetWithIndex(read_options, index_compaction_, key, value_out, location_out);
-      if (!s.IsOK()) s = GetWithIndex(read_options, index_, key, value_out, location_out);
+      if (!s.IsOK() && !s.IsDeleteOrder()) {
+        s = GetWithIndex(read_options, index_, key, value_out, location_out);
+      }
     }
-
-    // TODO: return uncompressed entry if needed
 
     mutex_read_.lock();
     num_readers_ -= 1;
@@ -378,11 +375,7 @@ class StorageEngine {
       //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
       //std::string temp(key_temp->data(), key_temp->size());
       //log::trace("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
-      if (s.IsOK() && key_temp == key) {
-        // NOTE: should this be testing (s.IsOK() || s.IsDeleteOrder()) ?
-        if (s.IsDeleteOrder()) {
-          s = Status::NotFound("Unable to find the entry in the storage engine (remove order)");
-        }
+      if ((s.IsOK() || s.IsDeleteOrder()) && key_temp == key) {
         log::trace("StorageEngine::GetWithIndex()", "Entry [%s] found at location: 0x%08" PRIx64, key.ToString().c_str(), it->second);
         if (location_out != nullptr) *location_out = it->second;
         return s;
