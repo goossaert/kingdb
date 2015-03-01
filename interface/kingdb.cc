@@ -75,6 +75,11 @@ Status KingDB::PutChunk(WriteOptions& write_options,
                         uint64_t offset_chunk,
                         uint64_t size_value) {
   if (is_closed_) return Status::IOError("The database is not open");
+
+  if (offset_chunk + chunk.size() > size_value) {
+    return Status::IOError("Attempted write beyond the total value size, aborting write.");
+  }
+
   if (size_value <= db_options_.storage__maximum_chunk_size) {
     return PutChunkValidSize(write_options, key, chunk, offset_chunk, size_value);
   }

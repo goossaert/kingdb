@@ -167,35 +167,44 @@ class DBTest {
     write_options_ = WriteOptions();
 
     if (index_db_options_ == 0) {
+      test_purpose_ = "Incompressible data with LZ4 compression enabled";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
     } else if (index_db_options_ == 1) {
+      test_purpose_ = "Compressible data with LZ4 compression enabled";
       data_generator_ = new CompressibleDataGenerator();
-      db_options_.compression.type = kNoCompression;
+      db_options_.compression.type = kLZ4Compression;
     } else if (index_db_options_ == 2) {
+      test_purpose_ = "Compression disabled";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kNoCompression;
     } else if (index_db_options_ == 3) {
+      test_purpose_ = "64-bit MurmurHash3";
       data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.storage__hashing_algorithm = kMurmurHash3_64;
     } else if (index_db_options_ == 4) {
+      test_purpose_ = "Checksum verification with incompressible data";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       read_options_.verify_checksums = true;
     } else if (index_db_options_ == 5) {
+      test_purpose_ = "Checksum verification with compressible data";
       data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       read_options_.verify_checksums = true;
     } else if (index_db_options_ == 6) {
+      test_purpose_ = "Checksum verification with compression disabled";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kNoCompression;
       read_options_.verify_checksums = true;
     } else if (index_db_options_ == 7) {
+      test_purpose_ = "Synced writes";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       write_options_.sync = true;
     } else if (index_db_options_ == 8) {
+      test_purpose_ = "Small-sized HSTables with compression disabled";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kNoCompression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
@@ -203,6 +212,7 @@ class DBTest {
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
     } else if (index_db_options_ == 9) {
+      test_purpose_ = "Small-sized HSTables with incompressible data and LZ4 compression";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
@@ -210,6 +220,7 @@ class DBTest {
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
     } else if (index_db_options_ == 10) {
+      test_purpose_ = "Small-sized HSTables with compressible data and LZ4 compression";
       data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
@@ -217,10 +228,12 @@ class DBTest {
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
     } else if (index_db_options_ == 11) {
+      test_purpose_ = "Blocking mode for Write Buffer (incompressible data with LZ4 compression enabled)";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
     } else if (index_db_options_ == 12) {
+      test_purpose_ = "Blocking mode for Write Buffer (compressible data with LZ4 compression enabled)";
       data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeBlocking;
@@ -228,7 +241,7 @@ class DBTest {
       return false;
     }
 
-    fprintf(stdout, "Database Options: Stage %d\n", index_db_options_);
+    fprintf(stdout, "Database Options: Stage %d - %s\n", index_db_options_, test_purpose_.c_str());
     index_db_options_ += 1;
     return true;
   }
@@ -259,6 +272,7 @@ class DBTest {
 
 
   kdb::KingDB* db_;
+  std::string test_purpose_;
   DataGenerator *data_generator_;
   std::string dbname_;
   DatabaseOptions db_options_;
