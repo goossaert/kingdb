@@ -195,6 +195,9 @@ class MultipartWriter {
   ~MultipartWriter() {}
 
   Status PutPart(ByteArray& part) {
+    if (offset_ + part.size() > size_value_total_) {
+      return Status::IOError("Attempted write beyond the total value size, aborting write.");
+    }
     Status s = db_->PutChunk(write_options_, key_, part, offset_, size_value_total_);
     if (s.IsOK()) offset_ += part.size();
     return s;
