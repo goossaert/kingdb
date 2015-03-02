@@ -249,6 +249,79 @@ struct EntryFooter {
   uint32_t crc32;
 };
 
+
+struct DatabaseOptionEncoder {
+  static Status DecodeFrom(const char* buffer_in,
+                           uint64_t num_bytes_max,
+                           struct DatabaseOptions *output) {
+    if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
+
+    uint32_t crc32_computed = crc32c::Value(buffer_in + 4, GetFixedSize() - 4);
+    uint32_t crc32_stored; 
+    GetFixed32(buffer_in, &crc32_stored);
+    if (crc32_computed != crc32_stored) return Status::IOError("Invalid checksum");
+
+    uint32_t version_data_format_major, version_data_format_minor;
+    GetFixed32(buffer_in + 20, &version_data_format_major);
+    GetFixed32(buffer_in + 24, &version_data_format_minor);
+    if (   version_data_format_major != kVersionDataFormatMajor
+        || version_data_format_minor != kVersionDataFormatMinor) {
+      return Status::IOError("Data format version not supported");
+    }
+
+    uint32_t hash, compression_type, checksum_type;
+    GetFixed64(buffer_in + 28, &(output->storage__hstable_size));
+    GetFixed32(buffer_in + 36, &hash);
+    GetFixed32(buffer_in + 40, &compression_type);
+    GetFixed32(buffer_in + 44, &checksum_type);
+    if (hash == 0x0) {
+      output->hash = kMurmurHash3_64;
+    } else if (hash == 0x1) {
+      output->hash = kxxHash_64;
+    } else {
+      return Status::IOError("Unknown hash type");
+    }
+
+    if (compression_type == 0x0) {
+      output->compression.type = kNoCompression;
+    } else if (compression_type == 0x1) {
+      output->compression.type = kLZ4Compression;
+    } else {
+      return Status::IOError("Unknown compression type");
+    }
+
+    if (compression_type == 0x1) {
+      output->checksum = kCRC32C;
+    } else {
+      return Status::IOError("Unknown checksum type");
+    }
+
+    return Status::OK();
+  }
+
+  static uint32_t EncodeTo(const struct DatabaseOptions *input, char* buffer) {
+    EncodeFixed32(buffer +  4, kVersionMajor);
+    EncodeFixed32(buffer +  8, kVersionMinor);
+    EncodeFixed32(buffer + 12, kVersionRevision);
+    EncodeFixed32(buffer + 16, kVersionBuild);
+    EncodeFixed32(buffer + 20, kVersionDataFormatMajor);
+    EncodeFixed32(buffer + 24, kVersionDataFormatMinor);
+    EncodeFixed64(buffer + 28, input->storage__hstable_size);
+    EncodeFixed32(buffer + 36, (uint32_t)input->hash);
+    EncodeFixed32(buffer + 40, (uint32_t)input->compression.type);
+    EncodeFixed32(buffer + 44, (uint32_t)input->checksum);
+    uint32_t crc32 = crc32c::Value(buffer + 4, GetFixedSize() - 4);
+    EncodeFixed32(buffer, crc32);
+    return GetFixedSize();
+  }
+
+  static uint32_t GetFixedSize() {
+    return 48; // in bytes
+  }
+
+};
+
+
 enum FileType {
   kUnknownType            = 0x0,
   kUncompactedRegularType = 0x1,
@@ -308,7 +381,8 @@ struct HSTableHeader {
 
   static Status DecodeFrom(const char* buffer_in,
                            uint64_t num_bytes_max,
-                           struct HSTableHeader *output) {
+                           struct HSTableHeader *output,
+                           struct DatabaseOptions *db_options_out=nullptr) {
     if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
     GetFixed32(buffer_in     , &(output->crc32));
     GetFixed32(buffer_in +  4, &(output->version_data_format_major));
@@ -318,17 +392,21 @@ struct HSTableHeader {
     uint32_t crc32_computed = crc32c::Value(buffer_in + 4, 20);
     if (!output->IsFileVersionSupported()) return Status::IOError("Data format version not supported");
     if (crc32_computed != output->crc32)   return Status::IOError("Invalid checksum");
-    return Status::OK();
+
+    if (db_options_out == nullptr) return Status::OK();
+    Status s = DatabaseOptionEncoder::DecodeFrom(buffer_in + GetFixedSize(), num_bytes_max - GetFixedSize(), db_options_out);
+    return s;
   }
 
-  static uint32_t EncodeTo(const struct HSTableHeader *input, char* buffer) {
+  static uint32_t EncodeTo(const struct HSTableHeader *input, const struct DatabaseOptions* db_options, char* buffer) {
     EncodeFixed32(buffer +  4, kVersionDataFormatMajor);
     EncodeFixed32(buffer +  8, kVersionDataFormatMinor);
     EncodeFixed32(buffer + 12, input->filetype);
     EncodeFixed64(buffer + 16, input->timestamp);
     uint32_t crc32 = crc32c::Value(buffer + 4, 20);
     EncodeFixed32(buffer, crc32);
-    return GetFixedSize();
+    int size_db_options = DatabaseOptionEncoder::EncodeTo(db_options, buffer + GetFixedSize());
+    return GetFixedSize() + size_db_options;
   }
 
   static uint32_t GetFixedSize() {
@@ -433,78 +511,6 @@ struct OffsetArrayRow {
     ptr = EncodeVarint32(ptr, input->offset_entry);
     return (ptr - buffer);
   }
-};
-
-
-struct DatabaseOptionEncoder {
-  static Status DecodeFrom(const char* buffer_in,
-                           uint64_t num_bytes_max,
-                           struct DatabaseOptions *output) {
-    if (num_bytes_max < GetFixedSize()) return Status::IOError("Decoding error");
-
-    uint32_t crc32_computed = crc32c::Value(buffer_in + 4, GetFixedSize() - 4);
-    uint32_t crc32_stored; 
-    GetFixed32(buffer_in, &crc32_stored);
-    if (crc32_computed != crc32_stored) return Status::IOError("Invalid checksum");
-
-    uint32_t version_data_format_major, version_data_format_minor;
-    GetFixed32(buffer_in + 20, &version_data_format_major);
-    GetFixed32(buffer_in + 24, &version_data_format_minor);
-    if (   version_data_format_major != kVersionDataFormatMajor
-        || version_data_format_minor != kVersionDataFormatMinor) {
-      return Status::IOError("Data format version not supported");
-    }
-
-    uint32_t hash, compression_type, checksum_type;
-    GetFixed64(buffer_in + 28, &(output->storage__hstable_size));
-    GetFixed32(buffer_in + 36, &hash);
-    GetFixed32(buffer_in + 40, &compression_type);
-    GetFixed32(buffer_in + 44, &checksum_type);
-    if (hash == 0x0) {
-      output->hash = kMurmurHash3_64;
-    } else if (hash == 0x1) {
-      output->hash = kxxHash_64;
-    } else {
-      return Status::IOError("Unknown hash type");
-    }
-
-    if (compression_type == 0x0) {
-      output->compression.type = kNoCompression;
-    } else if (compression_type == 0x1) {
-      output->compression.type = kLZ4Compression;
-    } else {
-      return Status::IOError("Unknown compression type");
-    }
-
-    if (compression_type == 0x1) {
-      output->checksum = kCRC32C;
-    } else {
-      return Status::IOError("Unknown checksum type");
-    }
-
-    return Status::OK();
-  }
-
-  static uint32_t EncodeTo(const struct DatabaseOptions *input, char* buffer) {
-    EncodeFixed32(buffer +  4, kVersionMajor);
-    EncodeFixed32(buffer +  8, kVersionMinor);
-    EncodeFixed32(buffer + 12, kVersionRevision);
-    EncodeFixed32(buffer + 16, kVersionBuild);
-    EncodeFixed32(buffer + 20, kVersionDataFormatMajor);
-    EncodeFixed32(buffer + 24, kVersionDataFormatMinor);
-    EncodeFixed64(buffer + 28, input->storage__hstable_size);
-    EncodeFixed32(buffer + 36, (uint32_t)input->hash);
-    EncodeFixed32(buffer + 40, (uint32_t)input->compression.type);
-    EncodeFixed32(buffer + 44, (uint32_t)input->checksum);
-    uint32_t crc32 = crc32c::Value(buffer + 4, GetFixedSize() - 4);
-    EncodeFixed32(buffer, crc32);
-    return GetFixedSize();
-  }
-
-  static uint32_t GetFixedSize() {
-    return 48; // in bytes
-  }
-
 };
 
 

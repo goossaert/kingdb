@@ -85,6 +85,10 @@ class StorageEngine {
 
   ~StorageEngine() {}
 
+  static std::string GetCompactionFilePrefix() {
+    return "compaction_"; 
+  }
+
   void Close() {
     std::unique_lock<std::mutex> lock(mutex_close_);
     if (is_closed_) return;

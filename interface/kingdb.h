@@ -49,6 +49,14 @@ class KingDB: public Interface {
     assert(getEndianness() == kBytesLittleEndian || getEndianness() == kBytesBigEndian);
   }
 
+  KingDB(const std::string dbname)
+      : dbname_(dbname),
+        is_closed_(true)
+  {
+    // Word-swapped endianness is not supported
+    assert(getEndianness() == kBytesLittleEndian || getEndianness() == kBytesBigEndian);
+  }
+
   virtual ~KingDB() {
     Close();
   }
@@ -56,6 +64,74 @@ class KingDB: public Interface {
   virtual Status Open() override {
  
     FileUtil::increase_limit_open_files();
+
+    Status s;
+    struct stat info;
+    bool db_exists = (stat(dbname_.c_str(), &info) == 0);
+
+    if (db_exists && !(info.st_mode & S_IFDIR)) {
+      return Status::IOError("A file with same name as the database already exists and is not a directory. Delete or rename this file to continue.", dbname_.c_str());
+    }
+
+    if (   db_exists
+        && db_options_.error_if_exists) {
+      return Status::IOError("Could not create database directory", strerror(errno));
+    }
+
+    if (   !db_exists
+        && db_options_.create_if_missing
+        && mkdir(dbname_.c_str(), 0755) < 0) {
+      return Status::IOError("Could not create database directory", strerror(errno));
+    }
+
+    std::string filepath_dboptions = DatabaseOptions::GetPath(dbname_);
+    bool db_options_exists = (stat(filepath_dboptions.c_str(), &info) == 0);
+    Status status_dboptions;
+    DatabaseOptions db_options_candidate;
+    if (db_options_exists) {
+      // If there is a db_options file, try loading it
+      log::trace("KingDB::Open()", "Loading db_options file");
+      if ((fd_dboptions_ = open(filepath_dboptions.c_str(), O_RDONLY, 0644)) < 0) {
+        log::emerg("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
+      }
+
+      int ret = flock(fd_dboptions_, LOCK_EX | LOCK_NB);
+      if (ret == EWOULDBLOCK || ret < 0) {
+        close(fd_dboptions_);
+        return Status::IOError("Could not acquire the global database lock: the database was already opened by another process"); 
+      }
+
+      Mmap mmap(filepath_dboptions, info.st_size);
+      if (!mmap.is_valid()) return Status::IOError("Mmap() constructor failed");
+      status_dboptions = DatabaseOptionEncoder::DecodeFrom(mmap.datafile(), mmap.filesize(), &db_options_candidate);
+      if (status_dboptions.IsOK()) db_options_ = db_options_candidate;
+    }
+    
+    if (db_exists && (!db_options_exists || !status_dboptions.IsOK())) {
+      // The database already existed, but no db_options file was found in the
+      // database directory, or the db_options file was present but invalid,
+      // thus it needs to be recovered.
+      DatabaseOptions db_options_candidate;
+      std::string prefix_compaction = StorageEngine::GetCompactionFilePrefix();
+      Status s = HSTableManager::LoadDatabaseOptionsFromHSTables(dbname_,
+                                                                  &db_options_candidate,
+                                                                  prefix_compaction);
+      if (s.IsOK()) db_options_ = db_options_candidate;
+    }
+
+    if (!db_exists || !db_options_exists || !status_dboptions.IsOK()) {
+      // If there is no db_options file, or if it's invalid, write it
+      log::trace("KingDB::Open()", "Writing db_options file");
+      if ((fd_dboptions_ = open(filepath_dboptions.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
+        log::emerg("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
+      }
+      char buffer[DatabaseOptionEncoder::GetFixedSize()];
+      DatabaseOptionEncoder::EncodeTo(&db_options_, buffer);
+      if (write(fd_dboptions_, buffer, DatabaseOptionEncoder::GetFixedSize()) < 0) {
+        close(fd_dboptions_);
+        return Status::IOError("Could not write 'db_options' file", strerror(errno));
+      }
+    }
 
     Hash* hash = MakeHash(db_options_.hash);
     uint64_t max_size_hash = hash->MaxInputSize();
@@ -80,57 +156,6 @@ class KingDB: public Interface {
 
     std::unique_lock<std::mutex> lock(mutex_close_);
     if (!is_closed_) return Status::IOError("The database is already open");
-
-    Status s;
-    struct stat info;
-    bool db_exists = (stat(dbname_.c_str(), &info) == 0);
-
-    if(db_exists && !(info.st_mode & S_IFDIR)) {
-      return Status::IOError("A file with same name as the database already exists and is not a directory. Delete or rename this file to continue.", dbname_.c_str());
-    }
-
-    if (   db_exists
-        && db_options_.error_if_exists) {
-      return Status::IOError("Could not create database directory", strerror(errno));
-    }
-
-    if (   !db_exists
-        && db_options_.create_if_missing
-        && mkdir(dbname_.c_str(), 0755) < 0) {
-      return Status::IOError("Could not create database directory", strerror(errno));
-    }
-
-    std::string filepath_dboptions = DatabaseOptions::GetPath(dbname_);
-    if (stat(filepath_dboptions.c_str(), &info) == 0) {
-      // If there is a db_options file, try loading it
-      log::trace("KingDB::Open()", "Loading db_option file");
-      if ((fd_dboptions_ = open(filepath_dboptions.c_str(), O_RDONLY, 0644)) < 0) {
-        log::emerg("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
-      }
-
-      int ret = flock(fd_dboptions_, LOCK_EX | LOCK_NB);
-      if (ret == EWOULDBLOCK || ret < 0) {
-        close(fd_dboptions_);
-        return Status::IOError("Could not acquire the global database lock: the database was already opened by another process"); 
-      }
-
-      Mmap mmap(filepath_dboptions, info.st_size);
-      if (!mmap.is_valid()) return Status::IOError("Mmap() constructor failed");
-      s = DatabaseOptionEncoder::DecodeFrom(mmap.datafile(), mmap.filesize(), &db_options_);
-      if (!s.IsOK()) return s;
-    } else {
-      // If there is no db_options file, write it
-      log::trace("KingDB::Open()", "Writing db_option file");
-      if ((fd_dboptions_ = open(filepath_dboptions.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-        log::emerg("KingDB::Open()", "Could not open file [%s]: %s", filepath_dboptions.c_str(), strerror(errno));
-      }
-      char buffer[DatabaseOptionEncoder::GetFixedSize()];
-      DatabaseOptionEncoder::EncodeTo(&db_options_, buffer);
-      if (write(fd_dboptions_, buffer, DatabaseOptionEncoder::GetFixedSize()) < 0) {
-        close(fd_dboptions_);
-        return Status::IOError("Could not write 'db_options' file", strerror(errno));
-      }
-    }
 
     em_ = new EventManager();
     wb_ = new WriteBuffer(db_options_, em_);

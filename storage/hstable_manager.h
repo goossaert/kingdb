@@ -235,7 +235,7 @@ class HSTableManager {
     struct HSTableHeader hstheader;
     hstheader.filetype  = filetype_default_;
     hstheader.timestamp = timestamp_;
-    HSTableHeader::EncodeTo(&hstheader, buffer_raw_);
+    HSTableHeader::EncodeTo(&hstheader, &db_options_, buffer_raw_);
   }
 
   bool CanOpenNewFiles() {
@@ -400,7 +400,7 @@ class HSTableManager {
     struct HSTableHeader hstheader;
     hstheader.filetype  = kCompactedLargeType;
     hstheader.timestamp = timestamp_largefile;
-    HSTableHeader::EncodeTo(&hstheader, buffer);
+    HSTableHeader::EncodeTo(&hstheader, &db_options_, buffer);
     if (write(fd, buffer, db_options_.internal__hstable_header_size) < 0) {
       log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
@@ -797,6 +797,62 @@ class HSTableManager {
   }
 
 
+  static Status LoadDatabaseOptionsFromHSTables(std::string& dbname,
+                                                DatabaseOptions* db_options_out,
+                                                std::string& prefix_compaction) {
+    // Careful here, code duplication: all of the directory walking and
+    // file selection was taken from LoadDatabase()
+  
+    log::trace("HSTableManager::LoadDatabaseOptionsFromHSTables()", "Start");
+    char filepath[FileUtil::maximum_path_size()];
+    DIR *directory;
+    struct dirent *entry;
+    struct stat info;
+    if ((directory = opendir(dbname.c_str())) == NULL) {
+      return Status::IOError("Could not open database directory", dbname.c_str());
+    }
+
+    bool found_valid_db_options = false;
+    while ((entry = readdir(directory)) != NULL) {
+      if (strcmp(entry->d_name, DatabaseOptions::GetFilename().c_str()) == 0) continue;
+      if (strcmp(entry->d_name, prefix_compaction.c_str()) == 0) continue;
+      int ret = snprintf(filepath, FileUtil::maximum_path_size(), "%s/%s", dbname.c_str(), entry->d_name);
+      if (ret < 0 || ret >= FileUtil::maximum_path_size()) {
+        log::emerg("HSTableManager::LoadDatabaseOptionsFromHSTables()",
+                  "Filepath buffer is too small, could not build the filepath string for file [%s]", entry->d_name); 
+        continue;
+      }
+      if (stat(filepath, &info) != 0 || !(info.st_mode & S_IFREG)) continue;
+      // Yes, using the default internal__hstable_header_size value from the
+      // object this method is meant to return.
+      if (info.st_size <= db_options_out->internal__hstable_header_size) {
+        log::trace("HSTableManager::LoadDatabaseOptionsFromHSTables()",
+                  "file: [%s] only has a header or less, skipping\n", entry->d_name);
+        continue;
+      }
+
+      Mmap mmap(filepath, info.st_size);
+      if (!mmap.is_valid()) return Status::IOError("Mmap constructor failed");
+      struct HSTableHeader hstheader;
+      struct DatabaseOptions db_options;
+      Status s = HSTableHeader::DecodeFrom(mmap.datafile(), mmap.filesize(), &hstheader, &db_options);
+      if (s.IsOK()) {
+        *db_options_out = db_options;
+        found_valid_db_options = true;
+        break;
+      } else {
+        log::trace("HSTableManager::LoadDatabaseOptionsFromHSTables()",
+                   "file: [%s] has an invalid header, skipping\n", entry->d_name);
+      }
+    }
+    if (found_valid_db_options) {
+      return Status::OK();
+    } else {
+      return Status::IOError("Could not find any HSTable with a valid database option backup.");
+    }
+  }
+
+
   Status LoadDatabase(std::string& dbname,
                       std::multimap<uint64_t, uint64_t>& index_se,
                       std::set<uint32_t>* fileids_ignore=nullptr,
@@ -861,7 +917,7 @@ class HSTableManager {
       if (strcmp(entry->d_name, prefix_compaction_.c_str()) == 0) continue;
       int ret = snprintf(filepath, FileUtil::maximum_path_size(), "%s/%s", dbname.c_str(), entry->d_name);
       if (ret < 0 || ret >= FileUtil::maximum_path_size()) {
-        log::emerg("HsTableManager::LoadDatabase()",
+        log::emerg("HSTableManager::LoadDatabase()",
                   "Filepath buffer is too small, could not build the filepath string for file [%s]", entry->d_name); 
         continue;
       }

@@ -144,8 +144,8 @@ class DBTest {
     data_generator_ = nullptr;
   }
 
-  void Open() {
-    EraseDB();
+  void Open(bool erase_db=true) {
+    if(erase_db) EraseDB();
     db_ = new kdb::KingDB(db_options_, dbname_);
     Status s = db_->Open();
     if (!s.IsOK()) {
@@ -154,17 +154,36 @@ class DBTest {
     }
   }
 
-  void Close() {
+  void Close(bool erase_db=true) {
     db_->Close();
     delete db_;
     db_ = nullptr;
-    EraseDB();
+    if(erase_db) EraseDB();
   }
 
-  bool IterateOverOptions() {
+  void OpenWithoutErasingDB() {
+    Open(false); 
+  }
+
+  void CloseWithoutErasingDB() {
+    Close(false);
+  }
+
+  void DeleteDatabaseOptionsFile() {
+    std::string filepath = DatabaseOptions::GetPath(dbname_);
+    if (std::remove(filepath.c_str()) != 0) {
+      log::emerg("DBTest::LoadDatabase()", "Could not remove file [%s]", filepath.c_str());
+    }
+  }
+
+  void ResetAllOptions() {
     db_options_ = DatabaseOptions();
     read_options_ = ReadOptions();
     write_options_ = WriteOptions();
+  }
+
+  bool IterateOverOptions() {
+    ResetAllOptions();
 
     if (index_db_options_ == 0) {
       test_purpose_ = "Incompressible data with LZ4 compression enabled";
@@ -282,10 +301,74 @@ class DBTest {
 };
 
 
-TEST(DBTest, KeysWithNullBytes) {
+TEST(DBTest, CloseAndReopen) {
+  ResetAllOptions();
+  kdb::Logger::set_current_level("emerg");
   Open();
   kdb::Status s;
+
+  int num_count_valid = 0;
+
+  std::string key1("key1");
+  std::string key2("key2");
+  std::string value1("value1");
+  std::string value2("value2");
+
+  s = db_->Put(write_options_, key1, value1);
+  s = db_->Put(write_options_, key2, value2);
+
+  CloseWithoutErasingDB();
+  OpenWithoutErasingDB();
+
+  std::string out_str;
+  s = db_->Get(read_options_, key1, &out_str);
+  if (s.IsOK() && out_str == "value1") num_count_valid += 1;
+
+  s = db_->Get(read_options_, key2, &out_str);
+  if (s.IsOK() && out_str == "value2") num_count_valid += 1;
+
+  ASSERT_EQ(num_count_valid, 2);
+  Close();
+}
+
+
+TEST(DBTest, RepairInvalidDatabaseOptionFile) {
+  ResetAllOptions();
   kdb::Logger::set_current_level("emerg");
+  Open();
+  kdb::Status s;
+
+  int num_count_valid = 0;
+
+  std::string key1("key1");
+  std::string key2("key2");
+  std::string value1("value1");
+  std::string value2("value2");
+
+  s = db_->Put(write_options_, key1, value1);
+  s = db_->Put(write_options_, key2, value2);
+
+  CloseWithoutErasingDB();
+  DeleteDatabaseOptionsFile();
+  OpenWithoutErasingDB();
+
+  std::string out_str;
+  s = db_->Get(read_options_, key1, &out_str);
+  if (s.IsOK() && out_str == "value1") num_count_valid += 1;
+
+  s = db_->Get(read_options_, key2, &out_str);
+  if (s.IsOK() && out_str == "value2") num_count_valid += 1;
+
+  ASSERT_EQ(num_count_valid, 2);
+  Close();
+}
+
+
+TEST(DBTest, KeysWithNullBytes) {
+  ResetAllOptions();
+  kdb::Logger::set_current_level("emerg");
+  Open();
+  kdb::Status s;
 
   int num_count_valid = 0;
 
