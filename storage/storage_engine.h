@@ -376,9 +376,7 @@ class StorageEngine {
     for (auto it = rbegin; it != rend; --it) {
       ByteArray key_temp;
       Status s = GetEntry(read_options, it->second, &key_temp, value_out);
-      //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key->ToString().c_str(), key_temp->ToString().c_str(), hashed_key, it->first, key->size(), key_temp->size());
-      //std::string temp(key_temp->data(), key_temp->size());
-      //log::trace("StorageEngine::GetWithIndex()", "key_temp:[%s] size[%d]", temp.c_str(), temp.size());
+      log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key.ToString().c_str(), key_temp.ToString().c_str(), hashed_key, it->first, key.size(), key_temp.size());
       if ((s.IsOK() || s.IsDeleteOrder()) && key_temp == key) {
         log::trace("StorageEngine::GetWithIndex()", "Entry [%s] found at location: 0x%08" PRIx64, key.ToString().c_str(), it->second);
         if (location_out != nullptr) *location_out = it->second;

@@ -40,9 +40,10 @@ struct CompressionOptions {
 struct DatabaseOptions {
  public:
   DatabaseOptions()
-      : internal__hstable_header_size(8192),  // bytes
+      : internal__hstable_header_size(8192),   // bytes
         internal__num_iterations_per_lock(10),
-        internal__close_timeout(500),     // milliseconds
+        internal__close_timeout(500),          // milliseconds
+        internal__open_file_retry_delay(5000), // milliseconds
         internal__size_multipart_required(1024*1024), // bytes
         hash(kxxHash_64),
         compression(kLZ4Compression),
@@ -66,6 +67,10 @@ struct DatabaseOptions {
   // The time that a closing process will have to wait when flushing the vectors
   // in the Writer Buffer.
   uint64_t internal__close_timeout;
+
+  // If a file fails to open in the HSTableManager, this is the delay that
+  // will be waited before retrying to open the file.
+  uint64_t internal__open_file_retry_delay;
 
   // Size of an entry value for which using a multipart is required. Below this
   // size, a byte array will be allocated an the entry will be uncompressed

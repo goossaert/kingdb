@@ -215,10 +215,6 @@ Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
     log::debug("LOCK", "2 lock");
     log::debug("LOCK", "3 lock");
     std::unique_lock<std::mutex> lock_swap(mutex_indices_level3_);
-    /*
-    log::trace("WriteBuffer::WriteChunk()", "Swap buffers");
-    std::swap(im_live_, im_copy_);
-    */
     cv_flush_.notify_one();
     log::debug("LOCK", "3 unlock");
     mutex_flush_level2_.unlock();
@@ -284,6 +280,7 @@ void WriteBuffer::ProcessingLoop() {
     // Clear flush buffer
     log::debug("WriteBuffer::ProcessingLoop()", "clear flush buffer");
 
+    /*
     if (buffers_[im_copy_].size()) {
       for(auto &p: buffers_[im_copy_]) {
         log::trace("WriteBuffer", "ProcessingLoop() ITEM im_copy - key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_copy_]:%d", p.key.ToString().c_str(), p.chunk.size(), p.size_value, p.offset_chunk, buffers_[im_copy_].size(), sizes_[im_copy_]);
@@ -299,15 +296,11 @@ void WriteBuffer::ProcessingLoop() {
     } else {
       log::trace("WriteBuffer", "ProcessingLoop() ITEM no buffers_[im_live_]");
     }
-    /*
     */
 
-    /*
-    for(auto &p: buffers_[im_copy_]) {
-      delete p.key;
-      delete p.chunk;
-    }
-    */
+    // Note: the call to clear() can delete a lot of allocated memory at once,
+    // which may block all other operations for a while: this may benefit
+    // from throttling (using db_options_.internal__num_iterations_per_lock)
     sizes_[im_copy_] = 0;
     buffers_[im_copy_].clear();
 

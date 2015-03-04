@@ -216,7 +216,7 @@ class HSTableManager {
       if ((fd_ = open(filepath_.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
         log::emerg("HSTableManager::OpenNewFile()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
         wait_until_can_open_new_files_ = true;
-        std::this_thread::sleep_for(std::chrono::milliseconds(5000));
+        std::this_thread::sleep_for(std::chrono::milliseconds(db_options_.internal__open_file_retry_delay));
         continue;
       }
       wait_until_can_open_new_files_ = false;
