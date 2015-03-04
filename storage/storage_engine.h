@@ -324,6 +324,16 @@ class StorageEngine {
              ByteArray& key,
              ByteArray* value_out,
              uint64_t *location_out=nullptr) {
+    // NOTE: There is no monitoring or reference counting for the file used by
+    //       a ByteArray. If the user has a ByteArray pointing to a file, and
+    //       this file is deleted by the compaction process, this could lead
+    //       to serious issues.
+    //       Luckily, in Linux and BSD, the kernel counts open file descriptors
+    //       for each file, and files are really deleted only when all the
+    //       descriptors are closed. Therefore, it is fine to delete files that
+    //       are open: their content will remain available to the file
+    //       descriptor holder, and the storage space will be reclaimed when the
+    //       file descriptor is closed.
     mutex_write_.lock();
     mutex_read_.lock();
     num_readers_ += 1;
@@ -354,7 +364,7 @@ class StorageEngine {
     return s;
   }
 
-  // IMPORTANT: value_out must be deleled by the caller
+
   Status GetWithIndex(ReadOptions& read_options,
                       std::multimap<uint64_t, uint64_t>& index,
                       ByteArray& key,
@@ -387,7 +397,7 @@ class StorageEngine {
     return Status::NotFound("Unable to find the entry in the storage engine");
   }
 
-  // IMPORTANT: key_out and value_out must be deleted by the caller
+
   Status GetEntry(ReadOptions& read_options,
                   uint64_t location,
                   ByteArray* key_out,
