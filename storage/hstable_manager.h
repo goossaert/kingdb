@@ -197,6 +197,9 @@ class HSTableManager {
           // will be recovered. And this is what we want: we don't want to
           // recover the file now, the recovery process should only run at
           // database startup.
+          // TODO-37: cleanup key_to_location and key_to_headersize for all keys
+          //          that belong to the file id being cleaned up.
+          // TODO-39: remove large files that are detected as inactive.
           file_resource_manager.ClearTemporaryDataForFileId(fileid_candidate);
         }
       }
@@ -1199,10 +1202,10 @@ class HSTableManager {
   // key_to_location is made to be dependent on the id of the thread that
   // originated an order, so that if two writers simultaneously write entries
   // with the same key, they will be properly stored into separate locations.
-  // NOTE: if a thread crashes or terminates, its data will *not* be cleaned up.
   // NOTE: is it possible for a chunk to arrive when the file is not yet
   // created, and have it's WriteMiddleOrLastChunk() fail because of that?
   // If so, need to write in buffer_raw_ instead
+  // TODO-37: if a thread crashes or terminates, its data will *not* be cleaned up.
   std::map< std::thread::id, std::map<std::string, uint64_t> > key_to_location;
   std::map< std::thread::id, std::map<std::string, uint32_t> > key_to_headersize;
 };

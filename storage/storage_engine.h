@@ -236,6 +236,23 @@ class StorageEngine {
   }
 
   void ProcessingLoopData() {
+    // NOTE: Failures are handled as such:
+    // - If the entry is small, there is no failure handling: the entry either
+    //   is already full, or it didn't make it that far.
+    // - If the entry is a multipart entry, it is possible that a part doesn't
+    //   make it to the Storage Engine. In that case, the Offset Array for the
+    //   HSTable of the entry will not be written, and the entry will not be
+    //   saved in the index either.
+    //     * The compaction thread goes over all recent HSTables regularly, and
+    //       cleans up the temporary data related to HSTables stored in the
+    //       memory, avoiding memory leaks.
+    //     * If a compaction processes goes over the HSTable with the invalid
+    //       entry, it will simply ignore it and will reclaim the storage space
+    //       for the HSTable.
+    //     * If the database crashes, the recovery process will fix the file and
+    //       the entry.
+    // - If the entry is a large entry: the error is not handled and the large
+    //   files simply needs to be deleted (see TODO-39).
     while(true) {
       // Wait for orders to process
       log::trace("StorageEngine::ProcessingLoopData()", "start");
@@ -557,6 +574,10 @@ class StorageEngine {
       std::string filepath = hstable_manager_.GetFilepath(fileid);
       Mmap mmap(filepath, filesize);
       if (!mmap.is_valid()) return Status::IOError("Mmap constructor failed");
+      // TODO-40: Make sure that if the HSTable was invalid, it still has an
+      //          Offset Array so that LoadFile() can properly load the entries from it.
+      //          The compaction thread handling the inactivity timeout should be taking
+      //          care of that.
       s = hstable_manager_.LoadFile(mmap, fileid, index_compaction);
       if (!s.IsOK()) {
         log::warn("HSTableManager::Compaction()", "Could not load index in file [%s]", filepath.c_str());
@@ -955,13 +976,22 @@ class StorageEngine {
     //     stored in 'index_compaction_' into the main index 'index_'
     log::trace("Compaction()", "Step 13: Transfer index_compaction_ into index_");
     AcquireWriteLock();
-    // TODO: The pouring of index_compaction_ needs to be throttled just like the update of index_ above.
+    // TODO-38: The pouring of index_compaction_ needs to be throttled just like the
+    //          update of index_ above. The problem is that if the lock is acquire
+    //          for a limited time only, then another thread could come in and want
+    //          to write to the database as well: to which index should it write
+    //          then, index_ or index_compaction_? More concerning, if it writes to 
+    //          index_compaction_, this would mean that it would be writing to
+    //          index_compaction_ as an iterator is going over index_compaction_,
+    //          which would be just plain wrong. This problem will require more
+    //          thinking, for now, just lock for longer and risk to cause timeouts:
+    //          better be late than buggy.
     index_.insert(index_compaction_.begin(), index_compaction_.end()); 
-    index_compaction_.clear(); // TODO: this needs to be moved
     mutex_compaction_.lock();
     is_compaction_in_progress_ = false;
     mutex_compaction_.unlock();
     ReleaseWriteLock();
+    index_compaction_.clear();
     if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
