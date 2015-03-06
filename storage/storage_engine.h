@@ -205,12 +205,12 @@ class StorageEngine {
       
       uint64_t dbsize_uncompacted = hstable_manager_.file_resource_manager.GetDbSizeUncompacted();
       log::trace("ProcessingLoopCompaction",
-                "fileid_end:%u fs_free_space:%" PRIu64 " compaction.filesystem.free_space_required:%" PRIu64 " size_compaction:%" PRIu64 " dbsize_uncompacted:%" PRIu64,
-                fileid_end,
-                fs_free_space,
-                db_options_.compaction__filesystem__free_space_required,
-                size_compaction,
-                dbsize_uncompacted);
+                 "fileid_end:%u fs_free_space:%" PRIu64 " compaction.filesystem.free_space_required:%" PRIu64 " size_compaction:%" PRIu64 " dbsize_uncompacted:%" PRIu64,
+                 fileid_end,
+                 fs_free_space,
+                 db_options_.compaction__filesystem__free_space_required,
+                 size_compaction,
+                 dbsize_uncompacted);
 
       if (   fileid_end > 0
           && fs_free_space > db_options_.compaction__filesystem__free_space_required
@@ -236,23 +236,38 @@ class StorageEngine {
   }
 
   void ProcessingLoopData() {
-    // NOTE: Failures are handled as such:
+    // NOTE: Write failures are handled as such:
     // - If the entry is small, there is no failure handling: the entry either
-    //   is already full, or it didn't make it that far.
-    // - If the entry is a multipart entry, it is possible that a part doesn't
-    //   make it to the Storage Engine. In that case, the Offset Array for the
-    //   HSTable of the entry will not be written, and the entry will not be
-    //   saved in the index either.
-    //     * The compaction thread goes over all recent HSTables regularly, and
-    //       cleans up the temporary data related to HSTables stored in the
-    //       memory, avoiding memory leaks.
-    //     * If a compaction processes goes over the HSTable with the invalid
-    //       entry, it will simply ignore it and will reclaim the storage space
-    //       for the HSTable.
-    //     * If the database crashes, the recovery process will fix the file and
-    //       the entry.
-    // - If the entry is a large entry: the error is not handled and the large
-    //   files simply needs to be deleted (see TODO-39).
+    //   is already full, or it didn't make it that far in the data pipe.
+    // - If the entry is a multipart entry or a large entry, it is possible that
+    //   a part doesn't make it to the Storage Engine for any reason: network
+    //   issue, storage failure, etc. In that case, the Offset Array for the
+    //   HSTable of the entry will not be written by the Storage Engine, and
+    //   the entry will not be saved in the index either.
+    // - The compaction thread goes over all recent HSTables regularly to find
+    //   the highest stable file id, by calling GetHighestStableFileId(). This
+    //   method also cleans up all HSTables that have timed out:
+    //     * The temporary data kept for them in the FileResourceManager
+    //       to avoid memory leaks.
+    //     * If the file is a regular HSTable, the OffsetArray is written, without
+    //       the erroneous entries in it. That way, during the compaction process,
+    //       the invalid entry won't be found in the Offset Array and will simply
+    //       be ignored, effectively reclaiming the stoarge space it used.
+    //     * If the file is a large HSTable, it is simply deleted: there is no
+    //       point keeping a large timed out HSTable with invalid data anyway.
+    // - If for any reason the database crashes, and the OffsetArray for an
+    //   HSTable has not been written to disk yet:
+    //     * If the file is uncompacted, the checksums of all entries are verified,
+    //       and entries with invalid checksums are not added to the recovered
+    //       OffsetArray, which will enable the subsequent compaction process
+    //       to reclaim the storage space for that invalid entry.
+    //     * If the file is compacted, the checksums for that HSTable are not
+    //       verified: it is the responsibility of the user to decide, when doing
+    //       a Get(), whether or not he wants to verify the checksum, and if it
+    //       is invalid, whether or not to Delete() the entry.
+    
+    // TODO-41: Not all cases of Offset Array failures are handled with the current
+    //          implementation: fix that.
     while(true) {
       // Wait for orders to process
       log::trace("StorageEngine::ProcessingLoopData()", "start");
@@ -574,10 +589,6 @@ class StorageEngine {
       std::string filepath = hstable_manager_.GetFilepath(fileid);
       Mmap mmap(filepath, filesize);
       if (!mmap.is_valid()) return Status::IOError("Mmap constructor failed");
-      // TODO-40: Make sure that if the HSTable was invalid, it still has an
-      //          Offset Array so that LoadFile() can properly load the entries from it.
-      //          The compaction thread handling the inactivity timeout should be taking
-      //          care of that.
       s = hstable_manager_.LoadFile(mmap, fileid, index_compaction);
       if (!s.IsOK()) {
         log::warn("HSTableManager::Compaction()", "Could not load index in file [%s]", filepath.c_str());
@@ -769,6 +780,19 @@ class StorageEngine {
         offset_end = footer.offset_indexes;
       }
 
+      // Create a set of what's in the OffsetArray of the HSTable being
+      // handled in this iteration
+      std::set<uint32_t> offset_array;
+      std::multimap<uint64_t, uint64_t> index_hstable;
+      s = hstable_manager_.LoadFile(*mmap, fileid, index_hstable);
+      if (!s.IsOK()) {
+        log::warn("HSTableManager::Compaction()", "Could not load index in file id [%u]", fileid);
+      }
+      for (auto &p: index_hstable) {
+        offset_array.insert(p.second & 0xFFFFFFFF); // insert the offset
+      }
+      index_hstable.clear();
+
       // Process entries in the file
       uint32_t offset = db_options_.internal__hstable_header_size;
       while (offset < offset_end) {
@@ -777,7 +801,7 @@ class StorageEngine {
         uint32_t size_header;
         Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
 
-        // NOTE: No need to verify the checksum. See notes in RecoverFile().
+        // NOTE: No need to verify the checksum. See notes in ProcessingLoopData() and RecoverFile().
         if (   !s.IsOK()
             || !entry_header.AreSizesValid(offset, mmap->filesize())) {
           log::trace("Compaction()",
@@ -798,7 +822,12 @@ class StorageEngine {
         uint64_t location = fileid_shifted | offset;
 
         log::trace("Compaction()", "order list loop - check if we should keep it - fileid:%u offset:%u", fileid, offset);
-        if (   locations_delete.find(location) != locations_delete.end()
+        // NOTE: This is where invalid entries are deleted: if an entry is in the
+        // file but not in the offset array, that means that the write of that
+        // entry never finished, thus during the compaction, the entry is simply
+        // ignored, and the storage space it was using will simply be reclaimed.
+        if (   offset_array.find(offset) == offset_array.end()
+            || locations_delete.find(location) != locations_delete.end()
             || locations_secondary.find(location) != locations_secondary.end()) {
           offset += size_header + entry_header.size_key + entry_header.size_value_offset();
           continue;

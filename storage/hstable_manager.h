@@ -176,6 +176,10 @@ class HSTableManager {
   }
 
   uint32_t GetHighestStableFileId(uint32_t fileid_start) {
+    // TODO: Extract the HSTable repair logic out of this method. This method
+    // should only be computing the highest stable file id, and not do anything
+    // else than that. I took this implementation shortcut to get the first beta
+    // version out asap, this needs to be cleaned up at some point.
     uint32_t fileid_max = GetSequenceFileId();
     uint32_t fileid_stable = 0;
     uint32_t fileid_candidate = fileid_start;
@@ -184,8 +188,9 @@ class HSTableManager {
     while (true) {
       if (fileid_candidate >= fileid_max) break;
       uint32_t num_writes = file_resource_manager.GetNumWritesInProgress(fileid_candidate);
-      uint64_t epoch = file_resource_manager.GetEpochLastActivity(fileid_candidate);
+      int fd = 0;
       if (num_writes > 0) {
+        uint64_t epoch = file_resource_manager.GetEpochLastActivity(fileid_candidate);
         if (epoch > epoch_now - db_options_.storage__inactivity_timeout) {
           // The in-progress writes for this file haven't timed out yet, thus it
           // is not stable yet.
@@ -199,11 +204,45 @@ class HSTableManager {
           // database startup.
           // TODO-37: cleanup key_to_location and key_to_headersize for all keys
           //          that belong to the file id being cleaned up.
-          // TODO-39: remove large files that are detected as inactive.
+          std::string filepath = GetFilepath(fileid_candidate);
+          bool is_file_large = file_resource_manager.IsFileLarge(fileid_candidate);
+
+          // Remove large files that are detected as being inactive
+          if (is_file_large) {
+            if (std::remove(filepath.c_str()) != 0) {
+              log::emerg("GetHighestStableFileId()", "Could not remove large file [%s]", filepath.c_str());
+            }
+            file_resource_manager.ClearTemporaryDataForFileId(fileid_candidate);
+            goto handle_next_file;
+          }
+
+          // Write the OffsetArray for this inactive file
+          log::trace("HSTableManager::GetHighestStableFileId()", "About to write Offset Array");
+          if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
+            log::emerg("HSTableManager::GetHighestStableFileId()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
+            goto handle_next_file;
+          }
+
+          // TODO: factorize this code with FlushOffsetArray()
+          uint64_t filesize_before = file_resource_manager.GetFileSize(fileid_candidate);
+          if (ftruncate(fd, filesize_before) < 0) {
+            log::emerg("HSTableManager::GetHighestStableFileId()", "Error ftruncate(): %s", strerror(errno));
+            goto handle_next_file;
+          }
+          uint64_t size_offarray;
+          Status s = WriteOffsetArray(fd, file_resource_manager.GetOffsetArray(fileid_candidate), &size_offarray, filetype_default_, file_resource_manager.HasPaddingInValues(fileid_candidate), true);
+          if (!s.IsOK()) {
+            log::emerg("HSTableManager::GetHighestStableFileId()", "Error on WriteOffsetArray(): %s", s.ToString().c_str());
+            goto handle_next_file;
+          }
+          uint64_t filesize = file_resource_manager.GetFileSize(fileid_candidate);
+          file_resource_manager.SetFileSize(fileid_candidate, filesize + size_offarray);
           file_resource_manager.ClearTemporaryDataForFileId(fileid_candidate);
         }
       }
       fileid_stable = fileid_candidate;
+      handle_next_file:
+      if (fd != 0) close(fd);
       fileid_candidate += 1;
     }
     return fileid_stable;
@@ -558,7 +597,11 @@ class HSTableManager {
           log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error ftruncate(): %s", strerror(errno));
           return 0;
         }
-        WriteOffsetArray(fd, file_resource_manager.GetOffsetArray(fileid), &size_offarray, filetype, file_resource_manager.HasPaddingInValues(fileid), false);
+        Status s = WriteOffsetArray(fd, file_resource_manager.GetOffsetArray(fileid), &size_offarray, filetype, file_resource_manager.HasPaddingInValues(fileid), false);
+        if (!s.IsOK()) {
+          log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error on WriteOffsetArray(): %s", s.ToString().c_str());
+          return 0;
+        }
         uint64_t filesize = file_resource_manager.GetFileSize(fileid);
         file_resource_manager.SetFileSize(fileid, filesize + size_offarray);
         if (order.IsLarge()) file_resource_manager.SetFileLarge(fileid);
@@ -1077,15 +1120,17 @@ class HSTableManager {
         break;
       }
 
-      // NOTE: The checksum is not verified because during the recovery and compaction
-      // it doesn't matter whether or not the entry is valid. The user will know that
+      // NOTE: The checksum is verified only for uncompacted files, because this
+      // is when an entry can be invalid due to transfer or write issues.
+      // For compacted files and during the compaction process, it does not
+      // matter whether or not the entry is valid. The user will know that
       // an entry is invalid after doing a Get(), and that is his choice to do a
       // Delete() if he wants to delete the entry. Keep in mind though that if
       // the checksum is wrong, it's possible for the hashedkey to be
       // erroneous, in which case the only way to find and remove invalid
       // entries is to iterate over whole database, and do Delete() commands
       // for the entries with invalid checksums.
-      const bool do_crc32_verification = false; // this boolean is here just to toggle the verification
+      bool do_crc32_verification = entry_header.IsUncompacted() ? true : false;
       bool is_crc32_valid = true;
       if (do_crc32_verification) {
         crc32_.ResetThreadLocalStorage();
@@ -1105,8 +1150,8 @@ class HSTableManager {
       if (entry_header.HasPadding()) has_padding_in_values = true;
       offset += size_header + entry_header.size_key + entry_header.size_value_offset();
       log::trace("HSTableManager::RecoverFile",
-                "Scanned hash [%" PRIu64 "], next offset [%" PRIu64 "] - CRC32:%s stored=0x%08x computed=0x%08x",
-                entry_header.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry_header.crc32, crc32_.get());
+                 "Scanned hash [%" PRIu64 "], next offset [%" PRIu64 "] - CRC32:%s stored=0x%08x computed=0x%08x",
+                 entry_header.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry_header.crc32, crc32_.get());
     }
 
     // 3. Write a new index at the end of the file with whatever entries could be save
@@ -1121,7 +1166,8 @@ class HSTableManager {
         return Status::IOError("HSTableManager::RecoverFile()", strerror(errno));
       }
       uint64_t size_offarray;
-      WriteOffsetArray(fd, offarray_current, &size_offarray, hstheader.GetFileType(), has_padding_in_values, has_invalid_entries);
+      Status s = WriteOffsetArray(fd, offarray_current, &size_offarray, hstheader.GetFileType(), has_padding_in_values, has_invalid_entries);
+      if (!s.IsOK()) return s;
       file_resource_manager.SetFileSize(fileid, mmap.filesize() + size_offarray);
       close(fd);
     } else {
