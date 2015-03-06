@@ -753,7 +753,7 @@ class HSTableManager {
       // may not be done. To solve that problem, and because compression
       // and hash functions take input of limited sizes anyway, the constant
       // 'maximum_chunk_size' has been introduced. As part of the
-      // KingDB::PutChunk() method, the sizes of incoming orders are checked,
+      // Database::PutChunk() method, the sizes of incoming orders are checked,
       // and if they are larger than 'maximum_chunk_size', they are split
       // into smaller chunks. This is done in such a way that any
       // self-contained large entry would be split, therefore guaranteeing

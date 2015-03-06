@@ -9,14 +9,14 @@
 
 #include "util/status.h"
 #include "interface/iterator.h"
-#include "interface/interface.h"
+#include "interface/kingdb.h"
 #include "util/order.h"
 #include "util/byte_array.h"
 #include "util/options.h"
 
 namespace kdb {
 
-class Snapshot: public Interface {
+class Snapshot: public KingDB {
  public:
   Snapshot()
       : se_live_(nullptr),

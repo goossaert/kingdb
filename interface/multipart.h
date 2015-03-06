@@ -22,12 +22,12 @@
 #include "util/byte_array.h"
 #include "algorithm/compressor.h"
 #include "algorithm/crc32c.h"
-#include "interface/interface.h"
+#include "interface/kingdb.h"
 
 namespace kdb {
 
 class MultipartReader {
- friend class KingDB;
+ friend class Database;
  friend class Iterator;
  public:
   ~MultipartReader() {}
@@ -189,7 +189,7 @@ class MultipartReader {
 
 
 class MultipartWriter {
- friend class KingDB;
+ friend class Database;
  friend class Iterator;
  public:
   ~MultipartWriter() {}
@@ -200,7 +200,7 @@ class MultipartWriter {
     return s;
   }
  private:
-  MultipartWriter(Interface* db, WriteOptions& write_options, ByteArray& key, uint64_t size_value_total)
+  MultipartWriter(KingDB* db, WriteOptions& write_options, ByteArray& key, uint64_t size_value_total)
     : db_(db),
       write_options_(write_options),
       key_(key),
@@ -208,7 +208,7 @@ class MultipartWriter {
       offset_(0) {
   }
 
-  Interface* db_;
+  KingDB* db_;
   WriteOptions write_options_;
   ByteArray key_;
   uint64_t size_value_total_;

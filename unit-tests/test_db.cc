@@ -18,7 +18,7 @@
 #include <csignal>
 #include <random>
 
-#include "interface/kingdb.h"
+#include "interface/database.h"
 #include "kingdb/kdb.h"
 #include "util/debug.h"
 #include "util/status.h"
@@ -146,7 +146,7 @@ class DBTest {
 
   void Open(bool erase_db=true) {
     if(erase_db) EraseDB();
-    db_ = new kdb::KingDB(db_options_, dbname_);
+    db_ = new kdb::Database(db_options_, dbname_);
     Status s = db_->Open();
     if (!s.IsOK()) {
       delete db_;
@@ -290,7 +290,7 @@ class DBTest {
   }
 
 
-  kdb::KingDB* db_;
+  kdb::Database* db_;
   std::string test_purpose_;
   DataGenerator *data_generator_;
   std::string dbname_;

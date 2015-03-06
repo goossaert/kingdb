@@ -145,7 +145,7 @@ class ByteArray {
  // TODO: what is happenning when a ByteArray is assigned to another ByteArray?
  friend class MultipartReader;
  friend class StorageEngine;
- friend class KingDB;
+ friend class Database;
  friend class WriteBuffer;
  friend class Iterator;
  friend class NetworkTask;

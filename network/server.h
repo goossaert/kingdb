@@ -31,7 +31,7 @@
 
 #include "kingdb/kdb.h"
 #include "thread/threadpool.h"
-#include "interface/kingdb.h"
+#include "interface/database.h"
 #include "interface/multipart.h"
 #include "util/byte_array.h"
 #include "util/options.h"
@@ -43,8 +43,8 @@ class NetworkTask: public Task {
  public:
   int sockfd_;
   kdb::ServerOptions server_options_;
-  kdb::KingDB *db_;
-  NetworkTask(int sockfd, kdb::ServerOptions server_options, kdb::KingDB* db) {
+  kdb::Database *db_;
+  NetworkTask(int sockfd, kdb::ServerOptions server_options, kdb::Database* db) {
     sockfd_ = sockfd;
     server_options_ = server_options;
     db_ = db;
@@ -114,7 +114,7 @@ class Server {
   int sockfd_notify_recv_;
   int sockfd_notify_send_;
 
-  kdb::KingDB* db_;
+  kdb::Database* db_;
   ThreadPool *tp_;
 };
 

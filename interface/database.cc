@@ -2,33 +2,33 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
-#include "interface/kingdb.h"
+#include "interface/database.h"
 
 namespace kdb {
 
-Status KingDB::Get(ReadOptions& read_options,
+Status Database::Get(ReadOptions& read_options,
                    ByteArray& key,
                    ByteArray* value_out,
                    bool want_raw_data) {
   if (is_closed_) return Status::IOError("The database is not open");
-  log::trace("KingDB Get()", "[%s]", key.ToString().c_str());
+  log::trace("Database Get()", "[%s]", key.ToString().c_str());
   Status s = wb_->Get(read_options, key, value_out);
   if (s.IsDeleteOrder()) {
     return Status::NotFound("Unable to find entry");
   } else if (s.IsNotFound()) {
-    log::trace("KingDB Get()", "not found in buffer");
+    log::trace("Database Get()", "not found in buffer");
     s = se_->Get(read_options, key, value_out);
     if (s.IsNotFound()) {
-      log::trace("KingDB Get()", "not found in storage engine");
+      log::trace("Database Get()", "not found in storage engine");
       return s;
     } else if (s.IsOK()) {
-      log::trace("KingDB Get()", "found in storage engine");
+      log::trace("Database Get()", "found in storage engine");
     } else {
-      log::trace("KingDB Get()", "unidentified error");
+      log::trace("Database Get()", "unidentified error");
       return s;
     }
   } else {
-    log::trace("KingDB Get()", "found in buffer");
+    log::trace("Database Get()", "found in buffer");
   }
 
   // TODO-36: There is technical debt here:
@@ -38,7 +38,7 @@ Status KingDB::Get(ReadOptions& read_options,
   //    not have to copy data into intermediate buffers through the Multipart
   //    Reader as it is done here. Having intermediate buffers means that there
   //    is more data copy than necessary, thus more time wasted
-  log::trace("KingDB Get()", "Before Multipart - want_raw_data:%d value_out->is_compressed():%d", want_raw_data, value_out->is_compressed());
+  log::trace("Database Get()", "Before Multipart - want_raw_data:%d value_out->is_compressed():%d", want_raw_data, value_out->is_compressed());
   if (want_raw_data == false && value_out->is_compressed()) {
     if (value_out->size() > db_options_.internal__size_multipart_required) {
       return Status::MultipartRequired();
@@ -49,7 +49,7 @@ Status KingDB::Get(ReadOptions& read_options,
     for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
       ByteArray part;
       mp_reader.GetPart(&part);
-      log::trace("KingDB Get()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
+      log::trace("Database Get()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
       memcpy(buffer + offset, part.data(), part.size());
       offset += part.size();
     }
@@ -59,17 +59,17 @@ Status KingDB::Get(ReadOptions& read_options,
   return s;
 }
 
-Status KingDB::Get(ReadOptions& read_options, ByteArray& key, ByteArray* value_out) {
+Status Database::Get(ReadOptions& read_options, ByteArray& key, ByteArray* value_out) {
   return Get(read_options, key, value_out, false);
 }
 
 
-Status KingDB::Put(WriteOptions& write_options, ByteArray& key, ByteArray& chunk) {
+Status Database::Put(WriteOptions& write_options, ByteArray& key, ByteArray& chunk) {
   return PutChunk(write_options, key, chunk, 0, chunk.size());
 }
 
 
-Status KingDB::PutChunk(WriteOptions& write_options,
+Status Database::PutChunk(WriteOptions& write_options,
                         ByteArray& key,
                         ByteArray& chunk,
                         uint64_t offset_chunk,
@@ -110,7 +110,7 @@ Status KingDB::PutChunk(WriteOptions& write_options,
 }
 
 
-Status KingDB::PutChunkValidSize(WriteOptions& write_options,
+Status Database::PutChunkValidSize(WriteOptions& write_options,
                                  ByteArray& key,
                                  ByteArray& chunk,
                                  uint64_t offset_chunk,
@@ -119,7 +119,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   Status s;
   s = se_->FileSystemStatus();
   if (!s.IsOK()) return s;
-  log::trace("KingDB::PutChunkValidSize()",
+  log::trace("Database::PutChunkValidSize()",
             "[%s] size_chunk:%" PRIu64 " offset_chunk:%" PRIu64,
             key.ToString().c_str(),
             chunk.size(),
@@ -132,7 +132,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 
   bool is_first_chunk = (offset_chunk == 0);
   bool is_last_chunk = (chunk.size() + offset_chunk == size_value);
-  log::trace("KingDB::PutChunkValidSize()",
+  log::trace("Database::PutChunkValidSize()",
             "CompressionType:%d",
             db_options_.compression.type);
 
@@ -170,7 +170,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
                              &compressed,
                              &size_compressed);
 
-    log::trace("KingDB::PutChunkValidSize()",
+    log::trace("Database::PutChunkValidSize()",
               "[%s] size_compressed:%" PRIu64,
               key.ToString().c_str(), compressor_.size_compressed());
 
@@ -192,7 +192,7 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
     if (!s.IsOK()) return s;
     ByteArray chunk_compressed = ByteArray::NewShallowCopyByteArray(compressed, size_compressed);
 
-    log::trace("KingDB::PutChunkValidSize()",
+    log::trace("Database::PutChunkValidSize()",
               "[%s] (%" PRIu64 ") compressed size %" PRIu64 " - offset_chunk_compressed %" PRIu64,
               key.ToString().c_str(),
               chunk.size(),
@@ -224,12 +224,12 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
   crc32_.stream(chunk_final.data(), chunk_final.size());
   if (is_last_chunk) crc32 = crc32_.get();
 
-  log::trace("KingDB PutChunkValidSize()", "[%s] size_value_compressed:%" PRIu64 " crc32:0x%" PRIx64 " END", key.ToString().c_str(), size_value_compressed, crc32);
+  log::trace("Database PutChunkValidSize()", "[%s] size_value_compressed:%" PRIu64 " crc32:0x%" PRIx64 " END", key.ToString().c_str(), size_value_compressed, crc32);
 
   uint64_t size_padding = do_compression ? EntryHeader::CalculatePaddingSize(size_value) : 0;
   if (  offset_chunk_compressed + chunk_final.size()
       > size_value + size_padding) {
-    log::emerg("KingDB::PutChunkValidSize()", "Error: write was attempted outside of the allocated memory.");
+    log::emerg("Database::PutChunkValidSize()", "Error: write was attempted outside of the allocated memory.");
     return Status::IOError("Prevented write to occur outside of the allocated memory.");
   }
 
@@ -244,19 +244,19 @@ Status KingDB::PutChunkValidSize(WriteOptions& write_options,
 }
 
 
-Status KingDB::Delete(WriteOptions& write_options,
+Status Database::Delete(WriteOptions& write_options,
                       ByteArray& key) {
   if (is_closed_) return Status::IOError("The database is not open");
-  log::trace("KingDB::Delete()", "[%s]", key.ToString().c_str());
+  log::trace("Database::Delete()", "[%s]", key.ToString().c_str());
   Status s = se_->FileSystemStatus();
   if (!s.IsOK()) return s;
   return wb_->Delete(write_options, key);
 }
 
 
-Snapshot KingDB::NewSnapshot() {
+Snapshot Database::NewSnapshot() {
   if (is_closed_) return Snapshot();
-  log::trace("KingDB::NewSnapshot()", "start");
+  log::trace("Database::NewSnapshot()", "start");
 
   wb_->Flush();
   uint32_t fileid_end = se_->FlushCurrentFileForSnapshot();
@@ -283,9 +283,9 @@ Snapshot KingDB::NewSnapshot() {
 }
 
 
-Interface* KingDB::NewSnapshotPointer() {
+KingDB* Database::NewSnapshotPointer() {
   if (is_closed_) return nullptr;
-  log::trace("KingDB::NewSnapshotPointer()", "start");
+  log::trace("Database::NewSnapshotPointer()", "start");
 
   wb_->Flush();
   uint32_t fileid_end = se_->FlushCurrentFileForSnapshot();
@@ -314,9 +314,9 @@ Interface* KingDB::NewSnapshotPointer() {
 
 
 
-Iterator KingDB::NewIterator(ReadOptions& read_options) {
+Iterator Database::NewIterator(ReadOptions& read_options) {
   if (is_closed_) return Iterator();
-  Interface* snapshot = NewSnapshotPointer();
+  KingDB* snapshot = NewSnapshotPointer();
   Iterator it = snapshot->NewIterator(read_options);
   //Iterator *si = static_cast<BasicIterator*>(it);
   it.SetParentSnapshot(snapshot);

@@ -305,7 +305,7 @@ Status Server::Start(ServerOptions& server_options,
 void Server::AcceptNetworkTraffic() {
 
   // Create the database object and the thread pool
-  db_ = new kdb::KingDB(db_options_, dbname_);
+  db_ = new kdb::Database(db_options_, dbname_);
   Status s = db_->Open();
   if (!s.IsOK()) {
     log::emerg("Server", s.ToString().c_str()); 

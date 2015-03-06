@@ -8,13 +8,13 @@
 #include <thread>
 #include <string>
 
-#include "interface/interface.h"
+#include "interface/kingdb.h"
 #include "util/status.h"
 #include "util/logger.h"
 
 namespace kdb {
 
-class DummyInterface: public Interface {
+class DummyInterface: public KingDB {
  public:
   DummyInterface() {}
   virtual ~DummyInterface() {}

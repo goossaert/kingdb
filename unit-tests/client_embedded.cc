@@ -18,7 +18,7 @@
 
 #include <gperftools/profiler.h>
 
-#include "interface/kingdb.h"
+#include "interface/database.h"
 #include "kingdb/kdb.h"
 #include "util/status.h"
 #include "util/order.h"
@@ -52,7 +52,7 @@ int main() {
   kdb::Logger::set_current_level("trace");
 
   kdb::DatabaseOptions options;
-  kdb::KingDB db(options, "mydb");
+  kdb::Database db(options, "mydb");
   db.Open();
 
   kdb::ReadOptions read_options;

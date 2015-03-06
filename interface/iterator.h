@@ -12,7 +12,7 @@
 #include "util/byte_array.h"
 #include "util/options.h"
 #include "util/file.h"
-#include "interface/interface.h"
+#include "interface/kingdb.h"
 #include "interface/multipart.h"
 #include "storage/storage_engine.h"
 
@@ -66,7 +66,7 @@ class Iterator {
     it.snapshot_ = nullptr;
   }
 
-  void SetParentSnapshot(Interface *snapshot) {
+  void SetParentSnapshot(KingDB *snapshot) {
     snapshot_ = snapshot;
   }
 
@@ -212,12 +212,12 @@ class Iterator {
     for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
       ByteArray part;
       mp_reader.GetPart(&part);
-      log::trace("KingDB Get()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
+      log::trace("ByteArray::GetValue()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
       memcpy(buffer + offset, part.data(), part.size());
       offset += part.size();
     }
     status_ = mp_reader.GetStatus();
-    if (!status_.IsOK()) log::trace("KingDB Get()", "Error in GetValue(): %s\n", status_.ToString().c_str());
+    if (!status_.IsOK()) log::trace("ByteArray::GetValue()", "Error in GetValue(): %s\n", status_.ToString().c_str());
     return ByteArray::NewShallowCopyByteArray(buffer, value_.size());
   }
 
@@ -232,7 +232,7 @@ class Iterator {
 
  private:
   StorageEngine *se_readonly_;
-  Interface* snapshot_;
+  KingDB* snapshot_;
   ReadOptions read_options_;
   std::mutex mutex_;
   uint32_t fileid_current_;
