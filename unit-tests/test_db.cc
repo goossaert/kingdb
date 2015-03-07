@@ -226,7 +226,7 @@ class DBTest {
       test_purpose_ = "Small-sized HSTables with compression disabled";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kNoCompression;
-      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+      db_options_.write_buffer__mode = kWriteBufferModeDirect;
       db_options_.write_buffer__size = 1024 * 256;
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
@@ -234,7 +234,7 @@ class DBTest {
       test_purpose_ = "Small-sized HSTables with incompressible data and LZ4 compression";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
-      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+      db_options_.write_buffer__mode = kWriteBufferModeDirect;
       db_options_.write_buffer__size = 1024 * 256;
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
@@ -242,20 +242,20 @@ class DBTest {
       test_purpose_ = "Small-sized HSTables with compressible data and LZ4 compression";
       data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
-      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+      db_options_.write_buffer__mode = kWriteBufferModeDirect;
       db_options_.write_buffer__size = 1024 * 256;
       db_options_.storage__maximum_chunk_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
     } else if (index_db_options_ == 11) {
-      test_purpose_ = "Blocking mode for Write Buffer (incompressible data with LZ4 compression enabled)";
+      test_purpose_ = "Direct mode for Write Buffer (incompressible data with LZ4 compression enabled)";
       data_generator_ = new IncompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
-      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+      db_options_.write_buffer__mode = kWriteBufferModeDirect;
     } else if (index_db_options_ == 12) {
-      test_purpose_ = "Blocking mode for Write Buffer (compressible data with LZ4 compression enabled)";
+      test_purpose_ = "Direct mode for Write Buffer (compressible data with LZ4 compression enabled)";
       data_generator_ = new CompressibleDataGenerator();
       db_options_.compression.type = kLZ4Compression;
-      db_options_.write_buffer__mode = kWriteBufferModeBlocking;
+      db_options_.write_buffer__mode = kWriteBufferModeDirect;
     } else {
       return false;
     }

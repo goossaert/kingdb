@@ -164,8 +164,8 @@ int main(int argc, char** argv) {
   db_options.hash = htype;
 
   kdb::WriteBufferMode wbm;
-  if (db_options.write_buffer__mode_str == "blocking") {
-    wbm = kdb::kWriteBufferModeBlocking;
+  if (db_options.write_buffer__mode_str == "direct") {
+    wbm = kdb::kWriteBufferModeDirect;
   } else if (db_options.write_buffer__mode_str == "adaptive") {
     wbm = kdb::kWriteBufferModeAdaptive;
   } else {

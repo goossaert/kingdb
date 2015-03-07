@@ -274,8 +274,6 @@ class ClientTask: public Task {
   }
 
 
-
-  // TODO-25: make sure that everything works fine even with non-ascii data:
   // use the hashes from MakeValue2() instead of the hashes from MakeValue()
   char* MakeValue(const std::string& key, int size_value) {
     int size_key = key.size();

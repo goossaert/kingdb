@@ -26,7 +26,7 @@ enum ChecksumType {
 };
 
 enum WriteBufferMode {
-  kWriteBufferModeBlocking = 0x0, 
+  kWriteBufferModeDirect   = 0x0, 
   kWriteBufferModeAdaptive = 0x1
 };
 
@@ -149,7 +149,7 @@ struct DatabaseOptions {
                          "The timeout after which the write buffer will flush its cache."));
     parser.AddParameter(new kdb::StringParameter(
                          "db.write-buffer.mode", "adaptive", &db_options.write_buffer__mode_str, false,
-                         "The mode with which the write buffer handles incoming traffic, can be 'blocking' or 'adaptive'. With the 'blocking' mode, once the Write Buffer is full other incoming Write and Delete operations will blocked until the buffer is persisted to secondary storage. The blocking mode should be used when the clients are not subjects to timeouts. When choosing the 'adaptive' mode, incoming orders will be made slower, down to the speed of the writes on the secondary storage, so that they are almost just as fast as when using the blocking mode, but are never blocking. The adaptive mode is expected to introduce a small performance decrease, but required for cases where clients timeouts must be avoided, for example when the database is used over a network."));
+                         "The mode with which the write buffer handles incoming traffic, can be 'direct' or 'adaptive'. With the 'direct' mode, once the Write Buffer is full other incoming Write and Delete operations will block until the buffer is persisted to secondary storage. The direct mode should be used when the clients are not subjects to timeouts. When choosing the 'adaptive' mode, incoming orders will be made slower, down to the speed of the writes on the secondary storage, so that they are almost just as fast as when using the direct mode, but are never blocking. The adaptive mode is expected to introduce a small performance decrease, but required for cases where clients timeouts must be avoided, for example when the database is used over a network."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.hstable-size", "32MB", &db_options.storage__hstable_size, false,
                          "Maximum size a HSTable can have. Entries with keys and values beyond that size are considered to be large entries."));

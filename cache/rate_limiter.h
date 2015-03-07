@@ -132,7 +132,8 @@ class RateLimiter {
 
   uint64_t GetWritingRate() {
     // If no rate has been stored yet, a default value is used.
-    if (rates_.size() == 0) return 1 * 1024 * 1024;
+    uint64_t default_rate = 1 * 1024 * 1024;
+    if (rates_.size() == 0) return default_rate;
     // The writting rate is an average: this allows to cope with irregularities
     // in the throughput and prevent the rate limiter to fall into a flapping
     // effect, in which it would limit the throughput either way too much,
@@ -144,8 +145,10 @@ class RateLimiter {
     uint64_t rate_limit_current = sum / rates_.size();
     if (rate_limit_ > 0 && rate_limit_ < rate_limit_current) {
       return rate_limit_;
-    } else {
+    } else if (rate_limit_current > 0){
       return rate_limit_current;
+    } else {
+      return default_rate; 
     }
   }
 

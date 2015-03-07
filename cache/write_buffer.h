@@ -40,11 +40,11 @@ class WriteBuffer {
     thread_buffer_handler_ = std::thread(&WriteBuffer::ProcessingLoop, this);
     is_closed_ = false;
 
-    log::debug("WriteBuffer::ctor()", "WriteBufer::ctor() %" PRIu64 " - %s\n", db_options_.rate_limit_incoming, db_options_.write_buffer__mode_str.c_str());
+    log::debug("WriteBuffer::ctor()", "WriteBuffer::ctor() %" PRIu64 " - %s\n", db_options_.rate_limit_incoming, db_options_.write_buffer__mode_str.c_str());
     if (db_options_.write_buffer__mode == kWriteBufferModeAdaptive) {
-      log::debug("WriteBuffer::ctor()", "WriteBufer::ctor() write buffer mode adaptive\n");
+      log::debug("WriteBuffer::ctor()", "WriteBuffer::ctor() write buffer mode adaptive\n");
     } else {
-      log::debug("WriteBuffer::ctor()", "WriteBufer::ctor() write buffer mode blocking\n");
+      log::debug("WriteBuffer::ctor()", "WriteBuffer::ctor() write buffer mode direct\n");
     }
 
   }
