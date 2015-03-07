@@ -413,17 +413,19 @@ class StorageEngine {
     log::trace("StorageEngine::GetWithIndex()", "num entries in index:[%d] content:[%s] size:[%d] hashed_key:[0x%" PRIx64 "]", index.size(), key.ToString().c_str(), key.size(), hashed_key);
 
     auto range = index.equal_range(hashed_key);
-    auto rbegin = --range.second;
-    auto rend  = --range.first;
-    for (auto it = rbegin; it != rend; --it) {
-      ByteArray key_temp;
-      Status s = GetEntry(read_options, it->second, &key_temp, value_out);
-      log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key.ToString().c_str(), key_temp.ToString().c_str(), hashed_key, it->first, key.size(), key_temp.size());
-      if ((s.IsOK() || s.IsDeleteOrder()) && key_temp == key) {
-        log::trace("StorageEngine::GetWithIndex()", "Entry [%s] found at location: 0x%08" PRIx64, key.ToString().c_str(), it->second);
-        if (location_out != nullptr) *location_out = it->second;
-        return s;
-      }
+    if (range.first != range.second) {
+      auto it = --range.second;
+      do {
+        ByteArray key_temp;
+        Status s = GetEntry(read_options, it->second, &key_temp, value_out);
+        log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key.ToString().c_str(), key_temp.ToString().c_str(), hashed_key, it->first, key.size(), key_temp.size());
+        if ((s.IsOK() || s.IsDeleteOrder()) && key_temp == key) {
+          log::trace("StorageEngine::GetWithIndex()", "Entry [%s] found at location: 0x%08" PRIx64, key.ToString().c_str(), it->second);
+          if (location_out != nullptr) *location_out = it->second;
+          return s;
+        }
+        --it;
+      } while(it != range.first);
     }
     log::trace("StorageEngine::GetWithIndex()", "%s - not found!", key.ToString().c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
