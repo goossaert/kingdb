@@ -8,6 +8,7 @@
 #include "include/kingdb/kdb.h"
 #include "network/server.h"
 #include "thread/threadpool.h"
+#include "util/logger.h"
 #include "util/options.h"
 #include "util/file.h"
 #include "util/config_parser.h"
@@ -15,7 +16,7 @@
 bool stop_requested = false;
 
 void termination_signal_handler(int signal) {
-  fprintf(stderr, "Received signal [%d]\n", signal);
+  kdb::log::info("KingServer", "Received signal [%d]\n", signal);
   stop_requested = true; 
 }
 
@@ -193,9 +194,11 @@ int main(int argc, char** argv) {
 
   kdb::Server server;
   server.Start(server_options, db_options, dbname);
+  kdb::log::info("KingServer", "Daemon has started");
   while (!stop_requested && !server.IsStopRequested()) {
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
   }
   server.Stop();
+  kdb::log::info("KingServer", "Daemon has stopped");
   return 0;
 }

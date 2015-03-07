@@ -50,9 +50,9 @@ class Logger {
                    const char* logname,
                    const char* format,
                    va_list args) {
-    if (log_target_ == Logger::kLogTargetStderr) {
-      if (level > current_level()) return;
-      if (thread_safe) mutex_.lock();
+    if (level > current_level()) return;
+    if (log_target_ == Logger::kLogTargetStderr && thread_safe) {
+      mutex_.lock();
     }
 
     char buffer[512];

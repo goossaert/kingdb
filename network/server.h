@@ -52,7 +52,7 @@ class NetworkTask: public Task {
   virtual ~NetworkTask() {};
 
   virtual void RunInLock(std::thread::id tid) {
-    std::cout << "Thread " << tid << std::endl;
+    //std::cout << "Thread " << tid << std::endl;
   }
 
   virtual void Run(std::thread::id tid, uint64_t id);

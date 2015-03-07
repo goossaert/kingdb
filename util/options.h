@@ -125,7 +125,7 @@ struct DatabaseOptions {
 
     // Logging options
     parser.AddParameter(new kdb::StringParameter(
-                        "log.level", "emerg", &db_options.log_level, false,
+                        "log.level", "info", &db_options.log_level, false,
                         "Level of the logging, can be: silent, emerg, alert, crit, error, warn, notice, info, debug, trace."));
     parser.AddParameter(new kdb::StringParameter(
                         "log.target", "kingdb", &db_options.log_target, false,
