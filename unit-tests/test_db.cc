@@ -540,17 +540,13 @@ TEST(DBTest, SingleThreadSnapshot) {
 }
 
 
-std::string compute_external_md5(const char* filepath) {
-  // Compute the md5 of a file using an external source
+std::string run_command(const char* command) {
   FILE *file;
   char res[256];
 
-  std::string command("md5 ");
-  command += filepath;
-
-  file = popen(command.c_str(), "r");
+  file = popen(command, "r");
   if (file == NULL) {
-    fprintf(stderr, "compute_external_md5(): %s\n", strerror(errno));
+    fprintf(stderr, "run_command(): %s\n", strerror(errno));
     exit(1);
   }
 
@@ -558,14 +554,51 @@ std::string compute_external_md5(const char* filepath) {
   while (fgets(res, sizeof(res), file) != NULL) {
     ret = std::string(res);
   }
-
-  std::size_t pos = ret.find("=");
-  std::string md5 = ret.substr(pos);
-
+  if (ret.size() >= 1) {
+    // remove trailing newline character
+    ret = ret.substr(0, ret.size() - 1); 
+  }
   pclose(file);
-  return md5;
+  return ret;
 }
 
+
+bool exists_program(const char* program_name) {
+  std::string command("which ");
+  command += program_name;
+  std::string ret = run_command(command.c_str());
+  std::size_t pos = ret.find(program_name);
+  if (pos == -1) return false;
+  return true;
+}
+
+
+std::string compute_external_md5(const char* filepath) {
+  // Compute the md5 of a file using an external source
+  FILE *file;
+  char res[256];
+
+  if (exists_program("md5")) {
+    std::string command("md5 ");
+    command += filepath;
+    std::string ret = run_command(command.c_str());
+    std::size_t pos = ret.find("=");
+    std::string md5 = ret.substr(pos);
+    //fprintf(stderr, "%s - %s\n", ret.c_str(), md5.c_str());
+    return md5;
+  } else if (exists_program("md5sum")) {
+    std::string command("md5sum ");
+    command += filepath;
+    std::string ret = run_command(command.c_str());
+    std::size_t pos = ret.find(" ");
+    std::string md5 = ret.substr(0, pos);
+    //fprintf(stderr, "%s - %s\n", ret.c_str(), md5.c_str());
+    return md5;
+  } else {
+    fprintf(stderr, "Error: could not find any external program to calculate the md5 checksum\n"); 
+    exit(1);
+  }
+}
 
 
 
