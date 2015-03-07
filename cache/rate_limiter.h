@@ -18,6 +18,7 @@ class RateLimiter {
     : rate_limit_(rate_limit),
       rate_incoming_(250 * 1024 * 1024),
       rate_incoming_adjusted_(0),
+      rate_writing_default_(1 * 1024 * 1024),
       epoch_last_(0),
       epoch_current_(0),
       duration_slept_(0),
@@ -132,8 +133,7 @@ class RateLimiter {
 
   uint64_t GetWritingRate() {
     // If no rate has been stored yet, a default value is used.
-    uint64_t default_rate = 1 * 1024 * 1024;
-    if (rates_.size() == 0) return default_rate;
+    if (rates_.size() == 0) return rate_writing_default_;
     // The writting rate is an average: this allows to cope with irregularities
     // in the throughput and prevent the rate limiter to fall into a flapping
     // effect, in which it would limit the throughput either way too much,
@@ -148,7 +148,7 @@ class RateLimiter {
     } else if (rate_limit_current > 0){
       return rate_limit_current;
     } else {
-      return default_rate; 
+      return rate_writing_default_; 
     }
   }
 
@@ -158,6 +158,7 @@ class RateLimiter {
   uint64_t rate_incoming_;
   uint64_t rate_incoming_adjusted_;
   uint64_t rate_writing_;
+  uint64_t rate_writing_default_;
   uint64_t epoch_last_;
   uint64_t epoch_current_;
   uint64_t duration_slept_;
