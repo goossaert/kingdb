@@ -51,7 +51,9 @@ int daemonize() {
   }
 
   umask(0);
-  chdir("/");
+  if (chdir("/") < 0) {
+    fprintf(stderr, "chdir(): %s\n", strerror(errno));
+  }
 
   return 0; 
 }

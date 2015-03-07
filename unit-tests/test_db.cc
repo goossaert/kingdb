@@ -612,8 +612,9 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
       kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer, size_current);
       s = mp_writer.PutPart(value);
 
-      write(fd, buffer, size_current);
-      //memcpy(buffer_full + i, buffer, size_current);
+      if (write(fd, buffer, size_current) < 0) {
+        fprintf(stderr, "write(): %s\n", strerror(errno));
+      }
       if (!s.IsOK()) {
         fprintf(stderr, "PutChunk(): %s\n", s.ToString().c_str());
       }
