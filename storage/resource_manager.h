@@ -25,12 +25,11 @@
 #include <errno.h>
 #include <dirent.h>
 
-#include "kingdb/kdb.h"
-#include "util/options.h"
-#include "algorithm/hash.h"
 #include "util/byte_array.h"
-#include "algorithm/crc32c.h"
 #include "util/file.h"
+#include "util/options.h"
+#include "algorithm/crc32c.h"
+#include "algorithm/hash.h"
 
 
 namespace kdb {

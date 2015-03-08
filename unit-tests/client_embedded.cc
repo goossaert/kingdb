@@ -19,7 +19,6 @@
 #include <gperftools/profiler.h>
 
 #include "interface/database.h"
-#include "kingdb/kdb.h"
 #include "util/status.h"
 #include "util/order.h"
 #include "util/byte_array.h"

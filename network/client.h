@@ -19,7 +19,6 @@
 #include "util/status.h"
 #include "util/logger.h"
 #include "thread/threadpool.h"
-#include "kingdb/kdb.h"
 
 #define SIZE_BUFFER_CLIENT    1024*1024*1 // used by client to get data from server
 #define SIZE_LARGE_TEST_ITEMS 1024*1024*1 // size of large items used for testing

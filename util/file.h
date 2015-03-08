@@ -18,6 +18,7 @@
 #include <memory>
 
 #include "util/status.h"
+#include "util/logger.h"
 
 namespace kdb {
 

@@ -10,7 +10,6 @@
 #include <condition_variable>
 #include <vector>
 #include <map>
-#include "kingdb/kdb.h"
 
 namespace kdb {
 

@@ -8,8 +8,6 @@
 #include "util/debug.h"
 #include <inttypes.h>
 
-#include "kingdb/kdb.h"
-
 namespace kdb {
 
 class RateLimiter {

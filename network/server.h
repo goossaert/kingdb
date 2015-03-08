@@ -29,7 +29,6 @@
 #include <string>
 #include <chrono>
 
-#include "kingdb/kdb.h"
 #include "thread/threadpool.h"
 #include "interface/database.h"
 #include "interface/multipart.h"

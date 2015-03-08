@@ -24,7 +24,6 @@
 #include <errno.h>
 #include <dirent.h>
 
-#include "kingdb/kdb.h"
 #include "util/options.h"
 #include "util/order.h"
 #include "util/byte_array.h"

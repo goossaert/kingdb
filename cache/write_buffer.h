@@ -15,11 +15,11 @@
 #include <chrono>
 #include <ctime>
 
-#include "cache/rate_limiter.h"
-#include "kingdb/kdb.h"
-#include "util/order.h"
-#include "util/byte_array.h"
 #include "util/options.h"
+#include "util/byte_array.h"
+#include "util/order.h"
+#include "cache/rate_limiter.h"
+#include "thread/event_manager.h"
 
 namespace kdb {
 

@@ -11,6 +11,7 @@
 #include <condition_variable>
 #include <queue>
 #include <vector>
+#include <map>
 
 
 namespace kdb {

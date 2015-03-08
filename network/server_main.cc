@@ -5,13 +5,17 @@
 #include <execinfo.h>
 #include <csignal>
 
-#include "include/kingdb/kdb.h"
 #include "network/server.h"
 #include "thread/threadpool.h"
 #include "util/logger.h"
 #include "util/options.h"
 #include "util/file.h"
 #include "util/config_parser.h"
+
+static const uint32_t kVersionServerMajor    = 0;
+static const uint32_t kVersionServerMinor    = 9;
+static const uint32_t kVersionServerRevision = 0;
+static const uint32_t kVersionServerBuild    = 0;
 
 bool stop_requested = false;
 
@@ -111,8 +115,8 @@ int main(int argc, char** argv) {
   kdb::ServerOptions::AddParametersToConfigParser(server_options, parser);
 
   if (argc == 2 && (strncmp(argv[1], "--help", 6) == 0 || strncmp(argv[1], "-h", 2) == 0)) {
-    fprintf(stdout, "KingDB is a persisted key-value store. For more information, visit http://kingdb.org\n");
-    fprintf(stdout, "Software version %d.%d.%d\nData format version %d.%d\n", kdb::kVersionMajor, kdb::kVersionMinor, kdb::kVersionRevision, kdb::kVersionDataFormatMajor, kdb::kVersionDataFormatMinor);
+    fprintf(stdout, "KingServer is a persisted key-value database server, which uses the KingDB library\nas a storage backend. For more information, visit http://kingdb.org\n");
+    fprintf(stdout, "KingServer version: %d.%d.%d\nKingDB version: %d.%d.%d\nData format version: %d.%d\n", kVersionServerMajor, kVersionServerMinor, kVersionServerRevision, kdb::kVersionMajor, kdb::kVersionMinor, kdb::kVersionRevision, kdb::kVersionDataFormatMajor, kdb::kVersionDataFormatMinor);
     fprintf(stdout, "\nParameters:\n\n");
     parser.PrintUsage();
     exit(0);

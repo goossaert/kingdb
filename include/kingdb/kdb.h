@@ -5,18 +5,13 @@
 #ifndef KINGDB_HEADERS_H_
 #define KINGDB_HEADERS_H_
 
-#include "util/logger.h"
+#include "util/byte_array.h"
 #include "util/status.h"
-#include "util/order.h"
-#include "thread/event_manager.h"
-
-namespace kdb {
-
-static const uint32_t kVersionMajor    = 0;
-static const uint32_t kVersionMinor    = 9;
-static const uint32_t kVersionRevision = 0;
-static const uint32_t kVersionBuild    = 0;
-
-} // namespace kdb
+#include "util/options.h"
+#include "interface/kingdb.h"
+#include "interface/database.h"
+#include "interface/snapshot.h"
+#include "interface/iterator.h"
+#include "interface/multipart.h"
 
 #endif // KINGDB_HEADERS_H_

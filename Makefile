@@ -19,7 +19,11 @@ CLIENT_NETWORK=client_network
 CLIENT_EMB=client_emb
 TEST_COMPRESSION=test_compression
 TEST_DB=test_db
-LIBRARY=kingdb.a
+LIBRARY=libkingdb.a
+PREFIX=/usr/local
+BINDIR=$(PREFIX)/bin
+INCLUDEDIR=$(PREFIX)/include/kingdb
+LIBDIR=$(PREFIX)/lib
 
 CFLAGS=-std=c++11 -c
 
@@ -60,6 +64,19 @@ $(TEST_DB): $(OBJECTS) $(OBJECTS_TEST_DB)
 $(LIBRARY): $(OBJECTS)
 	rm -f $@
 	ar -rs $@ $(OBJECTS)
+
+install: $(EXECUTABLE)
+	install $(EXECUTABLE) $(BINDIR)
+	cp libkingdb.a $(LIBDIR)
+	rm -rf $(INCLUDEDIR)
+	mkdir $(INCLUDEDIR) $(INCLUDEDIR)/util $(INCLUDEDIR)/thread $(INCLUDEDIR)/interface $(INCLUDEDIR)/storage $(INCLUDEDIR)/algorithm $(INCLUDEDIR)/cache
+	cp algorithm/*.h $(INCLUDEDIR)/algorithm
+	cp cache/*.h $(INCLUDEDIR)/cache
+	cp include/kingdb/*.h $(INCLUDEDIR)
+	cp interface/*.h $(INCLUDEDIR)/interface
+	cp util/*.h $(INCLUDEDIR)/util
+	cp thread/*.h $(INCLUDEDIR)/thread
+	cp storage/*.h $(INCLUDEDIR)/storage
 
 .cc.o:
 	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@

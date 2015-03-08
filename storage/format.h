@@ -16,7 +16,7 @@
 #include <string.h>
 #include <inttypes.h>
 
-#include "include/kingdb/kdb.h"
+#include "util/version.h"
 #include "util/logger.h"
 #include "util/status.h"
 #include "algorithm/coding.h"

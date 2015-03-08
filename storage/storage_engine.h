@@ -25,7 +25,7 @@
 #include <errno.h>
 #include <dirent.h>
 
-#include "kingdb/kdb.h"
+#include "util/version.h"
 #include "util/options.h"
 #include "util/order.h"
 #include "util/byte_array.h"
@@ -35,6 +35,7 @@
 #include "storage/format.h"
 #include "storage/resource_manager.h"
 #include "storage/hstable_manager.h"
+#include "thread/event_manager.h"
 
 
 namespace kdb {

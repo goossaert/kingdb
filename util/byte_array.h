@@ -19,7 +19,6 @@
 
 #include "util/file.h"
 #include "util/logger.h"
-#include "util/logger.h"
 #include "util/options.h"
 #include "algorithm/compressor.h"
 #include "algorithm/crc32c.h"
