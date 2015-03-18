@@ -21,8 +21,10 @@ void WriteBuffer::Flush() {
 }
 
 Status WriteBuffer::Get(ReadOptions& read_options, ByteArray& key, ByteArray* value_out) {
-  // TODO: need to fix the way the value is returned here: to create a new
-  //       memory space and then return.
+  // NOTE: The lookups is done by iterating over vectors, which is fine
+  //       as long as the buffer doesn't become too big. This may need to be
+  //       changed for something faster at some point.
+
   // TODO: make sure the live buffer doesn't need to be protected by a mutex in
   //       order to be accessed -- right now I'm relying on timing, but that may
   //       be too weak to guarantee proper access
