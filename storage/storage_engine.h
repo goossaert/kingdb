@@ -139,7 +139,7 @@ class StorageEngine {
   }
 
   void ProcessingLoopStatistics() {
-    std::chrono::milliseconds duration(db_options_.compaction__check_interval);
+    std::chrono::milliseconds duration(db_options_.storage__statistics_polling_interval);
     while (true) {
       std::unique_lock<std::mutex> lock(mutex_statistics_);
       fs_free_space_ = FileUtil::fs_free_space(dbname_.c_str());
@@ -189,7 +189,7 @@ class StorageEngine {
     //    - If M reaches 0, try one compaction run (trying to clear the large
     //      files if any), and if still unsuccessful, declare compaction impossible
     // 6. If the compaction succeeded, update 'fileid_lastcompacted'
-    std::chrono::milliseconds duration(db_options_.storage__statistics_polling_interval);
+    std::chrono::milliseconds duration(db_options_.compaction__check_interval);
     uint32_t fileid_lastcompacted = 0;
     uint32_t fileid_out = 0;
     bool force_compaction = false;
