@@ -73,6 +73,7 @@ class KingDB {
   virtual Status Open() = 0;
   virtual void Close() = 0;
   virtual void Flush() = 0;
+  virtual void Compact() = 0;
 };
 
 } // namespace kdb

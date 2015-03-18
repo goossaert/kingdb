@@ -232,6 +232,7 @@ class Database: public KingDB {
   }
 
   virtual void Flush();
+  virtual void Compact();
 
 
  private:

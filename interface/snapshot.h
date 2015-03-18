@@ -111,6 +111,7 @@ class Snapshot: public KingDB {
   }
 
   virtual void Flush() {}
+  virtual void Compact() {}
 
  private:
   kdb::DatabaseOptions db_options_;

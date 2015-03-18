@@ -263,7 +263,7 @@ Status Database::PutChunkValidSize(WriteOptions& write_options,
 
 
 Status Database::Delete(WriteOptions& write_options,
-                      ByteArray& key) {
+                        ByteArray& key) {
   if (is_closed_) return Status::IOError("The database is not open");
   log::trace("Database::Delete()", "[%s]", key.ToString().c_str());
   Status s = se_->FileSystemStatus();
@@ -274,6 +274,13 @@ Status Database::Delete(WriteOptions& write_options,
 
 void Database::Flush() {
   wb_->Flush();
+}
+
+
+void Database::Compact() {
+  wb_->Flush();
+  se_->FlushCurrentFileForForcedCompaction();
+  se_->Compact();
 }
 
 

@@ -65,7 +65,10 @@ class HSTableManager {
         prefix_(prefix),
         prefix_compaction_(prefix_compaction),
         dirpath_locks_(dirpath_locks),
-        wait_until_can_open_new_files_(false) {
+        wait_until_can_open_new_files_(false),
+        fileid_(0),
+        sequence_fileid_(0),
+        sequence_timestamp_(0) {
     log::trace("HSTableManager::HSTableManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
     dbname_ = dbname;
     hash_ = MakeHash(db_options.hash);
@@ -125,6 +128,13 @@ class HSTableManager {
     log::trace("HSTableManager::SetSequenceFileId", "seq:%u", seq);
   }
 
+  uint32_t GetSequenceFileIdForStableId() {
+    std::unique_lock<std::mutex> lock(mutex_sequence_fileid_);
+    uint64_t fileid = sequence_fileid_;
+    if (!has_file_) fileid += 1;
+    return fileid;
+  }
+
   uint32_t GetSequenceFileId() {
     std::unique_lock<std::mutex> lock(mutex_sequence_fileid_);
     return sequence_fileid_;
@@ -179,7 +189,7 @@ class HSTableManager {
     // should only be computing the highest stable file id, and not do anything
     // else than that. I took this implementation shortcut to get the first beta
     // version out asap, this needs to be cleaned up at some point.
-    uint32_t fileid_max = GetSequenceFileId();
+    uint32_t fileid_max = GetSequenceFileIdForStableId(); //GetSequenceFileId();
     uint32_t fileid_stable = 0;
     uint32_t fileid_candidate = fileid_start;
     uint64_t epoch_now = file_resource_manager.GetEpochNow();
