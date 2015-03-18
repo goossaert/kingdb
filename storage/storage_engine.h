@@ -28,6 +28,7 @@
 #include "util/version.h"
 #include "util/options.h"
 #include "util/order.h"
+#include "util/filepool.h"
 #include "util/byte_array.h"
 #include "util/file.h"
 #include "algorithm/crc32c.h"
@@ -65,6 +66,7 @@ class StorageEngine {
     stop_requested_ = false;
     is_closed_ = false;
     fs_free_space_ = 0;
+    file_manager_ = std::make_shared<FileManager>();
     if (!is_read_only_) {
       thread_index_ = std::thread(&StorageEngine::ProcessingLoopIndex, this);
       thread_data_ = std::thread(&StorageEngine::ProcessingLoopData, this);
@@ -411,7 +413,7 @@ class StorageEngine {
     // NOTE: Since C++11, the relative ordering of elements with equivalent keys
     //       in a multimap is preserved.
     uint64_t hashed_key = hash_->HashFunction(key.data(), key.size());
-    log::trace("StorageEngine::GetWithIndex()", "num entries in index:[%d] content:[%s] size:[%d] hashed_key:[0x%" PRIx64 "]", index.size(), key.ToString().c_str(), key.size(), hashed_key);
+    //log::trace("StorageEngine::GetWithIndex()", "num entries in index:[%d] content:[%s] size:[%d] hashed_key:[0x%" PRIx64 "]", index.size(), key.ToString().c_str(), key.size(), hashed_key);
 
     auto range = index.equal_range(hashed_key);
     if (range.first != range.second) {
@@ -419,16 +421,16 @@ class StorageEngine {
       do {
         ByteArray key_temp;
         Status s = GetEntry(read_options, it->second, &key_temp, value_out);
-        log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key.ToString().c_str(), key_temp.ToString().c_str(), hashed_key, it->first, key.size(), key_temp.size());
+        //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key.ToString().c_str(), key_temp.ToString().c_str(), hashed_key, it->first, key.size(), key_temp.size());
         if ((s.IsOK() || s.IsDeleteOrder()) && key_temp == key) {
-          log::trace("StorageEngine::GetWithIndex()", "Entry [%s] found at location: 0x%08" PRIx64, key.ToString().c_str(), it->second);
+          //log::trace("StorageEngine::GetWithIndex()", "Entry [%s] found at location: 0x%08" PRIx64, key.ToString().c_str(), it->second);
           if (location_out != nullptr) *location_out = it->second;
           return s;
         }
         --it;
       } while(it != range.first);
     }
-    log::trace("StorageEngine::GetWithIndex()", "%s - not found!", key.ToString().c_str());
+    //log::trace("StorageEngine::GetWithIndex()", "%s - not found!", key.ToString().c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
   }
 
@@ -450,10 +452,11 @@ class StorageEngine {
     uint64_t filesize = 0;
     filesize = hstable_manager_.file_resource_manager.GetFileSize(fileid);
 
-    log::trace("StorageEngine::GetEntry()", "location:%" PRIu64 " fileid:%u offset_file:%u filesize:%" PRIu64, location, fileid, offset_file, filesize);
+    //log::trace("StorageEngine::GetEntry()", "location:%" PRIu64 " fileid:%u offset_file:%u filesize:%" PRIu64, location, fileid, offset_file, filesize);
     std::string filepath = hstable_manager_.GetFilepath(fileid); // TODO: optimize here
 
-    ByteArray key_temp = ByteArray::NewMmappedByteArray(filepath, filesize);
+    //ByteArray key_temp = ByteArray::NewMmappedByteArray(filepath, filesize);
+    ByteArray key_temp = ByteArray::NewPooledByteArray(file_manager_, fileid, filepath, filesize);
     ByteArray value_temp = key_temp;
     // NOTE: verify that value_temp.size() is indeed filesize -- verified and
     // the size was 0: should the size of an mmapped byte array be the size of
@@ -488,13 +491,25 @@ class StorageEngine {
       s = Status::DeleteOrder();
     }
 
-    log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeDelete());
-    log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " size_value_compressed:%" PRIu64 " filesize:%" PRIu64, key_temp.size(), value_temp.size(), value_temp.size_compressed(), filesize);
+    //log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeDelete());
+    //log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " size_value_compressed:%" PRIu64 " filesize:%" PRIu64, key_temp.size(), value_temp.size(), value_temp.size_compressed(), filesize);
 
     *key_out = key_temp;
     *value_out = value_temp;
     return s;
   }
+
+  bool IsLocationLastInIndex(uint64_t location, ByteArray& key) {
+    // Only ever called by a Snapshot, thus no need to lock anything with
+    // mutexes.
+    uint64_t hashed_key = hash_->HashFunction(key.data(), key.size());
+    bool is_last = false;
+    auto it = index_.upper_bound(hashed_key);
+    --it;
+    if (it->second == location) is_last = true;
+    return is_last;
+  }
+
 
   bool IsFileLarge(uint32_t fileid) {
     return hstable_manager_.file_resource_manager.IsFileLarge(fileid);
@@ -1176,6 +1191,7 @@ class StorageEngine {
   std::mutex mutex_read_;
   std::mutex mutex_write_;
   int num_readers_;
+  std::shared_ptr<FileManager> file_manager_;
 
   // Index
   std::multimap<uint64_t, uint64_t> index_;

@@ -41,16 +41,15 @@ void handler(int sig) {
 }
 
 int main() {
-#ifdef DEBUG
-  ProfilerStart("/tmp/kingdb.prof");
-#endif
 
   signal(SIGSEGV, handler);
   signal(SIGABRT, handler);
 
-  kdb::Logger::set_current_level("trace");
+  kdb::Logger::set_current_level("info");
 
   kdb::DatabaseOptions options;
+  options.compression = kdb::kLZ4Compression;
+  //options.storage__maximum_chunk_size = 128 * 1024;
   kdb::Database db(options, "mydb");
   db.Open();
 
@@ -64,7 +63,7 @@ int main() {
   }
   buffer_large[size] = '\0';
 
-  int num_items = 10;
+  int num_items = 1000000;
   std::vector<std::string> items;
   int size_key = 16;
   
@@ -94,18 +93,28 @@ int main() {
   kdb::Snapshot snapshot = db.NewSnapshot();
   kdb::Iterator iterator = snapshot.NewIterator(read_options);
 
+#ifdef DEBUG
+  ProfilerStart("/tmp/kingdb.prof");
+#endif
+
+  iterator.Begin();
+  start = std::chrono::high_resolution_clock::now();
+
   auto count_items = 0;
-  for (iterator.Begin(); iterator.IsValid(); iterator.Next()) {
+  for (; iterator.IsValid(); iterator.Next()) {
     kdb::ByteArray key = iterator.GetKey();
     kdb::ByteArray value = iterator.GetValue();
     count_items += 1;
   }
 
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+  std::cout << "iteration done in " << duration << " ms" << std::endl;
   std::cout << "count items: " << count_items << std::endl;
-  delete[] buffer_large;
 #ifdef DEBUG
   ProfilerStop();
   ProfilerFlush();
 #endif
+  delete[] buffer_large;
   return 0;
 }

@@ -414,8 +414,8 @@ TEST(DBTest, KeysWithNullBytes) {
 
 
 TEST(DBTest, SingleThreadSmallEntries) {
-  kdb::Logger::set_current_level("emerg");
   while (IterateOverOptions()) {
+    kdb::Logger::set_current_level("emerg");
     Open();
 
     int size = 100;

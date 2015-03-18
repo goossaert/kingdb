@@ -20,6 +20,7 @@
 #include "util/file.h"
 #include "util/logger.h"
 #include "util/options.h"
+#include "util/filepool.h"
 #include "algorithm/compressor.h"
 #include "algorithm/crc32c.h"
 
@@ -37,6 +38,49 @@ class ByteArrayResource {
   virtual uint64_t size_compressed() = 0;
   virtual uint64_t const size_compressed_const() = 0;
 };
+
+
+class PooledByteArrayResource: public ByteArrayResource {
+ friend class ByteArray;
+ public:
+  PooledByteArrayResource(std::shared_ptr<FileManager> file_manager, uint32_t fileid, std::string& filepath, uint64_t filesize)
+    : data_(nullptr),
+      file_manager_(file_manager),
+      size_(0),
+      size_compressed_(0),
+      fileid_(0) {
+    Status s = file_manager_->GetFile(fileid, filepath, filesize, &file_resource_);
+    if (s.IsOK()) {
+      data_ = file_resource_.mmap;
+      size_ = file_resource_.filesize;
+      fileid_ = fileid;
+    } else {
+      fprintf(stderr, "invalid file resource: should never happen\n"); 
+    }
+  }
+
+  virtual ~PooledByteArrayResource() {
+    file_manager_->ReleaseFile(fileid_, file_resource_.filesize);
+  }
+
+  virtual char* data() { return data_; }
+  virtual const char* data_const() { return data_; }
+  virtual uint64_t size() { return size_; }
+  virtual const uint64_t size_const() { return size_; }
+  virtual uint64_t size_compressed() { return size_compressed_; }
+  virtual const uint64_t size_compressed_const() { return size_compressed_; }
+
+ private:
+  char *data_;
+  uint32_t fileid_;
+  uint64_t size_;
+  uint64_t size_compressed_;
+  FileResource file_resource_;
+  std::shared_ptr<FileManager> file_manager_;
+};
+
+
+
 
 class MmappedByteArrayResource: public ByteArrayResource {
  friend class ByteArray;
@@ -192,6 +236,13 @@ class ByteArray {
     ByteArray byte_array;
     byte_array.resource_ = std::make_shared<AllocatedByteArrayResource>(size);
     byte_array.size_ = size;
+    return byte_array;
+  }
+
+  static ByteArray NewPooledByteArray(std::shared_ptr<FileManager> file_manager, uint32_t fileid, std::string& filepath, uint64_t filesize) {
+    ByteArray byte_array;
+    byte_array.resource_ = std::make_shared<PooledByteArrayResource>(file_manager, fileid, filepath, filesize);
+    byte_array.size_ = filesize;
     return byte_array;
   }
 

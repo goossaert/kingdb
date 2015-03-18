@@ -159,21 +159,26 @@ class Iterator {
       }
 
       // Get entry for the key found at the location, and continue if the
-      // locations mismatch -- i.e. the current entry has been overwritten
+      // location is a mismatch -- i.e. the current entry has been overwritten
       // by a later entry.
-      ByteArray value_alt;
-      uint64_t location_out;
-      s = se_readonly_->Get(read_options_, key, &value_alt, &location_out);
-      if (!s.IsOK()) {
-        log::trace("Iterator::Next()", "Get(): failed: %s", s.ToString().c_str());
-        index_fileid_ += 1;
-        continue;
-      }
-        
-      if (location_current != location_out) {
-        log::trace("Iterator::Next()", "Get(): wrong location - 0x%08" PRIx64 " - 0x%08" PRIx64, location_current, location_out);
-        index_location_ += 1;
-        continue;
+      
+      bool is_last = se_readonly_->IsLocationLastInIndex(location_current, key);
+      if (!is_last) {
+        //fprintf(stderr, "was not last, need to check\n");
+        ByteArray value_alt;
+        uint64_t location_out;
+        s = se_readonly_->Get(read_options_, key, &value_alt, &location_out);
+        if (!s.IsOK()) {
+          log::trace("Iterator::Next()", "Get(): failed: %s", s.ToString().c_str());
+          index_fileid_ += 1;
+          continue;
+        }
+          
+        if (location_current != location_out) {
+          log::trace("Iterator::Next()", "Get(): wrong location - 0x%08" PRIx64 " - 0x%08" PRIx64, location_current, location_out);
+          index_location_ += 1;
+          continue;
+        }
       }
 
       log::trace("Iterator::Next()", "has a valid key/value pair");
@@ -184,6 +189,7 @@ class Iterator {
       if (value_.size() > se_readonly_->db_options_.internal__size_multipart_required) {
         status_ = Status::MultipartRequired();
       }
+      //index_location_ += 1;
 
       return true;
     }
@@ -204,7 +210,7 @@ class Iterator {
       return ByteArray();
     }
 
-    // TODO-36: Uncompression should have to go through a MultipartReader. See
+    // TODO-36: Uncompression should not have to go through a MultipartReader. See
     //          the notes about this TODO in kingdb.cc.
     char* buffer = new char[value_.size()];
     uint64_t offset = 0;
