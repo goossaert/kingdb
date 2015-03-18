@@ -110,6 +110,8 @@ class Snapshot: public KingDB {
     return Iterator(read_options, se_readonly_, fileids_iterator_);
   }
 
+  virtual void Flush() {}
+
  private:
   kdb::DatabaseOptions db_options_;
   std::string dbname_;

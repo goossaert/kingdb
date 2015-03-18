@@ -231,6 +231,7 @@ Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
 
 void WriteBuffer::ProcessingLoop() {
   while(true) {
+    bool force_sync = false;
     log::trace("WriteBuffer", "ProcessingLoop() - start");
     log::debug("LOCK", "2 lock");
     std::unique_lock<std::mutex> lock_flush(mutex_flush_level2_);
@@ -238,6 +239,9 @@ void WriteBuffer::ProcessingLoop() {
       log::trace("WriteBuffer", "ProcessingLoop() - wait - %" PRIu64 " %" PRIu64, buffers_[im_copy_].size(), buffers_[im_live_].size());
       std::cv_status status = cv_flush_.wait_for(lock_flush, std::chrono::milliseconds(db_options_.write_buffer__flush_timeout));
       if (IsStopRequestedAndBufferEmpty()) return;
+      if (status == std::cv_status::no_timeout) {
+        force_sync = true; 
+      }
     }
 
     mutex_indices_level3_.lock();
@@ -252,6 +256,9 @@ void WriteBuffer::ProcessingLoop() {
     log::trace("BM", "WAIT: Get()-flush_buffer");
 
     if (UseRateLimiter()) rate_limiter_.WriteStart(); 
+    if (force_sync && buffers_[im_copy_].size()) {
+      buffers_[im_copy_][0].write_options.sync = true;
+    }
     event_manager_->flush_buffer.StartAndBlockUntilDone(buffers_[im_copy_]);
 
     // Wait for the index to notify the buffer manager

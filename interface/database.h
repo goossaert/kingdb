@@ -36,8 +36,6 @@
 
 namespace kdb {
 
-// TODO: Add Flush() method?
-
 class Database: public KingDB {
  public:
   Database(const DatabaseOptions& db_options, const std::string dbname)
@@ -233,6 +231,7 @@ class Database: public KingDB {
     return MultipartWriter(this, write_options, key, size_value_total);
   }
 
+  virtual void Flush();
 
 
  private:

@@ -72,6 +72,7 @@ class KingDB {
   virtual Iterator NewIterator(ReadOptions& read_options) = 0;
   virtual Status Open() = 0;
   virtual void Close() = 0;
+  virtual void Flush() = 0;
 };
 
 } // namespace kdb
