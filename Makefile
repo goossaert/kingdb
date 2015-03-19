@@ -25,7 +25,7 @@ BINDIR=$(PREFIX)/bin
 INCLUDEDIR=$(PREFIX)/include/kingdb
 LIBDIR=$(PREFIX)/lib
 
-CFLAGS=-std=c++11 -c
+CFLAGS=-std=c++11 -MMD -MP -c
 
 all: CFLAGS += -O3
 all: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(TEST_COMPRESSION) $(TEST_DB)
@@ -82,8 +82,11 @@ install: $(EXECUTABLE)
 	$(CC) $(CFLAGS) $(INCLUDES) $< -o $@
 
 clean:
-	rm -f *-e *~ .*~ *.o .*.*.swp* $(EXECUTABLE) $(CLIENT_NETWORK) $(CLIENT_EMB) $(TEST_COMPRESSION) $(TEST_DB) $(LIBRARY)
-	rm -f cache/*.o include/*.o interface/*.o network/*.o storage/*.o thread/*.o unit-tests/*.o util/*.o algorithm/*.o
-	rm -f cache/*~ include/*~ interface/*~ network/*~ storage/*~ thread/*~ unit-tests/*~ util/*~ algorithm/*~
-	rm -f cache/*-e include/*-e interface/*-e network/*-e storage/*-e thread/*-e unit-tests/*-e util/*-e algorithm/*-e
-	rm -f cache/.*.*.swp* include/.*.*.swp* interface/.*.*.swp* network/.*.*.swp* storage/.*.*.swp* thread/.*.*.swp* unit-tests/.*.*.swp* util/.*.*.swp* algorithm/.*.*.swp*
+	rm -f $(EXECUTABLE) $(CLIENT_NETWORK) $(CLIENT_EMB) $(TEST_COMPRESSION) $(TEST_DB) $(LIBRARY)
+	find . -name \.*.*.swp* -type f -print0  | xargs -0 rm -f
+	find . -name \*.d       -type f -print0  | xargs -0 rm -f
+	find . -name \*.o       -type f -print0  | xargs -0 rm -f
+	find . -name \*~        -type f -print0  | xargs -0 rm -f
+	find . -name \*-e       -type f -print0  | xargs -0 rm -f
+
+-include $(SOURCES:%.cc=%.d)
