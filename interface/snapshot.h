@@ -107,7 +107,16 @@ class Snapshot: public KingDB {
   }
 
   virtual Iterator NewIterator(ReadOptions& read_options) override {
-    return Iterator(read_options, se_readonly_, fileids_iterator_);
+    IteratorResource* ir = nullptr;
+    uint64_t dbsize_uncompacted = se_readonly_->GetDbSizeUncompacted();
+    if (dbsize_uncompacted > 0) {
+      ir = new RegularIterator(read_options, se_readonly_, fileids_iterator_);
+    } else {
+      ir = new SequentialIterator(read_options, se_readonly_, fileids_iterator_);
+    }
+    Iterator it;
+    it.SetIteratorResource(ir);
+    return it;
   }
 
   virtual void Flush() {}

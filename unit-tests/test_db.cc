@@ -300,7 +300,6 @@ class DBTest {
   int index_db_options_;
 };
 
-
 TEST(DBTest, CloseAndReopen) {
   ResetAllOptions();
   kdb::Logger::set_current_level("emerg");
@@ -602,6 +601,76 @@ TEST(DBTest, SingleThreadSmallEntriesCompaction) {
     Close();
   }
 }
+
+
+TEST(DBTest, SequentialIterator) {
+  while (IterateOverOptions()) {
+    kdb::Logger::set_current_level("emerg");
+    Open();
+
+    int size = 100;
+    char *buffer_large = new char[size+1];
+    for (auto i = 0; i < size; i++) {
+      buffer_large[i] = 'a';
+    }
+    buffer_large[size+1] = '\0';
+
+    int num_items = 10000;
+    KeyGenerator* kg = new RandomKeyGenerator();
+    std::map<std::string, std::string> saved_data;
+
+    for (auto i = 0; i < num_items; i++) {
+      std::string key_str = kg->GetKey(0, i, 16);
+      kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
+
+      data_generator_->GenerateData(buffer_large, 100);
+      kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
+
+      kdb::Status s = db_->Put(write_options_, key, value);
+      if (!s.IsOK()) {
+        fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
+      }
+      std::string value_str(buffer_large, 100);
+      saved_data[key_str] = value_str;
+    }
+
+    // Force compaction to get a sequential iterator
+    db_->Compact();
+
+    int count_items_end = 0;
+    kdb::Iterator iterator = db_->NewIterator(read_options_);
+    kdb::Status s = iterator.GetStatus();
+    if (!s.IsOK()) {
+      fprintf(stderr, "Error: %s\n", s.ToString().c_str());
+    }
+
+    // Check that the iterator is indeed a SequentialIterator
+    bool is_seq = iterator._DEBUGGING_IsSequential();
+    ASSERT_EQ(is_seq, true);
+
+    for (iterator.Begin(); iterator.IsValid(); iterator.Next()) {
+      kdb::MultipartReader mp_reader = iterator.GetMultipartValue();
+
+      for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
+        kdb::ByteArray part;
+        kdb::Status s = mp_reader.GetPart(&part);
+      }
+
+      kdb::Status s = mp_reader.GetStatus();
+      if (s.IsOK()) {
+        count_items_end += 1;
+      } else {
+        fprintf(stderr, "ClientEmbedded - Error: %s\n", s.ToString().c_str());
+      }
+    }
+    
+    delete[] buffer_large;
+    ASSERT_EQ(count_items_end, num_items);
+    iterator.Close();
+    Close();
+  }
+}
+
 
 
 

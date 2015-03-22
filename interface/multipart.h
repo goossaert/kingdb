@@ -28,7 +28,8 @@ namespace kdb {
 
 class MultipartReader {
  friend class Database;
- friend class Iterator;
+ friend class RegularIterator;
+ friend class SequentialIterator;
  public:
   ~MultipartReader() {}
  
@@ -190,7 +191,6 @@ class MultipartReader {
 
 class MultipartWriter {
  friend class Database;
- friend class Iterator;
  public:
   ~MultipartWriter() {}
 

@@ -42,7 +42,8 @@
 namespace kdb {
 
 class StorageEngine {
- friend class Iterator;
+ friend class RegularIterator;
+ friend class SequentialIterator;
  public:
   StorageEngine(DatabaseOptions db_options,
                 EventManager *event_manager,
@@ -236,7 +237,7 @@ class StorageEngine {
             if (fileid_out > 0) fileid_lastcompacted = fileid_out;
             if (force_compaction_) {
               int has_compacted_all_files = fileid_out == 0 ? 1 : 0;
-              fprintf(stderr, "Compaction() - has_compacted_all_files: %d - fileid_last:%u fileid_end:%u\n", has_compacted_all_files, fileid_lastcompacted, fileid_end);
+              log::trace("ProcessingLoopCompaction", "Compaction() OK - has_compacted_all_files: %d - fileid_last:%u fileid_end:%u\n", has_compacted_all_files, fileid_lastcompacted, fileid_end);
               if (!has_compacted_all_files) continue;
             }
             break;
@@ -1118,7 +1119,7 @@ class StorageEngine {
       cv_loop_compaction_.notify_all();
       int has_compacted_all_files = event_manager_->compaction_status.Wait();
       event_manager_->compaction_status.Done();
-      fprintf(stderr, "Compact() - has_compacted_all_files: %d\n", has_compacted_all_files);
+      log::trace("Compact()", "has_compacted_all_files: %d\n", has_compacted_all_files);
       if (has_compacted_all_files) break;
     }
     force_compaction_ = false;
@@ -1197,6 +1198,10 @@ class StorageEngine {
     return fileids_iterator_;
   }
   // END: Helpers for Snapshots
+  
+  uint64_t GetDbSizeUncompacted() {
+    return hstable_manager_.file_resource_manager.GetDbSizeUncompacted();
+  }
 
  private:
   void AcquireWriteLock() {

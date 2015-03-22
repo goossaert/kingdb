@@ -190,7 +190,8 @@ class ByteArray {
  friend class StorageEngine;
  friend class Database;
  friend class WriteBuffer;
- friend class Iterator;
+ friend class RegularIterator;
+ friend class SequentialIterator;
  friend class NetworkTask;
  public:
   ByteArray()

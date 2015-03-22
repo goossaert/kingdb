@@ -152,33 +152,52 @@ class FileUtil {
 
 class Mmap {
  public:
+  Mmap()
+      : filesize_(0),
+        fd_(0),
+        datafile_(nullptr),
+        is_valid_(false) {
+  }
+
   Mmap(std::string filepath, int64_t filesize)
       : filepath_(filepath),
         filesize_(filesize),
+        fd_(0),
+        datafile_(nullptr),
         is_valid_(false) {
-    if ((fd_ = open(filepath.c_str(), O_RDONLY)) < 0) {
-      log::emerg("Mmap()::ctor()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
+    Open();
+  }
+
+  virtual ~Mmap() {
+    Close();
+  }
+
+  void Open(std::string& filepath, uint64_t filesize) {
+    filepath_ = filepath;
+    filesize_ = filesize;
+    Open();
+  }
+
+  void Open() {
+    if ((fd_ = open(filepath_.c_str(), O_RDONLY)) < 0) {
+      log::emerg("Mmap()::ctor()", "Could not open file [%s]: %s", filepath_.c_str(), strerror(errno));
       return;
     }
 
     log::trace("Mmap::ctor()", "open file: ok");
 
     datafile_ = static_cast<char*>(mmap(0,
-                                       filesize, 
+                                       filesize_, 
                                        PROT_READ,
                                        MAP_SHARED,
                                        fd_,
                                        0));
     if (datafile_ == MAP_FAILED) {
-      log::emerg("Could not mmap() file [%s]: %s", filepath.c_str(), strerror(errno));
+      log::emerg("Could not mmap() file [%s]: %s", filepath_.c_str(), strerror(errno));
       return;
     }
 
     is_valid_ = true;
-  }
-
-  virtual ~Mmap() {
-    Close();
   }
 
   void Close() {
@@ -186,6 +205,7 @@ class Mmap {
       munmap(datafile_, filesize_);
       close(fd_);
       datafile_ = nullptr;
+      is_valid_ = false;
       log::debug("Mmap::~Mmap()", "released mmap on file: [%s]", filepath_.c_str());
     }
   }
