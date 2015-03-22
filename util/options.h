@@ -40,10 +40,11 @@ struct CompressionOptions {
 struct DatabaseOptions {
  public:
   DatabaseOptions()
-      : internal__hstable_header_size(8192),   // bytes
+      : internal__hstable_header_size(8192),      // bytes
         internal__num_iterations_per_lock(10),
-        internal__close_timeout(500),          // milliseconds
-        internal__open_file_retry_delay(5000), // milliseconds
+        internal__close_timeout(500),             // milliseconds
+        internal__open_file_retry_delay(5000),    // milliseconds
+        internal__compaction_check_interval(500), // milliseconds
         internal__size_multipart_required(1024*1024), // bytes
         hash(kxxHash_64),
         compression(kLZ4Compression),
@@ -77,6 +78,9 @@ struct DatabaseOptions {
   // in it.
   uint64_t internal__size_multipart_required;
 
+  // The frequency at which the compaction conditions are checked.
+  uint64_t internal__compaction_check_interval;
+
 
   // *** Constant options (cannot be changed after the db is created)
   HashType hash;
@@ -85,6 +89,7 @@ struct DatabaseOptions {
   uint64_t storage__hstable_size;
   std::string storage__compression_algorithm;
   std::string storage__hashing_algorithm;
+
 
   // *** Instance options (can be changed each time the db is opened)
   bool create_if_missing;
@@ -103,7 +108,7 @@ struct DatabaseOptions {
   uint64_t storage__minimum_free_space_accept_orders;
   uint64_t storage__maximum_chunk_size;
 
-  uint64_t compaction__check_interval;
+  uint64_t compaction__force_interval;
   uint64_t compaction__filesystem__survival_mode_threshold;
   uint64_t compaction__filesystem__normal_batch_size;
   uint64_t compaction__filesystem__survival_batch_size;
@@ -175,8 +180,8 @@ struct DatabaseOptions {
 
     // Compaction options
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.compaction.check-interval", "30 seconds", &db_options.compaction__check_interval, false,
-                         "The frequency at which the compaction conditions are checked."));
+                         "db.compaction.force-interval", "5 minutes", &db_options.compaction__force_interval, false,
+                         "Duration after which, if no compaction process has been performed, a compacted is started. Set to 0 to disable."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.compaction.filesystem.free-space-required", "128MB", &db_options.compaction__filesystem__free_space_required, false,
                          "Minimum free space on the file system required for a compaction process to be started."));

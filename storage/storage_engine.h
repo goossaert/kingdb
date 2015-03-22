@@ -62,6 +62,7 @@ class StorageEngine {
     fileids_ignore_ = fileids_ignore;
     num_readers_ = 0;
     is_compaction_in_progress_ = false;
+    force_compaction_ = false;
     sequence_snapshot_ = 0;
     stop_requested_ = false;
     is_closed_ = false;
@@ -189,12 +190,14 @@ class StorageEngine {
     //    - If M reaches 0, try one compaction run (trying to clear the large
     //      files if any), and if still unsuccessful, declare compaction impossible
     // 6. If the compaction succeeded, update 'fileid_lastcompacted'
-    std::chrono::milliseconds duration(db_options_.compaction__check_interval);
+    std::chrono::milliseconds duration(db_options_.internal__compaction_check_interval);
     uint32_t fileid_lastcompacted = 0;
     uint32_t fileid_out = 0;
-    bool force_compaction = false;
+    int num_loops_without_compaction = 0;
+    int num_loops_without_compaction_max = db_options_.compaction__force_interval / db_options_.internal__compaction_check_interval;
 
     while (true) {
+      num_loops_without_compaction += 1;
       uint64_t size_compaction = 0;
       uint64_t fs_free_space = GetFreeSpace();
       if (fs_free_space > db_options_.compaction__filesystem__survival_mode_threshold) {
@@ -217,7 +220,12 @@ class StorageEngine {
 
       if (   fileid_end > 0
           && fs_free_space > db_options_.compaction__filesystem__free_space_required
-          && (dbsize_uncompacted > size_compaction || force_compaction)) {
+          && (   dbsize_uncompacted > size_compaction
+              || force_compaction_
+              || (num_loops_without_compaction_max > 0 && num_loops_without_compaction >= num_loops_without_compaction_max)
+             )
+         ) {
+        num_loops_without_compaction = 0;
         while (true) {
           fileid_out = 0;
           Status s = Compaction(dbname_, fileid_lastcompacted + 1, fileid_end, size_compaction, &fileid_out);
@@ -225,32 +233,27 @@ class StorageEngine {
             if (size_compaction == 0) break;
             size_compaction /= 2;
           } else {
-            fileid_lastcompacted = fileid_out;  
-
-            if (force_compaction) {
-              int has_compacted_all_files = fileid_lastcompacted == fileid_end ? 1 : 0;
-              event_manager_->compaction_status.StartAndBlockUntilDone(has_compacted_all_files);
+            if (fileid_out > 0) fileid_lastcompacted = fileid_out;
+            if (force_compaction_) {
+              int has_compacted_all_files = fileid_out == 0 ? 1 : 0;
+              fprintf(stderr, "Compaction() - has_compacted_all_files: %d - fileid_last:%u fileid_end:%u\n", has_compacted_all_files, fileid_lastcompacted, fileid_end);
+              if (!has_compacted_all_files) continue;
             }
-
             break;
           }
           if (IsStopRequested()) return;
         }
-      } else if (force_compaction) {
-        // Could not perform compaction even though another method was trying
-        // to force it. That method is very probably blocking on
-        // compaction_status and needs to be unblocked, so here the compaction
-        // is faked just so that the method can be unblocked.
+      }
+ 
+      if (force_compaction_) {
+        // Whether the forced compaction worked or not, success is sent to the
+        // requesting method so it can be unblocked.
         int has_compacted_all_files = 1;
         event_manager_->compaction_status.StartAndBlockUntilDone(has_compacted_all_files);
       }
 
-      force_compaction = false;
       std::unique_lock<std::mutex> lock(mutex_loop_compaction_);
-      std::cv_status status = cv_loop_compaction_.wait_for(lock, duration);
-      if (status == std::cv_status::no_timeout) {
-        force_compaction = true;
-      }
+      cv_loop_compaction_.wait_for(lock, duration);
       if (IsStopRequested()) return;
     }
   }
@@ -559,6 +562,11 @@ class StorageEngine {
     mutex_compaction_.lock();
     is_compaction_in_progress_ = true;
     mutex_compaction_.unlock();
+    // TODO: If is_compaction_in_progress_ is set to true and then the method
+    //       return due to an error, then if it is established that the
+    //       compaction process really failed, index_compaction_ needs to be
+    //       poured back into index_, and is_compaction_in_progress_ needs to be
+    //       set to false.
 
     // Before the compaction starts, make sure all compaction-related files are removed
     Status s;
@@ -1105,12 +1113,15 @@ class StorageEngine {
   }
 
   void Compact() {
+    force_compaction_ = true;
     while (true) {
       cv_loop_compaction_.notify_all();
       int has_compacted_all_files = event_manager_->compaction_status.Wait();
       event_manager_->compaction_status.Done();
+      fprintf(stderr, "Compact() - has_compacted_all_files: %d\n", has_compacted_all_files);
       if (has_compacted_all_files) break;
     }
+    force_compaction_ = false;
   }
 
   // START: Helpers for Snapshots
@@ -1237,6 +1248,7 @@ class StorageEngine {
   bool is_compaction_in_progress_;
   std::thread thread_compaction_;
   std::map<uint32_t, uint32_t> num_references_to_unused_files_;
+  bool force_compaction_;
 
   // Statistics
   std::mutex mutex_statistics_;
