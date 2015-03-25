@@ -63,6 +63,7 @@ int daemonize() {
   return 0; 
 }
 
+
 int main(int argc, char** argv) {
 
   kdb::Status s;

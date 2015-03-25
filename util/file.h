@@ -37,6 +37,22 @@ class FileUtil {
     }
   }
 
+  static std::string kingdb_getcwd() {
+    char *buffer = nullptr;
+    int size = 64;
+    do {
+      buffer = new char[size];
+      if (getcwd(buffer, size) != NULL) {
+        break;
+      }
+      size *= 2;
+      delete[] buffer;
+    } while(true);
+    std::string cwd(buffer);
+    delete[] buffer;
+    return cwd;
+  }
+
   // NOTE: Pre-allocating disk space is very tricky: fallocate() and
   //       posix_fallocate() are not supported on all platforms, glibc sometimes
   //       overrides posix_fallocate() with no warnings at all, and for some

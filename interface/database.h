@@ -40,7 +40,7 @@ class Database: public KingDB {
  public:
   Database(const DatabaseOptions& db_options, const std::string dbname)
       : db_options_(db_options),
-        dbname_(dbname),
+        dbname_(FixDatabaseName(dbname)),
         is_closed_(true)
   {
     // Word-swapped endianness is not supported
@@ -48,7 +48,7 @@ class Database: public KingDB {
   }
 
   Database(const std::string dbname)
-      : dbname_(dbname),
+      : dbname_(FixDatabaseName(dbname)),
         is_closed_(true)
   {
     // Word-swapped endianness is not supported
@@ -58,9 +58,19 @@ class Database: public KingDB {
   virtual ~Database() {
     Close();
   }
+
+  std::string FixDatabaseName(std::string dbname) {
+    // Allows both relative and absolute directory paths to work
+    if (dbname.size() >= 1 && dbname[0] == '/') {
+      return dbname; 
+    } else if (dbname.size() >= 2 && dbname[0] == '.' && dbname[1] == '/') {
+      return FileUtil::kingdb_getcwd() + "/" + dbname.substr(2);
+    } else {
+      return FileUtil::kingdb_getcwd() + "/" + dbname;
+    }
+  }
  
   virtual Status Open() override {
- 
     FileUtil::increase_limit_open_files();
 
     Status s;
