@@ -466,10 +466,12 @@ class HSTableManager {
     entry_header.size_value_compressed = order.size_value_compressed;
     entry_header.size_padding = 0;
     entry_header.hash = hashed_key;
-    entry_header.crc32 = 0;
+    entry_header.checksum_header  = 0;
+    entry_header.checksum_content = 0;
     entry_header.SetIsUncompacted(false);
     entry_header.SetHasPadding(false);
     uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
+
     key_to_headersize[order.tid][order.key.ToString()] = size_header;
     if (write(fd, buffer, size_header) < 0) {
       log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
@@ -543,8 +545,8 @@ class HSTableManager {
       log::trace("HSTableManager::WriteMiddleOrLastChunk()", "Error pwrite(): %s", strerror(errno));
     }
 
-    // If this is a last chunk, the header is written again to save the right size of compressed value,
-    // and the crc32 is saved too
+    // If this is a last chunk, the header is written again to save
+    // the right size of compressed value along with the checksums.
     if (order.IsLastChunk()) {
       log::trace("HSTableManager::WriteMiddleOrLastChunk()", "Write compressed size: [%s] - size:%" PRIu64 ", compressed size:%" PRIu64 " crc32:0x%08" PRIx64, order.key.ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct EntryHeader entry_header;
@@ -555,6 +557,7 @@ class HSTableManager {
       entry_header.size_value_compressed = order.size_value_compressed;
       entry_header.size_padding = order.IsLarge() ? 0 : EntryHeader::CalculatePaddingSize(order.size_value);
       entry_header.hash = hashed_key;
+      entry_header.checksum_content = order.crc32;
       if (!order.IsLarge() && entry_header.IsCompressed()) {
         // NOTE: entry_header.IsCompressed() makes no sense since compression is
         // handled at database level, not at entry level. All usages of
@@ -563,19 +566,13 @@ class HSTableManager {
         file_resource_manager.SetHasPaddingInValues(fileid_, true);
         entry_header.SetHasPadding(true);
       }
-      entry_header.print();
+      //entry_header.print();
 
-      // Compute the header a first time to get the data serialized
       char buffer[sizeof(struct EntryHeader)*2];
       uint32_t size_header_new = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
-
-      // Compute the checksum for the header and combine it with the one for the
-      // key and value, then recompute the header to save the checksum
-      uint32_t crc32_header = crc32c::Value(buffer + 4, size_header_new - 4);
-      entry_header.crc32 = crc32c::Combine(crc32_header, order.crc32, entry_header.size_key + entry_header.size_value_used());
-      log::trace("HSTableManager::WriteMiddleOrLastChunk()", "CRC32 header: 0x%08" PRIx64, crc32_header);
-      entry_header.print();
-      size_header_new = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
+      //log::trace("HSTableManager::WriteMiddleOrLastChunk()", "CRC32 header: 0x%02" PRIx8, checksum_header);
+      //entry_header.print();
+      
       if (size_header_new != size_header) {
         log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
         return 0;
@@ -644,7 +641,7 @@ class HSTableManager {
       entry_header.size_value = order.size_value;
       entry_header.size_value_compressed = order.size_value_compressed;
       entry_header.hash = hashed_key;
-      entry_header.crc32 = order.crc32;
+      entry_header.checksum_content = order.crc32;
       if (order.IsSelfContained()) {
         entry_header.SetIsUncompacted(false);
         entry_header.SetHasPadding(false);
@@ -658,14 +655,12 @@ class HSTableManager {
       }
       uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer_raw_ + offset_end_);
 
+      /*
       if (order.IsSelfContained()) {
-        // Compute the checksum for the header and combine it with the one for the
-        // key and value, then recompute the header to save the checksum
-        uint32_t crc32_header = crc32c::Value(buffer_raw_ + offset_end_ + 4, size_header - 4);
-        entry_header.crc32 = crc32c::Combine(crc32_header, order.crc32, entry_header.size_key + entry_header.size_value_used());
         size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer_raw_ + offset_end_);
         log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "IsSelfContained():true - crc32 [0x%08x]", entry_header.crc32);
       }
+      */
 
       memcpy(buffer_raw_ + offset_end_ + size_header, order.key.data(), order.key.size());
       memcpy(buffer_raw_ + offset_end_ + size_header + order.key.size(), order.chunk.data(), order.chunk.size());
@@ -703,7 +698,7 @@ class HSTableManager {
       entry_header.size_key = order.key.size();
       entry_header.size_value = 0;
       entry_header.size_value_compressed = 0;
-      entry_header.crc32 = 0;
+      entry_header.checksum_content = order.crc32;
       uint32_t size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer_raw_ + offset_end_);
       memcpy(buffer_raw_ + offset_end_ + size_header, order.key.data(), order.key.size());
 
@@ -1143,8 +1138,8 @@ class HSTableManager {
       bool is_crc32_valid = true;
       if (do_crc32_verification) {
         crc32_.ResetThreadLocalStorage();
-        crc32_.stream(mmap.datafile() + offset + 4, size_header + entry_header.size_key + entry_header.size_value_used() - 4);
-        is_crc32_valid = (entry_header.crc32 == crc32_.get());
+        crc32_.stream(mmap.datafile() + offset + 5, size_header + entry_header.size_key + entry_header.size_value_used() - 5);
+        is_crc32_valid = (entry_header.checksum_content == crc32_.get());
       }
       if (!do_crc32_verification || is_crc32_valid) {
         // Valid content, add to index
@@ -1160,7 +1155,7 @@ class HSTableManager {
       offset += size_header + entry_header.size_key + entry_header.size_value_offset();
       log::trace("HSTableManager::RecoverFile",
                  "Scanned hash [%" PRIu64 "], next offset [%" PRIu64 "] - CRC32:%s stored=0x%08x computed=0x%08x",
-                 entry_header.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry_header.crc32, crc32_.get());
+                 entry_header.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry_header.checksum_content, crc32_.get());
     }
 
     // 3. Write a new index at the end of the file with whatever entries could be save

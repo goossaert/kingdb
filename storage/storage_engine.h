@@ -495,8 +495,8 @@ class StorageEngine {
     }
 
     if (read_options.verify_checksums) {
-      uint32_t crc32_headerkey = crc32c::Value(value_temp.data() + offset_file + 4, size_header + entry_header.size_key - 4);
-      value_temp.set_checksum_initial(crc32_headerkey);
+      uint32_t checksum_key = crc32c::Value(value_temp.data() + offset_file + size_header, entry_header.size_key);
+      value_temp.set_checksum_initial(checksum_key);
     }
 
     key_temp.set_offset(offset_file + size_header);
@@ -505,15 +505,15 @@ class StorageEngine {
     value_temp.set_offset(offset_file + size_header + entry_header.size_key);
     value_temp.set_size(entry_header.size_value);
     value_temp.set_size_compressed(entry_header.size_value_compressed);
-    value_temp.set_checksum(entry_header.crc32);
+    value_temp.set_checksum(entry_header.checksum_content);
     //PrintHex(value_temp.data(), 16);
 
     if (entry_header.IsTypeDelete()) {
       s = Status::DeleteOrder();
     }
 
-    //log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeDelete());
-    //log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " size_value_compressed:%" PRIu64 " filesize:%" PRIu64, key_temp.size(), value_temp.size(), value_temp.size_compressed(), filesize);
+    log::debug("StorageEngine::GetEntry()", "mmap() out - type remove:%d", entry_header.IsTypeDelete());
+    log::trace("StorageEngine::GetEntry()", "Sizes: key_temp:%" PRIu64 " value_temp:%" PRIu64 " size_value_compressed:%" PRIu64 " filesize:%" PRIu64, key_temp.size(), value_temp.size(), value_temp.size_compressed(), filesize);
 
     *key_out = key_temp;
     *value_out = value_temp;
@@ -903,14 +903,6 @@ class StorageEngine {
           ByteArray chunk = ByteArray::NewPointerByteArray(mmap_location->datafile() + offset_file + size_header + entry_header.size_key, entry_header.size_value_used());
           log::trace("Compaction()", "order list loop - push_back() orders");
 
-          // NOTE: Need to recompute the crc32 of the key and value, as entry_header.crc32
-          //       contains information about the header, which is incorrect as the
-          //       header changes due to the compaction. This could be optimized by
-          //       just recomputing the crc32 of the header, and then 'uncombining'
-          //       it from entry_header.crc32. This will be fixed as soon as I find an
-          //       implementation of 'uncombine'.
-          uint32_t crc32 = crc32c::Value(mmap->datafile() + offset + size_header, entry_header.size_key + entry_header.size_value_used());
-
           bool is_large = false;
           orders.push_back(Order{std::this_thread::get_id(),
                                  write_options,
@@ -920,7 +912,7 @@ class StorageEngine {
                                  0,
                                  entry_header.size_value,
                                  entry_header.size_value_compressed,
-                                 crc32,
+                                 entry_header.checksum_content,
                                  is_large});
         }
         offset += size_header + entry_header.size_key + entry_header.size_value_offset();

@@ -45,7 +45,8 @@ enum EntryHeaderFlag {
 
 struct EntryHeader {
   EntryHeader() { flags = 0; }
-  uint32_t crc32;
+  uint8_t  checksum_header;
+  uint32_t checksum_content;
   uint32_t flags;
   uint64_t size_key;
   uint64_t size_value;
@@ -57,7 +58,7 @@ struct EntryHeader {
   int32_t size_header_serialized;
 
   void print() {
-    log::trace("EntryHeader::print()", "flags:%u crc32:0x%08" PRIx64 " size_key:%" PRIu64 " size_value:%" PRIu64 " size_value_compressed:%" PRIu64 " size_padding:%" PRIu64  " hash:0x%08" PRIx64, flags, crc32, size_key, size_value, size_value_compressed, size_padding, hash);
+    log::trace("EntryHeader::print()", "flags:%u checksum_content:0x%08" PRIx64 " size_key:%" PRIu64 " size_value:%" PRIu64 " size_value_compressed:%" PRIu64 " size_padding:%" PRIu64  " hash:0x%08" PRIx64, flags, checksum_content, size_key, size_value, size_value_compressed, size_padding, hash);
   }
 
   static uint64_t CalculatePaddingSize(uint64_t size_value) {
@@ -161,10 +162,15 @@ struct EntryHeader {
     */
 
     int length;
-    char *ptr = const_cast<char*>(buffer_in);
+    char *buffer = const_cast<char*>(buffer_in);
+    char *ptr = buffer;
     int size = num_bytes_max;
 
-    GetFixed32(ptr, &(output->crc32));
+    output->checksum_header = ptr[0];
+    ptr += 1;
+    size -= 1;
+    
+    GetFixed32(ptr, &(output->checksum_content));
     ptr += 4;
     size -= 4;
 
@@ -203,6 +209,12 @@ struct EntryHeader {
 
     *num_bytes_read = num_bytes_max - size;
     output->size_header_serialized = *num_bytes_read;
+
+    uint8_t checksum_header = crc32c::crc8(0, buffer + 1, output->size_header_serialized - 1);
+    if (checksum_header != output->checksum_header) {
+      return Status::IOError("Header checksum mismatch");
+    }
+
     //log::trace("EntryHeader::DecodeFrom", "size:%u", *num_bytes_read);
     return Status::OK();
   }
@@ -220,10 +232,9 @@ struct EntryHeader {
     // NOTE: it would be interesting to run an analysis and determine if it is
     // better to store the crc32 and hash using fixed encoding or varints. For
     // the hash, it will certainly be specific to each hash function.
-    //
-    EncodeFixed32(buffer, input->crc32);
-    char *ptr;
-    ptr = EncodeVarint32(buffer + 4, input->flags);
+    char *ptr = buffer + 1; // save 1 byte for the header checksum
+    EncodeFixed32(ptr, input->checksum_content);
+    ptr = EncodeVarint32(ptr + 4, input->flags);
     ptr = EncodeVarint64(ptr, input->size_key);
     ptr = EncodeVarint64(ptr, input->size_value);
     if (db_options.compression.type != kNoCompression) {
@@ -233,6 +244,8 @@ struct EntryHeader {
     }
     EncodeFixed64(ptr, input->hash);
     ptr += 8;
+
+    buffer[0] = crc32c::crc8(0, buffer + 1, (ptr-buffer) - 1);
 
     //log::trace("EntryHeader::EncodeTo", "size:%u", ptr - buffer);
     //PrintHex(buffer, ptr - buffer);

@@ -64,7 +64,9 @@ typedef int64_t I64;
 ulong Combine(ulong crc1, ulong crc2, ulong len2);
 #define GF2_DIM 32
 
-
+// 8-bit CRC
+uint8_t crc8(unsigned crc, unsigned char *data, size_t len);
+uint8_t crc8(unsigned crc, char *data, size_t len);
 
 }  // namespace crc32c
 

@@ -409,10 +409,9 @@ class SequentialIterator: public IteratorResource {
       ByteArray value = key;
 
       if (read_options_.verify_checksums) {
-        uint32_t crc32_headerkey = crc32c::Value(value.data() + offset_ + 4, size_header + entry_header.size_key - 4);
-        value.set_checksum_initial(crc32_headerkey);
+        uint32_t checksum_key = crc32c::Value(value.data() + offset_ + size_header, entry_header.size_key);
+        value.set_checksum_initial(checksum_key);
       }
-
 
       key.set_offset(offset_ + size_header);
       key.set_size(entry_header.size_key);
@@ -420,7 +419,7 @@ class SequentialIterator: public IteratorResource {
       value.set_offset(offset_ + size_header + entry_header.size_key);
       value.set_size(entry_header.size_value);
       value.set_size_compressed(entry_header.size_value_compressed);
-      value.set_checksum(entry_header.crc32);
+      value.set_checksum(entry_header.checksum_content);
 
       offset_ += size_header + entry_header.size_key + entry_header.size_value_offset();
 
