@@ -106,7 +106,7 @@ struct DatabaseOptions {
   uint64_t storage__inactivity_timeout;
   uint64_t storage__statistics_polling_interval;
   uint64_t storage__minimum_free_space_accept_orders;
-  uint64_t storage__maximum_chunk_size;
+  uint64_t storage__maximum_part_size;
 
   uint64_t compaction__force_interval;
   uint64_t compaction__filesystem__survival_mode_threshold;
@@ -168,11 +168,11 @@ struct DatabaseOptions {
                          "db.storage.minimum-free-space-accept-orders", "192MB", &db_options.storage__minimum_free_space_accept_orders, false,
                          "Minimum free disk space required to accept incoming orders. It is recommended that for this value to be at least (2 * 'db.write-buffer.size' + 4 * 'db.hstable.maximum-size'), so that when the file system fills up, the two write buffers can be flushed to secondary storage safely and the survival-mode compaction process can be run."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
-                         "db.storage.maximum-chunk-size", "1MB", &db_options.storage__maximum_chunk_size, false,
-                         "The maximum chunk size is used by the storage engine to split entries into smaller chunks -- important for the compression and hashing algorithms, can never be more than (2^32 - 1) as the algorihms used do not support sizes above that value."));
+                         "db.storage.maximum-part-size", "1MB", &db_options.storage__maximum_part_size, false,
+                         "The maximum part size is used by the storage engine to split entries into smaller parts -- important for the compression and hashing algorithms, can never be more than (2^32 - 1) as the algorihms used do not support sizes above that value."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.inactivity-streaming", "60 seconds", &db_options.storage__inactivity_timeout, false,
-                         "The time of inactivity after which an entry stored with the streaming API is considered left for dead, and any subsequent incoming chunks for that entry are rejected."));
+                         "The time of inactivity after which an entry stored with the streaming API is considered left for dead, and any subsequent incoming parts for that entry are rejected."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.statistics-polling-interval", "5 seconds", &db_options.storage__statistics_polling_interval, false,
                          "The frequency at which statistics are polled in the Storage Engine (free disk space, etc.)."));

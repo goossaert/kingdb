@@ -31,7 +31,7 @@ class RateLimiter {
     epoch_current_ = std::time(0);
     if (epoch_current_ != epoch_last_) {
       rate_incoming_adjusted_ = rate_incoming_ + bytes_per_microsecond_ * duration_slept_;
-      log::trace("RateLimiter",
+      log::trace("RateLimiter::Tick()",
                  "rate_incoming_: %" PRIu64 " rate_incoming_adjusted_:%" PRIu64,
                  rate_incoming_, rate_incoming_adjusted_);
       duration_slept_ = 0;
@@ -57,7 +57,7 @@ class RateLimiter {
           bytes_per_microsecond_ *= 0.995;
         }
         if (bytes_per_microsecond_ <= 5) bytes_per_microsecond_ += 1;
-        log::trace("WriteBuffer::WriteChunk()", "decreasing");
+        log::trace("RateLimiter::Tick()", "decreasing");
       } else {
         // The rate of incoming data is lower than the rate at which data
         // can be written, therefore bytes_per_microsecond_ needs to be
@@ -71,11 +71,11 @@ class RateLimiter {
         } else {
           bytes_per_microsecond_ *= 1.005;
         }
-        log::trace("RateLimiter", "increasing");
+        log::trace("RateLimiter::Tick()", "increasing");
         if (bytes_per_microsecond_ <= 5) bytes_per_microsecond_ += 1;
       }
 
-      log::trace("RateLimiter",
+      log::trace("RateLimiter::Tick()",
                  "limit rate: bytes_per_microsecond_: %" PRIu64 " rate_writing:%" PRIu64,
                  bytes_per_microsecond_, rate_writing);
     }
@@ -90,7 +90,7 @@ class RateLimiter {
     if (sleep_microseconds > 50000) sleep_microseconds = 50000;
 
     if (sleep_microseconds) {
-      log::trace("RateLimiter",
+      log::trace("RateLimiter::Tick()",
                  "bytes_per_microsecond_: %" PRIu64 ", sleep_microseconds: %" PRIu64,
                  bytes_per_microsecond_, sleep_microseconds);
       std::chrono::microseconds duration(sleep_microseconds);

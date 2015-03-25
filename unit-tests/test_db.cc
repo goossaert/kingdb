@@ -228,7 +228,7 @@ class DBTest {
       db_options_.compression.type = kNoCompression;
       db_options_.write_buffer__mode = kWriteBufferModeDirect;
       db_options_.write_buffer__size = 1024 * 256;
-      db_options_.storage__maximum_chunk_size = 1024 * 8;
+      db_options_.storage__maximum_part_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
     } else if (index_db_options_ == 9) {
       test_purpose_ = "Small-sized HSTables with incompressible data and LZ4 compression";
@@ -236,7 +236,7 @@ class DBTest {
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeDirect;
       db_options_.write_buffer__size = 1024 * 256;
-      db_options_.storage__maximum_chunk_size = 1024 * 8;
+      db_options_.storage__maximum_part_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
     } else if (index_db_options_ == 10) {
       test_purpose_ = "Small-sized HSTables with compressible data and LZ4 compression";
@@ -244,7 +244,7 @@ class DBTest {
       db_options_.compression.type = kLZ4Compression;
       db_options_.write_buffer__mode = kWriteBufferModeDirect;
       db_options_.write_buffer__size = 1024 * 256;
-      db_options_.storage__maximum_chunk_size = 1024 * 8;
+      db_options_.storage__maximum_part_size = 1024 * 8;
       db_options_.storage__hstable_size = 1024 * 200;
     } else if (index_db_options_ == 11) {
       test_purpose_ = "Direct mode for Write Buffer (incompressible data with LZ4 compression enabled)";
@@ -786,7 +786,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
         fprintf(stderr, "write(): %s\n", strerror(errno));
       }
       if (!s.IsOK()) {
-        fprintf(stderr, "PutChunk(): %s\n", s.ToString().c_str());
+        fprintf(stderr, "PutPart(): %s\n", s.ToString().c_str());
       }
     }
 

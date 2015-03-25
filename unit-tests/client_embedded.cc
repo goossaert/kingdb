@@ -49,7 +49,7 @@ int main() {
 
   kdb::DatabaseOptions options;
   options.compression = kdb::kLZ4Compression;
-  //options.storage__maximum_chunk_size = 128 * 1024;
+  //options.storage__maximum_part_size = 128 * 1024;
   kdb::Database db(options, "mydb");
   db.Open();
 
@@ -79,7 +79,7 @@ int main() {
   for (auto i = 0; i < num_items; i++) {
     kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(items[i].c_str(), items[i].size());
     kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
-    kdb::Status s = db.PutChunk(write_options,
+    kdb::Status s = db.PutPart(write_options,
                                 key,
                                 value,
                                 0,

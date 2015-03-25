@@ -51,7 +51,7 @@ class WriteBuffer {
   ~WriteBuffer() { Close(); }
   Status Get(ReadOptions& read_options, ByteArray& key, ByteArray* value_out);
   Status Put(WriteOptions& write_options, ByteArray& key, ByteArray& chunk);
-  Status PutChunk(WriteOptions& write_options,
+  Status PutPart(WriteOptions& write_options,
                   ByteArray& key,
                   ByteArray& chunk,
                   uint64_t offset_chunk,
@@ -89,7 +89,7 @@ class WriteBuffer {
   bool stop_requested_;
 
  private:
-  Status WriteChunk(const WriteOptions& write_options,
+  Status WritePart(const WriteOptions& write_options,
                     const OrderType& op,
                     ByteArray& key,
                     ByteArray& chunk,

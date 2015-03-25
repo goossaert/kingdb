@@ -182,7 +182,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
 
           Status s = mp_reader.GetStatus();
           if (!s.IsOK()) {
-            log::trace("NetworkTask", "Error - GetChunk(): %s", s.ToString().c_str());
+            log::trace("NetworkTask", "Error - GetPart(): %s", s.ToString().c_str());
             break; // drop the connection
           }
 
@@ -233,7 +233,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       ByteArray chunk = buffer;
 
       if(bytes_received_total == bytes_received_buffer) {
-        // chunk is a first chunk, need to skip all the characters before the value data
+        // chunk is a first part, need to skip all the characters before the value data
         chunk.set_offset(offset_value);
         chunk.set_size(bytes_received_buffer - offset_value);
         offset_chunk = 0;
@@ -244,14 +244,14 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       }
 
       if (bytes_received_total == bytes_expected) {
-        // Chunk is a last chunk: in case this is the last buffer, the size of the
+        // Part is a last part: in case this is the last buffer, the size of the
         // buffer needs to be adjusted to ignore the final \r\n
         chunk.set_size(chunk.size()-2);
       }
 
       if (chunk.size() > 0) {
-        log::trace("NetworkTask", "call PutChunk key [%s] bytes_received_buffer:%" PRIu64 " bytes_received_total:%" PRIu64 " bytes_expected:%" PRIu64 " size_chunk:%" PRIu64, key.ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk.size());
-        Status s = db_->PutChunk(write_options,
+        log::trace("NetworkTask", "call PutPart key [%s] bytes_received_buffer:%" PRIu64 " bytes_received_total:%" PRIu64 " bytes_expected:%" PRIu64 " size_chunk:%" PRIu64, key.ToString().c_str(), bytes_received_buffer, bytes_received_total, bytes_expected, chunk.size());
+        Status s = db_->PutPart(write_options,
                                  key,
                                  chunk,
                                  offset_chunk,

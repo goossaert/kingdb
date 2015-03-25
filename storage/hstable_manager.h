@@ -428,9 +428,9 @@ class HSTableManager {
   }
 
 
-  uint64_t WriteFirstChunkLargeOrder(Order& order, uint64_t hashed_key) {
-    // If a large order is self-contained, it will still be split into chunks,
-    // and therefore the opearations on the first and last chunks will be done
+  uint64_t WriteFirstPartLargeOrder(Order& order, uint64_t hashed_key) {
+    // If a large order is self-contained, it will still be split into parts,
+    // and therefore the opearations on the first and last parts will be done
     // as expected. See notes in WriteOrdersAndFlushFile() for more information.
 
     // TODO-30: large files should be pre-allocated. The problem here is that
@@ -439,10 +439,10 @@ class HSTableManager {
     uint64_t fileid_largefile = IncrementSequenceFileId(1);
     uint64_t timestamp_largefile = IncrementSequenceTimestamp(1);
     std::string filepath = GetFilepath(fileid_largefile);
-    log::trace("HSTableManager::WriteFirstChunkLargeOrder()", "filepath:[%s] key:[%s] tid:[0x%08" PRIx64 "]", filepath.c_str(), order.key.ToString().c_str(), order.tid);
+    log::trace("HSTableManager::WriteFirstPartLargeOrder()", "filepath:[%s] key:[%s] tid:[0x%08" PRIx64 "]", filepath.c_str(), order.key.ToString().c_str(), order.tid);
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY|O_CREAT, 0644)) < 0) {
-      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
+      log::emerg("HSTableManager::WriteFirstPartLargeOrder()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
       return 0;
     }
 
@@ -453,7 +453,7 @@ class HSTableManager {
     hstheader.timestamp = timestamp_largefile;
     HSTableHeader::EncodeTo(&hstheader, &db_options_, buffer);
     if (write(fd, buffer, db_options_.internal__hstable_header_size) < 0) {
-      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstPartLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
     }
 
@@ -474,30 +474,30 @@ class HSTableManager {
 
     key_to_headersize[order.tid][order.key.ToString()] = size_header;
     if (write(fd, buffer, size_header) < 0) {
-      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstPartLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
     }
 
-    // Write key and chunk
-    // NOTE: Could also put the key and chunk in the buffer and do a single write
+    // Write key and part
+    // NOTE: Could also put the key and part in the buffer and do a single write
     if (write(fd, order.key.data(), order.key.size()) < 0) {
-      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstPartLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
     }
 
     if (write(fd, order.chunk.data(), order.chunk.size()) < 0) {
-      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error write(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstPartLargeOrder()", "Error write(): %s", strerror(errno));
       return 0;
     }
 
     uint64_t filesize = db_options_.internal__hstable_header_size + size_header + order.key.size() + order.size_value;
     if (ftruncate(fd, filesize) < 0) {
-      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error ftruncate(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstPartLargeOrder()", "Error ftruncate(): %s", strerror(errno));
       return 0;
     }
 
     if (order.write_options.sync && FileUtil::sync_file(fd) < 0) {
-      log::emerg("HSTableManager::WriteFirstChunkLargeOrder()", "Error sync_file(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteFirstPartLargeOrder()", "Error sync_file(): %s", strerror(errno));
     }
 
     file_resource_manager.SetFileSize(fileid_largefile, filesize);
@@ -505,14 +505,14 @@ class HSTableManager {
     uint64_t fileid_shifted = fileid_largefile;
     fileid_shifted <<= 32;
     uint64_t location = fileid_shifted | db_options_.internal__hstable_header_size;
-    log::trace("HSTableManager::WriteFirstChunkLargeOrder()", "fileid [%d] location: [%" PRIu64 "]", fileid_largefile, location);
+    log::trace("HSTableManager::WriteFirstPartLargeOrder()", "fileid [%d] location: [%" PRIu64 "]", fileid_largefile, location);
     file_resource_manager.SetNumWritesInProgress(fileid_largefile, 1);
     file_resource_manager.AddOffsetArray(fileid_largefile, std::pair<uint64_t, uint32_t>(hashed_key, db_options_.internal__hstable_header_size));
     return location;
   }
 
 
-  uint64_t WriteMiddleOrLastChunk(Order& order, uint64_t hashed_key, uint64_t location) {
+  uint64_t WriteMiddleOrLastPart(Order& order, uint64_t hashed_key, uint64_t location) {
     uint32_t fileid = (location & 0xFFFFFFFF00000000) >> 32;
     uint32_t offset_file = location & 0x00000000FFFFFFFF;
     std::string filepath = GetFilepath(fileid);
@@ -523,32 +523,32 @@ class HSTableManager {
       return 0;
     }
 
-    log::trace("HSTableManager::WriteMiddleOrLastChunk()", "key [%s] filepath:[%s] offset_chunk:%" PRIu64, order.key.ToString().c_str(), filepath.c_str(), order.offset_chunk);
+    log::trace("HSTableManager::WriteMiddleOrLastPart()", "key [%s] filepath:[%s] offset_chunk:%" PRIu64, order.key.ToString().c_str(), filepath.c_str(), order.offset_chunk);
     int fd = 0;
     if ((fd = open(filepath.c_str(), O_WRONLY, 0644)) < 0) {
-      log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
+      log::emerg("HSTableManager::WriteMiddleOrLastPart()", "Could not open file [%s]: %s", filepath.c_str(), strerror(errno));
       return 0;
     }
 
     if (key_to_headersize.find(order.tid) == key_to_headersize.end() ||
         key_to_headersize[order.tid].find(order.key.ToString()) == key_to_headersize[order.tid].end()) {
-      log::trace("HSTableManager::WriteMiddleOrLastChunk()", "Missing in key_to_headersize[]");
+      log::trace("HSTableManager::WriteMiddleOrLastPart()", "Missing in key_to_headersize[]");
     }
 
     uint32_t size_header = key_to_headersize[order.tid][order.key.ToString()];
 
-    // Write the chunk
+    // Write the part
     if (pwrite(fd,
                order.chunk.data(),
                order.chunk.size(),
                offset_file + size_header + order.key.size() + order.offset_chunk) < 0) {
-      log::trace("HSTableManager::WriteMiddleOrLastChunk()", "Error pwrite(): %s", strerror(errno));
+      log::trace("HSTableManager::WriteMiddleOrLastPart()", "Error pwrite(): %s", strerror(errno));
     }
 
-    // If this is a last chunk, the header is written again to save
+    // If this is a last part, the header is written again to save
     // the right size of compressed value along with the checksums.
-    if (order.IsLastChunk()) {
-      log::trace("HSTableManager::WriteMiddleOrLastChunk()", "Write compressed size: [%s] - size:%" PRIu64 ", compressed size:%" PRIu64 " crc32:0x%08" PRIx64, order.key.ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
+    if (order.IsLastPart()) {
+      log::trace("HSTableManager::WriteMiddleOrLastPart()", "Write compressed size: [%s] - size:%" PRIu64 ", compressed size:%" PRIu64 " crc32:0x%08" PRIx64, order.key.ToString().c_str(), order.size_value, order.size_value_compressed, order.crc32);
       struct EntryHeader entry_header;
       entry_header.SetTypePut();
       entry_header.SetEntryFull();
@@ -570,16 +570,16 @@ class HSTableManager {
 
       char buffer[sizeof(struct EntryHeader)*2];
       uint32_t size_header_new = EntryHeader::EncodeTo(db_options_, &entry_header, buffer);
-      //log::trace("HSTableManager::WriteMiddleOrLastChunk()", "CRC32 header: 0x%02" PRIx8, checksum_header);
+      //log::trace("HSTableManager::WriteMiddleOrLastPart()", "CRC32 header: 0x%02" PRIx8, checksum_header);
       //entry_header.print();
       
       if (size_header_new != size_header) {
-        log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
+        log::emerg("HSTableManager::WriteMiddleOrLastPart()", "Error of encoding: the initial header had a size of %u, and it is now %u. The entry is now corrupted.", size_header, size_header_new);
         return 0;
       }
 
       if (pwrite(fd, buffer, size_header, offset_file) < 0) {
-        log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error pwrite(): %s", strerror(errno));
+        log::emerg("HSTableManager::WriteMiddleOrLastPart()", "Error pwrite(): %s", strerror(errno));
         return 0;
       }
  
@@ -587,7 +587,7 @@ class HSTableManager {
         uint64_t filesize = db_options_.internal__hstable_header_size + size_header + order.key.size() + order.size_value_compressed;
         file_resource_manager.SetFileSize(fileid, filesize);
         if (ftruncate(fd, filesize) < 0) {
-          log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error ftruncate(): %s", strerror(errno));
+          log::emerg("HSTableManager::WriteMiddleOrLastPart()", "Error ftruncate(): %s", strerror(errno));
           return 0;
         }
       }
@@ -595,17 +595,17 @@ class HSTableManager {
       uint32_t num_writes_in_progress = file_resource_manager.SetNumWritesInProgress(fileid, -1);
       if (fileid != fileid_ && num_writes_in_progress == 0) {
         // TODO: factorize this code with FlushOffsetArray()
-        log::trace("HSTableManager::WriteMiddleOrLastChunk()", "About to write Offset Array");
+        log::trace("HSTableManager::WriteMiddleOrLastPart()", "About to write Offset Array");
         uint64_t size_offarray;
         FileType filetype = order.IsLarge() ? kCompactedLargeType : filetype_default_;
         uint64_t filesize_before = file_resource_manager.GetFileSize(fileid);
         if (ftruncate(fd, filesize_before) < 0) {
-          log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error ftruncate(): %s", strerror(errno));
+          log::emerg("HSTableManager::WriteMiddleOrLastPart()", "Error ftruncate(): %s", strerror(errno));
           return 0;
         }
         Status s = WriteOffsetArray(fd, file_resource_manager.GetOffsetArray(fileid), &size_offarray, filetype, file_resource_manager.HasPaddingInValues(fileid), false);
         if (!s.IsOK()) {
-          log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error on WriteOffsetArray(): %s", s.ToString().c_str());
+          log::emerg("HSTableManager::WriteMiddleOrLastPart()", "Error on WriteOffsetArray(): %s", s.ToString().c_str());
           return 0;
         }
         uint64_t filesize = file_resource_manager.GetFileSize(fileid);
@@ -616,16 +616,16 @@ class HSTableManager {
     }
 
     if (order.write_options.sync && FileUtil::sync_file(fd) < 0) {
-      log::emerg("HSTableManager::WriteMiddleOrLastChunk()", "Error sync_file(): %s", strerror(errno));
+      log::emerg("HSTableManager::WriteMiddleOrLastPart()", "Error sync_file(): %s", strerror(errno));
     }
 
     close(fd);
-    log::trace("HSTableManager::WriteMiddleOrLastChunk()", "all good");
+    log::trace("HSTableManager::WriteMiddleOrLastPart()", "all good");
     return location;
   }
 
 
-  uint64_t WriteFirstChunkOrSmallOrder(Order& order, uint64_t hashed_key) {
+  uint64_t WriteFirstPartOrSmallOrder(Order& order, uint64_t hashed_key) {
 
     if (order.write_options.sync) {
       has_sync_option_ = true;
@@ -658,7 +658,7 @@ class HSTableManager {
       /*
       if (order.IsSelfContained()) {
         size_header = EntryHeader::EncodeTo(db_options_, &entry_header, buffer_raw_ + offset_end_);
-        log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "IsSelfContained():true - crc32 [0x%08x]", entry_header.crc32);
+        log::trace("HSTableManager::WriteFirstPartOrSmallOrder()", "IsSelfContained():true - crc32 [0x%08x]", entry_header.crc32);
       }
       */
 
@@ -674,11 +674,11 @@ class HSTableManager {
 
       if (!order.IsSelfContained()) {
         key_to_headersize[order.tid][order.key.ToString()] = size_header;
-        log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "BEFORE fileid_ %u", fileid_);
+        log::trace("HSTableManager::WriteFirstPartOrSmallOrder()", "BEFORE fileid_ %u", fileid_);
         file_resource_manager.SetNumWritesInProgress(fileid_, 1);
         FlushCurrentFile(0, entry_header.size_value_offset() - order.chunk.size());
         // NOTE: A better way to do it would be to copy things into the buffer, and
-        // then for the other chunks, either copy in the buffer if the position
+        // then for the other parts, either copy in the buffer if the position
         // to write is >= offset_end_, or do a pwrite() if the position is <
         // offset_end_
         // NOTE: might be better to lseek() instead of doing a large write
@@ -688,11 +688,11 @@ class HSTableManager {
         //FlushCurrentFile();
         //ftruncate(fd_, offset_end_);
         //lseek(fd_, 0, SEEK_END);
-        log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "AFTER fileid_ %u", fileid_);
+        log::trace("HSTableManager::WriteFirstPartOrSmallOrder()", "AFTER fileid_ %u", fileid_);
       }
-      log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "Put [%s]", order.key.ToString().c_str());
+      log::trace("HSTableManager::WriteFirstPartOrSmallOrder()", "Put [%s]", order.key.ToString().c_str());
     } else { // order.type == OrderType::Delete
-      log::trace("HSTableManager::WriteFirstChunkOrSmallOrder()", "Delete [%s]", order.key.ToString().c_str());
+      log::trace("HSTableManager::WriteFirstPartOrSmallOrder()", "Delete [%s]", order.key.ToString().c_str());
       entry_header.SetTypeDelete();
       entry_header.SetEntryFull();
       entry_header.size_key = order.key.size();
@@ -722,7 +722,7 @@ class HSTableManager {
       if (!has_file_) OpenNewFile();
 
       uint64_t hashed_key = hash_->HashFunction(order.key.data(), order.key.size());
-      // TODO-13: if the item is self-contained (unique chunk), then no need to
+      // TODO-13: if the item is self-contained (unique part), then no need to
       //       have size_value space, size_value_compressed is enough.
 
       // TODO-12: If the db is embedded, then all order are self contained,
@@ -736,32 +736,32 @@ class HSTableManager {
       //  - Large entries:  sizes greater than hstable.maximum_size
       //
       // When using the storage engine through a network interface, medium and
-      // large entries are split into chunks of size at most server.size_buffer_recv,
-      // making them "multi-chunk" entries.
+      // large entries are split into parts of size at most server.size_buffer_recv,
+      // making them "multipart" entries.
       // Small entries do not need to be split, and are therefore "self-contained".
-      // Chunks are held into "orders", which hold extra metadata needed
+      // Parts are held into "orders", which hold extra metadata needed
       // for various steps of the storage process.
-      // There are three types of chunks, based on their positions in the data
-      // stream: first chunk, middle chunk, and last chunk. Different operations
-      // need to be completed on an order depending on the type of chunk it
+      // There are three types of parts, based on their positions in the data
+      // stream: first part, middle part, and last part. Different operations
+      // need to be completed on an order depending on the type of part it
       // contains.
       //
       // When using the storage engine embedded in another program, orders can be
       // on any size, and because it is embedded, the data can be sent as is to
       // the storage engine, potentially in a very large buffer, larger than
       // the size of server.size_buffer_recv contrained when on a network. Because the
-      // logic in the storage engine expects first and last chunks, a large
-      // order that is at the same time a first *and* a last chunk could cause
-      // an issue: the order could be treated only as a first chunk,
-      // and the operations triggered by the arrival of the last chunk
+      // logic in the storage engine expects first and last parts, a large
+      // order that is at the same time a first *and* a last part could cause
+      // an issue: the order could be treated only as a first part,
+      // and the operations triggered by the arrival of the last part
       // may not be done. To solve that problem, and because compression
       // and hash functions take input of limited sizes anyway, the constant
-      // 'maximum_chunk_size' has been introduced. As part of the
-      // Database::PutChunk() method, the sizes of incoming orders are checked,
-      // and if they are larger than 'maximum_chunk_size', they are split
-      // into smaller chunks. This is done in such a way that any
+      // 'maximum_part_size' has been introduced. As part of the
+      // Database::PutPart() method, the sizes of incoming orders are checked,
+      // and if they are larger than 'maximum_part_size', they are split
+      // into smaller parts. This is done in such a way that any
       // self-contained large entry would be split, therefore guaranteeing
-      // that that the operations done by both the first and last chunks
+      // that that the operations done by both the first and last parts
       // are triggered.
       //
       // For performance reasons, the small and medium entries incoming during
@@ -770,18 +770,18 @@ class HSTableManager {
       // HSTable, referred to as "large" HSTable.
  
 
-      // 1. The order is the first chunk of a large entry, so we create a
-      //    large HSTable and write the first chunk in there
+      // 1. The order is the first part of a large entry, so we create a
+      //    large HSTable and write the first part in there
       uint64_t location = 0;
-      if (order.IsLarge() && order.IsFirstChunk()) {
+      if (order.IsLarge() && order.IsFirstPart()) {
         // TODO-11: shouldn't this be testing size_value_compressed as well? -- yes, only if the order
         // is a full entry by itself (will happen when the kvstore will be embedded and not accessed
         // through the network), otherwise we don't know yet what the total compressed size will be.
-        location = WriteFirstChunkLargeOrder(order, hashed_key);
+        location = WriteFirstPartLargeOrder(order, hashed_key);
 
-      // 2. The order is a middle or last chunk, so we open the HSTable,
-      //    pwrite() the chunk, and close the HSTable
-      } else if (order.IsMiddleOrLastChunk()) {
+      // 2. The order is a middle or last part, so we open the HSTable,
+      //    pwrite() the part, and close the HSTable
+      } else if (order.IsMiddleOrLastPart()) {
         //  TODO-11: replace the tests on compression "order.size_value_compressed ..." by a real test on a flag or a boolean
         //  TODO-11: replace the use of size_value or size_value_compressed by a unique size() which would already return the right value
         if (key_to_location.find(order.tid) == key_to_location.end()) {
@@ -790,7 +790,7 @@ class HSTableManager {
           location = key_to_location[order.tid][order.key.ToString()];
         }
         if (location != 0) {
-          WriteMiddleOrLastChunk(order, hashed_key, location);
+          WriteMiddleOrLastPart(order, hashed_key, location);
         } else {
           log::emerg("HSTableManager", "Avoided catastrophic location error (in case 2) key:[%s] tid:[0x%08" PRIx64 "]", order.key.ToString().c_str(), order.tid); 
           for (auto& p: key_to_location[order.tid]) {
@@ -798,32 +798,32 @@ class HSTableManager {
           }
         }
 
-      // 3. The order is a self-contained small chunk, or a first chunk
+      // 3. The order is a self-contained small part, or a first part
       //    for a medium entry, thus it is added to the current buffer and
       //    is written to the latest on-going HSTable
       } else {
         buffer_has_items_ = true;
-        location = WriteFirstChunkOrSmallOrder(order, hashed_key);
+        location = WriteFirstPartOrSmallOrder(order, hashed_key);
       }
 
       // Traces
       int caseid = 0;
-      if (order.IsLarge() && order.IsFirstChunk()) { caseid = 1; }
-      else if (order.IsMiddleOrLastChunk()) { caseid = 2; }
+      if (order.IsLarge() && order.IsFirstPart()) { caseid = 1; }
+      else if (order.IsMiddleOrLastPart()) { caseid = 2; }
       else { caseid = 3; }
       log::trace("HSTableManager::WriteOrdersAndFlushFile()",
                 "%d. key: [%s] size_chunk:%" PRIu64 " offset_chunk: %" PRIu64,
                 caseid, order.key.ToString().c_str(), order.chunk.size(), order.offset_chunk);
 
 
-      // If the order is self-contained or a last chunk,
+      // If the order is self-contained or a last part,
       // add his location to the output map_index_out[]
-      if (order.IsSelfContained() || order.IsLastChunk()) {
+      if (order.IsSelfContained() || order.IsLastPart()) {
         log::trace("HSTableManager::WriteOrdersAndFlushFile()", "END OF ORDER key: [%s] size_chunk:%" PRIu64 " offset_chunk: %" PRIu64 " location:%" PRIu64, order.key.ToString().c_str(), order.chunk.size(), order.offset_chunk, location);
         if (location != 0) {
           map_index_out.insert(std::pair<uint64_t, uint64_t>(hashed_key, location));
         } else {
-          log::emerg("HSTableManager", "Avoided catastrophic location error (post-processing last chunk)"); 
+          log::emerg("HSTableManager", "Avoided catastrophic location error (post-processing last part)"); 
         }
         if (key_to_location.find(order.tid) != key_to_location.end()) {
           key_to_location[order.tid].erase(order.key.ToString());
@@ -831,14 +831,14 @@ class HSTableManager {
         if (key_to_headersize.find(order.tid) != key_to_headersize.end()) {
           key_to_headersize[order.tid].erase(order.key.ToString());
         }
-      // Else, if the order is not self-contained and is a first chunk,
+      // Else, if the order is not self-contained and is a first part,
       // the location is saved in key_to_location[]
-      } else if (order.IsFirstChunk()) {
+      } else if (order.IsFirstPart()) {
         if (location != 0 && order.type != OrderType::Delete) {
           key_to_location[order.tid][order.key.ToString()] = location;
           log::trace("HSTableManager", "location saved: [%" PRIu64 "]", location); 
         } else {
-          log::trace("HSTableManager", "Avoided catastrophic location error (post-processing first chunk)"); 
+          log::trace("HSTableManager", "Avoided catastrophic location error (post-processing first part)"); 
         }
       }
     }
@@ -1252,8 +1252,8 @@ class HSTableManager {
   // key_to_location is made to be dependent on the id of the thread that
   // originated an order, so that if two writers simultaneously write entries
   // with the same key, they will be properly stored into separate locations.
-  // NOTE: is it possible for a chunk to arrive when the file is not yet
-  // created, and have it's WriteMiddleOrLastChunk() fail because of that?
+  // NOTE: is it possible for a part to arrive when the file is not yet
+  // created, and have it's WriteMiddleOrLastPart() fail because of that?
   // If so, need to write in buffer_raw_ instead
   // TODO-37: if a thread crashes or terminates, its data will *not* be cleaned up.
   std::map< std::thread::id, std::map<std::string, uint64_t> > key_to_location;

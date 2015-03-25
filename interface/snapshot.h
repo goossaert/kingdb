@@ -94,7 +94,7 @@ class Snapshot: public KingDB {
     return Status::IOError("Not supported");
   }
 
-  virtual Status PutChunk(WriteOptions& write_options,
+  virtual Status PutPart(WriteOptions& write_options,
                           ByteArray& key,
                           ByteArray& chunk,
                           uint64_t offset_chunk,

@@ -28,10 +28,10 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray& key, ByteArray* va
   // TODO: make sure the live buffer doesn't need to be protected by a mutex in
   //       order to be accessed -- right now I'm relying on timing, but that may
   //       be too weak to guarantee proper access
-  // TODO: for items being stored that are not small enough, only chunks will
+  // TODO: for items being stored that are not small enough, only parts will
   //       be found in the buffers -- should the kv-store return "not found"
   //       or should it try to send the data from the disk and the partially
-  //       available chunks in the buffer?
+  //       available parts in the buffer?
   if (IsStopRequested()) return Status::IOError("Cannot handle request: WriteBuffer is closing");
 
   // read the "live" buffer
@@ -58,9 +58,6 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray& key, ByteArray* va
     log::debug("WriteBuffer::Get()", "found in buffer_live");
     if (   order_found.type == OrderType::Put
         && order_found.IsSelfContained()) {
-      // TODO: uncompressed the chunk
-      // TODO: make sure that it is clear for the code below this method
-      // whether or not the chunk is compressed
       *value_out = order_found.chunk;
       (*value_out).set_size(order_found.size_value);
       (*value_out).set_size_compressed(order_found.size_value_compressed);
@@ -102,9 +99,6 @@ Status WriteBuffer::Get(ReadOptions& read_options, ByteArray& key, ByteArray* va
   if (   found
       && order_found.type == OrderType::Put
       && order_found.IsSelfContained()) {
-    // TODO: uncompressed the chunk
-    // TODO: make sure that it is clear for the code below this method
-    // whether or not the chunk is compressed
     *value_out = order_found.chunk;
     (*value_out).set_size(order_found.size_value);
     (*value_out).set_size_compressed(order_found.size_value_compressed);
@@ -133,14 +127,14 @@ Status WriteBuffer::Put(WriteOptions& write_options, ByteArray& key, ByteArray& 
 }
 
 
-Status WriteBuffer::PutChunk(WriteOptions& write_options,
+Status WriteBuffer::PutPart(WriteOptions& write_options,
                              ByteArray& key,
                              ByteArray& chunk,
                              uint64_t offset_chunk,
                              uint64_t size_value,
                              uint64_t size_value_compressed,
                              uint32_t crc32) {
-  return WriteChunk(write_options,
+  return WritePart(write_options,
                     OrderType::Put,
                     key,
                     chunk,
@@ -154,11 +148,11 @@ Status WriteBuffer::PutChunk(WriteOptions& write_options,
 
 Status WriteBuffer::Delete(WriteOptions& write_options, ByteArray& key) {
   auto empty = ByteArray::NewEmptyByteArray();
-  return WriteChunk(write_options, OrderType::Delete, key, empty, 0, 0, 0, 0);
+  return WritePart(write_options, OrderType::Delete, key, empty, 0, 0, 0, 0);
 }
 
 
-Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
+Status WriteBuffer::WritePart(const WriteOptions& write_options,
                                const OrderType& op,
                                ByteArray& key,
                                ByteArray& chunk,
@@ -168,15 +162,15 @@ Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
                                uint32_t crc32) {
   if (IsStopRequested()) return Status::IOError("Cannot handle request: WriteBuffer is closing");
 
-  log::trace("WriteBuffer::WriteChunk()",
+  log::trace("WriteBuffer::WritePart()",
              "key:[%s] | size chunk:%" PRIu64 ", total size value:%" PRIu64 " offset_chunk:%" PRIu64 " sizeOfBuffer:%d",
              key.ToString().c_str(), chunk.size(), size_value, offset_chunk, buffers_[im_live_].size());
 
-  bool is_first_chunk = (offset_chunk == 0);
+  bool is_first_part = (offset_chunk == 0);
   bool is_large = key.size() + size_value > db_options_.storage__hstable_size;
 
   uint64_t bytes_arriving = 0;
-  if (is_first_chunk) bytes_arriving += key.size();
+  if (is_first_part) bytes_arriving += key.size();
   bytes_arriving += chunk.size();
 
   if (UseRateLimiter()) rate_limiter_.Tick(bytes_arriving);
@@ -202,17 +196,17 @@ Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
   /*
   if (buffers_[im_live_].size()) {
     for(auto &p: buffers_[im_live_]) {   
-      log::trace("WriteBuffer::WriteChunk()",
+      log::trace("WriteBuffer::WritePart()",
                 "Write() ITEM key_ptr:[%p] key:[%s] | size chunk:%d, total size value:%d offset_chunk:%" PRIu64 " sizeOfBuffer:%d sizes_[im_live_]:%d",
                 p.key, p.key->ToString().c_str(), p.chunk->size(), p.size_value, p.offset_chunk, buffers_[im_live_].size(), sizes_[im_live_]);
     }
   } else {
-    log::trace("WriteBuffer::WriteChunk()", "Write() ITEM no buffers_[im_live_]");
+    log::trace("WriteBuffer::WritePart()", "Write() ITEM no buffers_[im_live_]");
   }
   */
 
   if (size_buffer_live > buffer_size_) {
-    log::trace("WriteBuffer::WriteChunk()", "trying to swap");
+    log::trace("WriteBuffer::WritePart()", "trying to swap");
     mutex_flush_level2_.lock();
     log::debug("LOCK", "2 lock");
     log::debug("LOCK", "3 lock");
@@ -223,7 +217,7 @@ Status WriteBuffer::WriteChunk(const WriteOptions& write_options,
     log::debug("LOCK", "2 unlock");
 
   } else {
-    log::trace("WriteBuffer::WriteChunk()", "will not swap");
+    log::trace("WriteBuffer::WritePart()", "will not swap");
   }
 
   log::debug("LOCK", "1 unlock");

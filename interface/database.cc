@@ -65,11 +65,11 @@ Status Database::Get(ReadOptions& read_options, ByteArray& key, ByteArray* value
 
 
 Status Database::Put(WriteOptions& write_options, ByteArray& key, ByteArray& chunk) {
-  return PutChunk(write_options, key, chunk, 0, chunk.size());
+  return PutPart(write_options, key, chunk, 0, chunk.size());
 }
 
 
-Status Database::PutChunk(WriteOptions& write_options,
+Status Database::PutPart(WriteOptions& write_options,
                         ByteArray& key,
                         ByteArray& chunk,
                         uint64_t offset_chunk,
@@ -80,20 +80,20 @@ Status Database::PutChunk(WriteOptions& write_options,
     return Status::IOError("Attempted write beyond the total value size, aborting write.");
   }
 
-  if (size_value <= db_options_.storage__maximum_chunk_size) {
-    return PutChunkValidSize(write_options, key, chunk, offset_chunk, size_value);
+  if (size_value <= db_options_.storage__maximum_part_size) {
+    return PutPartValidSize(write_options, key, chunk, offset_chunk, size_value);
   }
 
-  // 'chunk' may be deleted by the call to PutChunkValidSize()
+  // 'chunk' may be deleted by the call to PutPartValidSize()
   // and therefore it cannot be used in the loop test condition
   uint64_t size_chunk = chunk.size(); 
   Status s;
-  for (uint64_t offset = 0; offset < size_chunk; offset += db_options_.storage__maximum_chunk_size) {
+  for (uint64_t offset = 0; offset < size_chunk; offset += db_options_.storage__maximum_part_size) {
     ByteArray key_new, chunk_new;
-    if (offset + db_options_.storage__maximum_chunk_size < chunk.size()) {
+    if (offset + db_options_.storage__maximum_part_size < chunk.size()) {
       chunk_new = chunk;
       chunk_new.set_offset(offset);
-      chunk_new.set_size(db_options_.storage__maximum_chunk_size);
+      chunk_new.set_size(db_options_.storage__maximum_part_size);
       key_new = key;
     } else {
       chunk_new = chunk;
@@ -102,7 +102,7 @@ Status Database::PutChunk(WriteOptions& write_options,
       key_new = key;
     }
 
-    s = PutChunkValidSize(write_options, key_new, chunk_new, offset_chunk + offset, size_value);
+    s = PutPartValidSize(write_options, key_new, chunk_new, offset_chunk + offset, size_value);
     if (!s.IsOK()) break;
   }
 
@@ -110,7 +110,7 @@ Status Database::PutChunk(WriteOptions& write_options,
 }
 
 
-Status Database::PutChunkValidSize(WriteOptions& write_options,
+Status Database::PutPartValidSize(WriteOptions& write_options,
                                  ByteArray& key,
                                  ByteArray& chunk,
                                  uint64_t offset_chunk,
@@ -119,7 +119,7 @@ Status Database::PutChunkValidSize(WriteOptions& write_options,
   Status s;
   s = se_->FileSystemStatus();
   if (!s.IsOK()) return s;
-  log::trace("Database::PutChunkValidSize()",
+  log::trace("Database::PutPartValidSize()",
             "[%s] size_chunk:%" PRIu64 " offset_chunk:%" PRIu64,
             key.ToString().c_str(),
             chunk.size(),
@@ -130,9 +130,9 @@ Status Database::PutChunkValidSize(WriteOptions& write_options,
   uint64_t offset_chunk_compressed = offset_chunk;
   ByteArray chunk_final;
 
-  bool is_first_chunk = (offset_chunk == 0);
-  bool is_last_chunk = (chunk.size() + offset_chunk == size_value);
-  log::trace("Database::PutChunkValidSize()",
+  bool is_first_part = (offset_chunk == 0);
+  bool is_last_part = (chunk.size() + offset_chunk == size_value);
+  log::trace("Database::PutPartValidSize()",
             "CompressionType:%d",
             db_options_.compression.type);
 
@@ -141,7 +141,7 @@ Status Database::PutChunkValidSize(WriteOptions& write_options,
     do_compression = false;
   }
 
-  if (is_first_chunk) {
+  if (is_first_part) {
     ts_compression_enabled_.put(1);
     ts_offset_.put(0);
   }
@@ -159,7 +159,7 @@ Status Database::PutChunkValidSize(WriteOptions& write_options,
     chunk_final = chunk;
   } else {
     std::chrono::high_resolution_clock::time_point step00 = std::chrono::high_resolution_clock::now();
-    if (is_first_chunk) {
+    if (is_first_part) {
       compressor_.ResetThreadLocalStorage();
     }
     std::chrono::high_resolution_clock::time_point step01 = std::chrono::high_resolution_clock::now();
@@ -174,7 +174,7 @@ Status Database::PutChunkValidSize(WriteOptions& write_options,
     if (!s.IsOK()) return s;
     std::chrono::high_resolution_clock::time_point step02 = std::chrono::high_resolution_clock::now();
 
-    log::trace("Database::PutChunkValidSize()",
+    log::trace("Database::PutPartValidSize()",
               "[%s] size_compressed:%" PRIu64,
               key.ToString().c_str(), compressor_.size_compressed());
 
@@ -197,7 +197,7 @@ Status Database::PutChunkValidSize(WriteOptions& write_options,
     ByteArray chunk_compressed = ByteArray::NewShallowCopyByteArray(compressed, size_compressed);
     std::chrono::high_resolution_clock::time_point step04 = std::chrono::high_resolution_clock::now();
 
-    log::trace("Database::PutChunkValidSize()",
+    log::trace("Database::PutPartValidSize()",
               "[%s] (%" PRIu64 ") compressed size %" PRIu64 " - offset_chunk_compressed %" PRIu64,
               key.ToString().c_str(),
               chunk.size(),
@@ -213,18 +213,18 @@ Status Database::PutChunkValidSize(WriteOptions& write_options,
     uint64_t duration04 = std::chrono::duration_cast<std::chrono::microseconds>(step05 - step04).count();
 
     /*
-    log::info("Database::PutChunkValidSize()",
+    log::info("Database::PutPartValidSize()",
               "Durations: [%" PRIu64 "] [%" PRIu64 "] [%" PRIu64 "] [%" PRIu64 "] [%" PRIu64 "]",
               duration00, duration01, duration02, duration03, duration04
              );
     */
   }
 
-  if (do_compression && is_last_chunk) {
+  if (do_compression && is_last_part) {
     if (ts_compression_enabled_.get() == 1) {
       size_value_compressed = compressor_.size_compressed();
     } else {
-      if (is_first_chunk) {
+      if (is_first_part) {
         // chunk is self-contained: first ans last
         size_value_compressed = ts_offset_.get();
       } else {
@@ -235,24 +235,24 @@ Status Database::PutChunkValidSize(WriteOptions& write_options,
 
   // Compute CRC32 checksum
   uint32_t crc32 = 0;
-  if (is_first_chunk) {
+  if (is_first_part) {
     crc32_.ResetThreadLocalStorage();
     crc32_.stream(key.data(), key.size());
   }
   crc32_.stream(chunk_final.data(), chunk_final.size());
-  if (is_last_chunk) crc32 = crc32_.get();
+  if (is_last_part) crc32 = crc32_.get();
 
-  log::trace("Database PutChunkValidSize()", "[%s] size_value_compressed:%" PRIu64 " crc32:0x%" PRIx64 " END", key.ToString().c_str(), size_value_compressed, crc32);
+  log::trace("Database PutPartValidSize()", "[%s] size_value_compressed:%" PRIu64 " crc32:0x%" PRIx64 " END", key.ToString().c_str(), size_value_compressed, crc32);
 
   uint64_t size_padding = do_compression ? EntryHeader::CalculatePaddingSize(size_value) : 0;
   if (  offset_chunk_compressed + chunk_final.size()
       > size_value + size_padding) {
-    log::emerg("Database::PutChunkValidSize()", "Error: write was attempted outside of the allocated memory.");
+    log::emerg("Database::PutPartValidSize()", "Error: write was attempted outside of the allocated memory.");
     return Status::IOError("Prevented write to occur outside of the allocated memory.");
   }
 
   // (size_value_compressed != 0 && chunk->size() + offset_chunk == size_value_compressed));
-  return wb_->PutChunk(write_options,
+  return wb_->PutPart(write_options,
                        key,
                        chunk_final,
                        offset_chunk_compressed,

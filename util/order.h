@@ -41,21 +41,21 @@ struct Order {
   uint32_t crc32;
   bool is_large;
 
-  bool IsFirstChunk() {
+  bool IsFirstPart() {
     return (offset_chunk == 0);
   }
 
-  bool IsMiddleOrLastChunk() {
-    return !IsFirstChunk();
+  bool IsMiddleOrLastPart() {
+    return !IsFirstPart();
   }
 
-  bool IsLastChunk() {
+  bool IsLastPart() {
     return (   (size_value_compressed == 0 && chunk.size() + offset_chunk == size_value)
             || (size_value_compressed != 0 && chunk.size() + offset_chunk == size_value_compressed));
   }
 
   bool IsSelfContained() {
-    return IsFirstChunk() && IsLastChunk();
+    return IsFirstPart() && IsLastPart();
   }
 
   bool IsLarge() {

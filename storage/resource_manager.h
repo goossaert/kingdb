@@ -136,7 +136,7 @@ class FileResourceManager {
 
   uint32_t SetNumWritesInProgress(uint32_t fileid, int inc) {
     // The number of writers to a specific file is being tracked so that if a
-    // file is flushed but is still being written to due to some multi-chunk
+    // file is flushed but is still being written to due to some multipart
     // entry, we don't write the footer yet. That way, if any crash happens,
     // the file will have no footer, which will force a recovery and discover
     // which entries have corrupted data.

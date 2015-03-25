@@ -145,21 +145,21 @@ class Database: public KingDB {
     uint64_t max_size_hash = hash->MaxInputSize();
     delete hash;
 
-    if (db_options_.storage__maximum_chunk_size > std::numeric_limits<int32_t>::max()) {
-      return Status::IOError("db.storage.maximum-chunk-size cannot be greater than max int32. Fix your options.");
+    if (db_options_.storage__maximum_part_size > std::numeric_limits<int32_t>::max()) {
+      return Status::IOError("db.storage.maximum-part-size cannot be greater than max int32. Fix your options.");
     }
 
-    if (db_options_.storage__maximum_chunk_size >= db_options_.storage__hstable_size) {
-      return Status::IOError("The maximum size of a chunk cannot be larger than the minimum size of a large file (db.storage.maximum-chunk-size >= db.storage.hstable-size). Fix your options.");
+    if (db_options_.storage__maximum_part_size >= db_options_.storage__hstable_size) {
+      return Status::IOError("The maximum size of a chunk cannot be larger than the minimum size of a large file (db.storage.maximum-part-size >= db.storage.hstable-size). Fix your options.");
     }
 
-    if (db_options_.storage__maximum_chunk_size > max_size_hash) {
-      return Status::IOError("db.storage.maximum-chunk-size cannot be greater than the maximum input size of the hash function you chose. Fix your options.");
+    if (db_options_.storage__maximum_part_size > max_size_hash) {
+      return Status::IOError("db.storage.maximum-part-size cannot be greater than the maximum input size of the hash function you chose. Fix your options.");
     }
 
     if (   db_options_.compression.type != kNoCompression
-        && db_options_.storage__maximum_chunk_size > compressor_.MaxInputSize()) {
-      return Status::IOError("db.storage.maximum-chunk-size cannot be greater than the maximum input size of the compression function you chose. Fix your options.");
+        && db_options_.storage__maximum_part_size > compressor_.MaxInputSize()) {
+      return Status::IOError("db.storage.maximum-part-size cannot be greater than the maximum input size of the compression function you chose. Fix your options.");
     }
 
     std::unique_lock<std::mutex> lock(mutex_close_);
@@ -217,7 +217,7 @@ class Database: public KingDB {
     return KingDB::Put(write_options, key, chunk);
   }
 
-  virtual Status PutChunk(WriteOptions& write_options,
+  virtual Status PutPart(WriteOptions& write_options,
                           ByteArray& key,
                           ByteArray& chunk,
                           uint64_t offset_chunk, // TODO: could the offset be handled by the method itself?
@@ -252,7 +252,7 @@ class Database: public KingDB {
              ByteArray* value_out,
              bool want_raw_data);
 
-  Status PutChunkValidSize(WriteOptions& write_options,
+  Status PutPartValidSize(WriteOptions& write_options,
                            ByteArray& key,
                            ByteArray& chunk,
                            uint64_t offset_chunk,

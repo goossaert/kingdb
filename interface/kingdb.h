@@ -63,7 +63,7 @@ class KingDB {
     return Put(write_options, byte_array_key, byte_array_chunk);
   }
 
-  virtual Status PutChunk(WriteOptions& write_options,
+  virtual Status PutPart(WriteOptions& write_options,
                           ByteArray& key,
                           ByteArray& chunk,
                           uint64_t offset_chunk,

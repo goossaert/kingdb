@@ -195,7 +195,7 @@ class MultipartWriter {
   ~MultipartWriter() {}
 
   Status PutPart(ByteArray& part) {
-    Status s = db_->PutChunk(write_options_, key_, part, offset_, size_value_total_);
+    Status s = db_->PutPart(write_options_, key_, part, offset_, size_value_total_);
     if (s.IsOK()) offset_ += part.size();
     return s;
   }
