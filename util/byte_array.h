@@ -43,7 +43,7 @@ class ByteArrayResource {
 class PooledByteArrayResource: public ByteArrayResource {
  friend class ByteArray;
  public:
-  PooledByteArrayResource(std::shared_ptr<FileManager> file_manager, uint32_t fileid, std::string& filepath, uint64_t filesize)
+  PooledByteArrayResource(std::shared_ptr<FileManager> file_manager, uint32_t fileid, const std::string& filepath, uint64_t filesize)
     : data_(nullptr),
       file_manager_(file_manager),
       size_(0),
@@ -85,7 +85,7 @@ class PooledByteArrayResource: public ByteArrayResource {
 class MmappedByteArrayResource: public ByteArrayResource {
  friend class ByteArray;
  public:
-  MmappedByteArrayResource(std::string& filepath, uint64_t filesize)
+  MmappedByteArrayResource(const std::string& filepath, uint64_t filesize)
     : data_(nullptr),
       size_(0),
       size_compressed_(0),
@@ -181,14 +181,12 @@ class PointerByteArrayResource: public ByteArrayResource {
 };
 
 
-
-
-
 class ByteArray {
  // TODO: what is happenning when a ByteArray is assigned to another ByteArray?
  friend class MultipartReader;
  friend class StorageEngine;
  friend class Database;
+ friend class Snapshot;
  friend class WriteBuffer;
  friend class RegularIterator;
  friend class SequentialIterator;
@@ -229,34 +227,14 @@ class ByteArray {
     return byte_array;
   }
 
-  static ByteArray NewDeepCopyByteArray(std::string& str) {
+  static ByteArray NewDeepCopyByteArray(const std::string& str) {
     return NewDeepCopyByteArray(str.c_str(), str.size());
   }
 
-  static ByteArray NewAllocatedMemoryByteArray(uint64_t size) {
-    ByteArray byte_array;
-    byte_array.resource_ = std::make_shared<AllocatedByteArrayResource>(size);
-    byte_array.size_ = size;
-    return byte_array;
-  }
-
-  static ByteArray NewPooledByteArray(std::shared_ptr<FileManager> file_manager, uint32_t fileid, std::string& filepath, uint64_t filesize) {
-    ByteArray byte_array;
-    byte_array.resource_ = std::make_shared<PooledByteArrayResource>(file_manager, fileid, filepath, filesize);
-    byte_array.size_ = filesize;
-    return byte_array;
-  }
-
-  static ByteArray NewMmappedByteArray(std::string& filepath, uint64_t filesize) {
+  static ByteArray NewMmappedByteArray(const std::string& filepath, uint64_t filesize) {
     ByteArray byte_array;
     byte_array.resource_ = std::make_shared<MmappedByteArrayResource>(filepath, filesize);
     byte_array.size_ = filesize;
-    return byte_array;
-  }
-
-  static ByteArray NewReferenceByteArray(ByteArray& byte_array_in) {
-    // TODO: make this the =operator()
-    ByteArray byte_array = byte_array_in;
     return byte_array;
   }
 
@@ -267,16 +245,37 @@ class ByteArray {
     return byte_array;
   }
 
-  static ByteArray NewEmptyByteArray() {
-    return ByteArray();
-  }
-
   bool operator ==(const ByteArray &right) const {
     return (   size_const() == right.size_const()
             && memcmp(data_const(), right.data_const(), size_const()) == 0);
   }
 
  private:
+
+  static ByteArray NewAllocatedMemoryByteArray(uint64_t size) {
+    ByteArray byte_array;
+    byte_array.resource_ = std::make_shared<AllocatedByteArrayResource>(size);
+    byte_array.size_ = size;
+    return byte_array;
+  }
+
+  static ByteArray NewReferenceByteArray(ByteArray& byte_array_in) {
+    // TODO: make this the =operator()
+    ByteArray byte_array = byte_array_in;
+    return byte_array;
+  }
+
+  static ByteArray NewPooledByteArray(std::shared_ptr<FileManager> file_manager, uint32_t fileid, const std::string& filepath, uint64_t filesize) {
+    ByteArray byte_array;
+    byte_array.resource_ = std::make_shared<PooledByteArrayResource>(file_manager, fileid, filepath, filesize);
+    byte_array.size_ = filesize;
+    return byte_array;
+  }
+
+  static ByteArray NewEmptyByteArray() {
+    return ByteArray();
+  }
+
   virtual uint64_t size_compressed() { return size_compressed_; }
   virtual uint64_t size_compressed_const() const { return size_compressed_; }
   virtual void set_size(uint64_t s) { size_ = s; }
@@ -298,6 +297,28 @@ class ByteArray {
   uint32_t checksum_; // checksum for value_;
   uint32_t checksum_initial_; // initial checksum for value_ 
 };
+
+
+// ByteArray helpers
+inline ByteArray NewShallowCopyByteArray(char* data, uint64_t size) {
+  return ByteArray::NewShallowCopyByteArray(data, size);
+}
+
+inline ByteArray NewDeepCopyByteArray(const char* data, uint64_t size) {
+  return ByteArray::NewDeepCopyByteArray(data, size);
+}
+
+inline ByteArray NewDeepCopyByteArray(const std::string& str) {
+  return ByteArray::NewDeepCopyByteArray(str.c_str(), str.size());
+}
+
+inline ByteArray NewMmappedByteArray(const std::string& filepath, uint64_t filesize) {
+  return ByteArray::NewMmappedByteArray(filepath, filesize);
+}
+
+inline ByteArray NewPointerByteArray(const char* data, uint64_t size) {
+  return ByteArray::NewPointerByteArray(data, size);
+}
 
 } // namespace kdb
 

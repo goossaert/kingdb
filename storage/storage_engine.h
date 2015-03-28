@@ -476,7 +476,7 @@ class StorageEngine {
     //log::trace("StorageEngine::GetEntry()", "location:%" PRIu64 " fileid:%u offset_file:%u filesize:%" PRIu64, location, fileid, offset_file, filesize);
     std::string filepath = hstable_manager_.GetFilepath(fileid); // TODO: optimize here
 
-    //ByteArray key_temp = ByteArray::NewMmappedByteArray(filepath, filesize);
+    //ByteArray key_temp = NewMmappedByteArray(filepath, filesize);
     ByteArray key_temp = ByteArray::NewPooledByteArray(file_manager_, fileid, filepath, filesize);
     ByteArray value_temp = key_temp;
     // NOTE: verify that value_temp.size() is indeed filesize -- verified and
@@ -899,8 +899,8 @@ class StorageEngine {
           Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
 
           log::trace("Compaction()", "order list loop - create byte arrays");
-          ByteArray key = ByteArray::NewPointerByteArray(mmap_location->datafile() + offset_file + size_header, entry_header.size_key);
-          ByteArray chunk = ByteArray::NewPointerByteArray(mmap_location->datafile() + offset_file + size_header + entry_header.size_key, entry_header.size_value_used());
+          ByteArray key = NewPointerByteArray(mmap_location->datafile() + offset_file + size_header, entry_header.size_key);
+          ByteArray chunk = NewPointerByteArray(mmap_location->datafile() + offset_file + size_header + entry_header.size_key, entry_header.size_value_used());
           log::trace("Compaction()", "order list loop - push_back() orders");
 
           bool is_large = false;

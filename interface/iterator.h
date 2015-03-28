@@ -240,7 +240,7 @@ class RegularIterator: public IteratorResource {
     }
     status_ = mp_reader.GetStatus();
     if (!status_.IsOK()) log::trace("ByteArray::GetValue()", "Error in GetValue(): %s\n", status_.ToString().c_str());
-    return ByteArray::NewShallowCopyByteArray(buffer, value_.size());
+    return NewShallowCopyByteArray(buffer, value_.size());
   }
 
   MultipartReader GetMultipartValue() {
@@ -404,7 +404,7 @@ class SequentialIterator: public IteratorResource {
         continue;
       }
 
-      //ByteArray key = ByteArray::NewMmappedByteArray(filepath, mmap_.filesize());
+      //ByteArray key = NewMmappedByteArray(filepath, mmap_.filesize());
       ByteArray key = ByteArray::NewPooledByteArray(se_readonly_->file_manager_, fileid_current_, filepath_current_, mmap_.filesize_);
       ByteArray value = key;
 
@@ -465,7 +465,7 @@ class SequentialIterator: public IteratorResource {
     }
     status_ = mp_reader.GetStatus();
     if (!status_.IsOK()) log::trace("ByteArray::GetValue()", "Error in GetValue(): %s\n", status_.ToString().c_str());
-    return ByteArray::NewShallowCopyByteArray(buffer, value_.size());
+    return NewShallowCopyByteArray(buffer, value_.size());
   }
 
   MultipartReader GetMultipartValue() {

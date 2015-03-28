@@ -25,7 +25,6 @@
 
 namespace kdb {
 
-// Data format is version 1.0
 static const uint32_t kVersionDataFormatMajor   = 1;
 static const uint32_t kVersionDataFormatMinor   = 0;
 

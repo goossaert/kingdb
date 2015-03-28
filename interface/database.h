@@ -38,7 +38,7 @@ namespace kdb {
 
 class Database: public KingDB {
  public:
-  Database(const DatabaseOptions& db_options, const std::string dbname)
+  Database(const DatabaseOptions& db_options, const std::string& dbname)
       : db_options_(db_options),
         dbname_(FixDatabaseName(dbname)),
         is_closed_(true)
@@ -47,7 +47,7 @@ class Database: public KingDB {
     assert(getEndianness() == kBytesLittleEndian || getEndianness() == kBytesBigEndian);
   }
 
-  Database(const std::string dbname)
+  Database(const std::string& dbname)
       : dbname_(FixDatabaseName(dbname)),
         is_closed_(true)
   {
@@ -59,7 +59,7 @@ class Database: public KingDB {
     Close();
   }
 
-  std::string FixDatabaseName(std::string dbname) {
+  std::string FixDatabaseName(const std::string& dbname) {
     // Allows both relative and absolute directory paths to work
     if (dbname.size() >= 1 && dbname[0] == '/') {
       return dbname; 
@@ -195,25 +195,25 @@ class Database: public KingDB {
     return KingDB::Get(read_options, key, value_out);
   }
 
-  virtual Status Get(ReadOptions& read_options, std::string& key, ByteArray* value_out) {
+  virtual Status Get(ReadOptions& read_options, const std::string& key, ByteArray* value_out) {
     return KingDB::Get(read_options, key, value_out);
   }
 
-  virtual Status Get(ReadOptions& read_options, std::string& key, std::string* value_out) {
+  virtual Status Get(ReadOptions& read_options, const std::string& key, std::string* value_out) {
     return KingDB::Get(read_options, key, value_out);
   }
 
   virtual Status Put(WriteOptions& write_options, ByteArray& key, ByteArray& value) override;
 
-  virtual Status Put(WriteOptions& write_options, ByteArray& key, std::string& chunk) {
+  virtual Status Put(WriteOptions& write_options, ByteArray& key, const std::string& chunk) {
     return KingDB::Put(write_options, key, chunk);
   }
 
-  virtual Status Put(WriteOptions& write_options, std::string& key, ByteArray& chunk) {
+  virtual Status Put(WriteOptions& write_options, const std::string& key, ByteArray& chunk) {
     return KingDB::Put(write_options, key, chunk);
   }
 
-  virtual Status Put(WriteOptions& write_options, std::string& key, std::string& chunk) {
+  virtual Status Put(WriteOptions& write_options, const std::string& key, const std::string& chunk) {
     return KingDB::Put(write_options, key, chunk);
   }
 
@@ -226,9 +226,9 @@ class Database: public KingDB {
   virtual Snapshot NewSnapshot();
   virtual Iterator NewIterator(ReadOptions& read_options) override;
 
-  MultipartReader NewMultipartReader(ReadOptions& read_options, ByteArray& key) {
+  virtual MultipartReader NewMultipartReader(ReadOptions& read_options, ByteArray& key) {
     ByteArray value;
-    Status s = Get(read_options, key, &value, true);
+    Status s = GetRaw(read_options, key, &value, true);
     if (!s.IsOK()) {
       return MultipartReader(s);
     } else {
@@ -236,8 +236,17 @@ class Database: public KingDB {
     }
   }
 
+  virtual MultipartReader NewMultipartReader(ReadOptions& read_options, const std::string& key_str) {
+    ByteArray key = NewDeepCopyByteArray(key_str);
+    return NewMultipartReader(read_options, key);
+  }
 
   MultipartWriter NewMultipartWriter(WriteOptions& write_options, ByteArray& key, uint64_t size_value_total) {
+    return MultipartWriter(this, write_options, key, size_value_total);
+  }
+
+  MultipartWriter NewMultipartWriter(WriteOptions& write_options, const std::string& key_str, uint64_t size_value_total) {
+    ByteArray key = NewDeepCopyByteArray(key_str);
     return MultipartWriter(this, write_options, key, size_value_total);
   }
 
@@ -247,10 +256,10 @@ class Database: public KingDB {
 
  private:
   KingDB* NewSnapshotPointer();
-  Status Get(ReadOptions& read_options,
-             ByteArray& key,
-             ByteArray* value_out,
-             bool want_raw_data);
+  Status GetRaw(ReadOptions& read_options,
+                ByteArray& key,
+                ByteArray* value_out,
+                bool want_raw_data);
 
   Status PutPartValidSize(WriteOptions& write_options,
                            ByteArray& key,

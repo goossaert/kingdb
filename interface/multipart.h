@@ -27,6 +27,8 @@
 namespace kdb {
 
 class MultipartReader {
+ friend class KingDB;
+ friend class Snapshot;
  friend class Database;
  friend class RegularIterator;
  friend class SequentialIterator;
@@ -98,7 +100,7 @@ class MultipartReader {
                                           &frame,
                                           &size_frame);
         offset_output_ += size_frame;
-        chunk_ = ByteArray::NewShallowCopyByteArray(data_out, size_out);
+        chunk_ = NewShallowCopyByteArray(data_out, size_out);
 
         if (s.IsDone()) {
           is_valid_stream_ = false;

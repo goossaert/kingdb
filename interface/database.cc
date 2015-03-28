@@ -6,29 +6,29 @@
 
 namespace kdb {
 
-Status Database::Get(ReadOptions& read_options,
-                   ByteArray& key,
-                   ByteArray* value_out,
-                   bool want_raw_data) {
+Status Database::GetRaw(ReadOptions& read_options,
+                        ByteArray& key,
+                        ByteArray* value_out,
+                        bool want_raw_data) {
   if (is_closed_) return Status::IOError("The database is not open");
-  log::trace("Database Get()", "[%s]", key.ToString().c_str());
+  log::trace("Database GetRaw()", "[%s]", key.ToString().c_str());
   Status s = wb_->Get(read_options, key, value_out);
   if (s.IsDeleteOrder()) {
     return Status::NotFound("Unable to find entry");
   } else if (s.IsNotFound()) {
-    log::trace("Database Get()", "not found in buffer");
+    log::trace("Database GetRaw()", "not found in buffer");
     s = se_->Get(read_options, key, value_out);
     if (s.IsNotFound()) {
-      log::trace("Database Get()", "not found in storage engine");
+      log::trace("Database GetRaw()", "not found in storage engine");
       return s;
     } else if (s.IsOK()) {
-      log::trace("Database Get()", "found in storage engine");
+      log::trace("Database GetRaw()", "found in storage engine");
     } else {
-      log::trace("Database Get()", "unidentified error");
+      log::trace("Database GetRaw()", "unidentified error");
       return s;
     }
   } else {
-    log::trace("Database Get()", "found in buffer");
+    log::trace("Database GetRaw()", "found in buffer");
   }
 
   // TODO-36: There is technical debt here:
@@ -38,7 +38,7 @@ Status Database::Get(ReadOptions& read_options,
   //    not have to copy data into intermediate buffers through the Multipart
   //    Reader as it is done here. Having intermediate buffers means that there
   //    is more data copy than necessary, thus more time wasted
-  log::trace("Database Get()", "Before Multipart - want_raw_data:%d value_out->is_compressed():%d", want_raw_data, value_out->is_compressed());
+  log::trace("Database GetRaw()", "Before Multipart - want_raw_data:%d value_out->is_compressed():%d", want_raw_data, value_out->is_compressed());
   if (want_raw_data == false && value_out->is_compressed()) {
     if (value_out->size() > db_options_.internal__size_multipart_required) {
       return Status::MultipartRequired();
@@ -49,18 +49,18 @@ Status Database::Get(ReadOptions& read_options,
     for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
       ByteArray part;
       mp_reader.GetPart(&part);
-      log::trace("Database Get()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
+      log::trace("Database GetRaw()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
       memcpy(buffer + offset, part.data(), part.size());
       offset += part.size();
     }
-    *value_out = ByteArray::NewShallowCopyByteArray(buffer, value_out->size());
+    *value_out = NewShallowCopyByteArray(buffer, value_out->size());
   }
 
   return s;
 }
 
 Status Database::Get(ReadOptions& read_options, ByteArray& key, ByteArray* value_out) {
-  return Get(read_options, key, value_out, false);
+  return GetRaw(read_options, key, value_out, false);
 }
 
 
@@ -194,7 +194,7 @@ Status Database::PutPartValidSize(WriteOptions& write_options,
     }
     std::chrono::high_resolution_clock::time_point step03 = std::chrono::high_resolution_clock::now();
 
-    ByteArray chunk_compressed = ByteArray::NewShallowCopyByteArray(compressed, size_compressed);
+    ByteArray chunk_compressed = NewShallowCopyByteArray(compressed, size_compressed);
     std::chrono::high_resolution_clock::time_point step04 = std::chrono::high_resolution_clock::now();
 
     log::trace("Database::PutPartValidSize()",

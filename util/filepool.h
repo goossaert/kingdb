@@ -49,7 +49,7 @@ class FileManager {
   ~FileManager() {
   }
 
-  Status GetFile(uint32_t fileid, std::string& filepath, uint64_t filesize, FileResource* file) {
+  Status GetFile(uint32_t fileid, const std::string& filepath, uint64_t filesize, FileResource* file) {
     std::unique_lock<std::mutex> lock(mutex_);
     bool found = false;
 

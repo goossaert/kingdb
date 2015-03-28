@@ -77,8 +77,8 @@ int main() {
 
   std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
   for (auto i = 0; i < num_items; i++) {
-    kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(items[i].c_str(), items[i].size());
-    kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
+    kdb::ByteArray key = kdb::NewDeepCopyByteArray(items[i].c_str(), items[i].size());
+    kdb::ByteArray value = kdb::NewDeepCopyByteArray(buffer_large, 100);
     kdb::Status s = db.PutPart(write_options,
                                 key,
                                 value,

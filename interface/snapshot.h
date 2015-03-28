@@ -10,6 +10,7 @@
 #include "util/status.h"
 #include "interface/iterator.h"
 #include "interface/kingdb.h"
+#include "interface/multipart.h"
 #include "util/order.h"
 #include "util/byte_array.h"
 #include "util/options.h"
@@ -119,10 +120,67 @@ class Snapshot: public KingDB {
     return it;
   }
 
+  virtual MultipartReader NewMultipartReader(ReadOptions& read_options, ByteArray& key) {
+    ByteArray value;
+    Status s = GetRaw(read_options, key, &value, true);
+    if (!s.IsOK()) {
+      return MultipartReader(s);
+    } else {
+      return MultipartReader(read_options, value);
+    }
+  }
+
+
   virtual void Flush() {}
   virtual void Compact() {}
 
  private:
+  Status GetRaw(ReadOptions& read_options,
+                ByteArray& key,
+                ByteArray* value_out,
+                bool want_raw_data) {
+    // WARNING: code duplication with Database::GetRaw()
+    if (is_closed_) return Status::IOError("The database is not open");
+    log::trace("Database GetRaw()", "[%s]", key.ToString().c_str());
+    Status s = se_readonly_->Get(read_options, key, value_out);
+    if (s.IsNotFound()) {
+      log::trace("Database GetRaw()", "not found in storage engine");
+      return s;
+    } else if (s.IsOK()) {
+      log::trace("Database GetRaw()", "found in storage engine");
+    } else {
+      log::trace("Database GetRaw()", "unidentified error");
+      return s;
+    }
+
+    // TODO-36: There is technical debt here:
+    // 1. The uncompression should be able to proceed without having to call a
+    //    Multipart Reader.
+    // 2. The uncompression should be able to operate within a single buffer, and
+    //    not have to copy data into intermediate buffers through the Multipart
+    //    Reader as it is done here. Having intermediate buffers means that there
+    //    is more data copy than necessary, thus more time wasted
+    log::trace("Database GetRaw()", "Before Multipart - want_raw_data:%d value_out->is_compressed():%d", want_raw_data, value_out->is_compressed());
+    if (want_raw_data == false && value_out->is_compressed()) {
+      if (value_out->size() > db_options_.internal__size_multipart_required) {
+        return Status::MultipartRequired();
+      }
+      char* buffer = new char[value_out->size()];
+      uint64_t offset = 0;
+      MultipartReader mp_reader(read_options, *value_out);
+      for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
+        ByteArray part;
+        mp_reader.GetPart(&part);
+        log::trace("Database GetRaw()", "Multipart loop size:%d [%s]", part.size(), part.ToString().c_str());
+        memcpy(buffer + offset, part.data(), part.size());
+        offset += part.size();
+      }
+      *value_out = NewShallowCopyByteArray(buffer, value_out->size());
+    }
+
+    return s;
+  }
+
   kdb::DatabaseOptions db_options_;
   std::string dbname_;
   kdb::StorageEngine* se_live_;

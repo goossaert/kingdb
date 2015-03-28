@@ -308,22 +308,17 @@ TEST(DBTest, CloseAndReopen) {
 
   int num_count_valid = 0;
 
-  std::string key1("key1");
-  std::string key2("key2");
-  std::string value1("value1");
-  std::string value2("value2");
-
-  s = db_->Put(write_options_, key1, value1);
-  s = db_->Put(write_options_, key2, value2);
+  s = db_->Put(write_options_, "key1", "value1");
+  s = db_->Put(write_options_, "key2", "value2");
 
   CloseWithoutErasingDB();
   OpenWithoutErasingDB();
 
   std::string out_str;
-  s = db_->Get(read_options_, key1, &out_str);
+  s = db_->Get(read_options_, "key1", &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
 
-  s = db_->Get(read_options_, key2, &out_str);
+  s = db_->Get(read_options_, "key2", &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
 
   ASSERT_EQ(num_count_valid, 2);
@@ -339,23 +334,18 @@ TEST(DBTest, RepairInvalidDatabaseOptionFile) {
 
   int num_count_valid = 0;
 
-  std::string key1("key1");
-  std::string key2("key2");
-  std::string value1("value1");
-  std::string value2("value2");
-
-  s = db_->Put(write_options_, key1, value1);
-  s = db_->Put(write_options_, key2, value2);
+  s = db_->Put(write_options_, "key1", "value1");
+  s = db_->Put(write_options_, "key2", "value2");
 
   CloseWithoutErasingDB();
   DeleteDatabaseOptionsFile();
   OpenWithoutErasingDB();
 
   std::string out_str;
-  s = db_->Get(read_options_, key1, &out_str);
+  s = db_->Get(read_options_, "key1", &out_str);
   if (s.IsOK() && out_str == "value1") num_count_valid += 1;
 
-  s = db_->Get(read_options_, key2, &out_str);
+  s = db_->Get(read_options_, "key2", &out_str);
   if (s.IsOK() && out_str == "value2") num_count_valid += 1;
 
   ASSERT_EQ(num_count_valid, 2);
@@ -371,7 +361,7 @@ TEST(DBTest, KeysWithNullBytes) {
 
   int num_count_valid = 0;
 
-  //kdb::ByteArray byte_array = kdb::ByteArray::NewDeepCopyByteArray("blahblah", 8);
+  //kdb::ByteArray byte_array = kdb::NewDeepCopyByteArray("blahblah", 8);
   //fprintf(stderr, "byte_array: %s\n", byte_array.ToString().c_str());
 
   std::string key1("000000000000key1");
@@ -380,11 +370,8 @@ TEST(DBTest, KeysWithNullBytes) {
   key1[5] = '\0';
   key2[5] = '\0';
 
-  std::string value1("value1");
-  std::string value2("value2");
-
-  s = db_->Put(write_options_, key1, value1);
-  s = db_->Put(write_options_, key2, value2);
+  s = db_->Put(write_options_, key1, "value1");
+  s = db_->Put(write_options_, key2, "value2");
 
   std::string out_str;
   s = db_->Get(read_options_, key1, &out_str);
@@ -429,10 +416,10 @@ TEST(DBTest, SingleThreadSmallEntries) {
 
     for (auto i = 0; i < num_items; i++) {
       std::string key_str = kg->GetKey(0, i, 16);
-      kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
+      kdb::ByteArray key = kdb::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
 
       data_generator_->GenerateData(buffer_large, 100);
-      kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
+      kdb::ByteArray value = kdb::NewDeepCopyByteArray(buffer_large, 100);
 
       kdb::Status s = db_->Put(write_options_, key, value);
       if (!s.IsOK()) {
@@ -492,10 +479,10 @@ TEST(DBTest, SingleThreadSnapshot) {
 
     for (auto i = 0; i < num_items; i++) {
       std::string key_str = kg->GetKey(0, i, 16);
-      kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
+      kdb::ByteArray key = kdb::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
 
       data_generator_->GenerateData(buffer_large, 100);
-      kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
+      kdb::ByteArray value = kdb::NewDeepCopyByteArray(buffer_large, 100);
 
       kdb::Status s = db_->Put(write_options_, key, value);
       if (!s.IsOK()) {
@@ -556,10 +543,10 @@ TEST(DBTest, SingleThreadSmallEntriesCompaction) {
 
     for (auto i = 0; i < num_items; i++) {
       std::string key_str = kg->GetKey(0, i, 16);
-      kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
+      kdb::ByteArray key = kdb::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
 
       data_generator_->GenerateData(buffer_large, 100);
-      kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
+      kdb::ByteArray value = kdb::NewDeepCopyByteArray(buffer_large, 100);
 
       kdb::Status s = db_->Put(write_options_, key, value);
       if (!s.IsOK()) {
@@ -621,10 +608,10 @@ TEST(DBTest, SequentialIterator) {
 
     for (auto i = 0; i < num_items; i++) {
       std::string key_str = kg->GetKey(0, i, 16);
-      kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
+      kdb::ByteArray key = kdb::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
 
       data_generator_->GenerateData(buffer_large, 100);
-      kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer_large, 100);
+      kdb::ByteArray value = kdb::NewDeepCopyByteArray(buffer_large, 100);
 
       kdb::Status s = db_->Put(write_options_, key, value);
       if (!s.IsOK()) {
@@ -762,7 +749,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
     //char buffer_full[total_size];
 
     //usleep(10 * 1000000);
-    kdb::ByteArray key = kdb::ByteArray::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
+    kdb::ByteArray key = kdb::NewDeepCopyByteArray(key_str.c_str(), key_str.size());
     kdb::MultipartWriter mp_writer = db_->NewMultipartWriter(write_options_, key, total_size);
 
     int fd = open("/tmp/kingdb-input", O_WRONLY|O_CREAT|O_TRUNC, 0644);
@@ -779,7 +766,7 @@ TEST(DBTest, SingleThreadSingleLargeEntry) {
         size_current = total_size - i;
       }
 
-      kdb::ByteArray value = kdb::ByteArray::NewDeepCopyByteArray(buffer, size_current);
+      kdb::ByteArray value = kdb::NewDeepCopyByteArray(buffer, size_current);
       s = mp_writer.PutPart(value);
 
       if (write(fd, buffer, size_current) < 0) {
