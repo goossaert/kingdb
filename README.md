@@ -10,6 +10,7 @@ KingDB
 ###Why should I use KingDB?
 
 - Fast for heavy write workloads and random reads.
+- The architecture, code, and data format are simple.
 - Multipart API to read and write large entries in smaller parts.
 - Multiple threads can access the same database safely.
 - Crash-proof: nothing ever gets overwritten.
@@ -20,11 +21,11 @@ KingDB
 
 ###Where is the documentation?
 
-You can find detailed the documentation here. (*coming soon*)
+You can learn more about how to use KingDB from the [documentation](doc/kingdb.md).
 
 ###How do I install KingDB?
 
-Installation instructions are in the documentation, here. (*coming soon*)
+You can find intallation instructions in the [installation section](doc/kingdb.md#2-how-to-install-kingdb) of the documentation.
 
 KingDB has no external dependencies and has been tested on:
 
