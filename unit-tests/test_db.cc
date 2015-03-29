@@ -722,6 +722,7 @@ std::string run_command(const char* command) {
 bool exists_program(const char* program_name) {
   std::string command("which ");
   command += program_name;
+  command += " 2>/dev/null";
   std::string ret = run_command(command.c_str());
   std::size_t pos = ret.find(program_name);
   if (pos == -1) return false;
