@@ -8,7 +8,7 @@
 namespace kdb {
 
 static const uint32_t kVersionMajor    = 0;
-static const uint32_t kVersionMinor    = 8;
+static const uint32_t kVersionMinor    = 9;
 static const uint32_t kVersionRevision = 0;
 static const uint32_t kVersionBuild    = 0;
 

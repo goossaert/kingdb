@@ -320,6 +320,18 @@ class ConfigParser {
     }
   }
 
+  void PrintMarkdown() {
+    for (auto &p: parameters_) {
+      fprintf(stdout, "`%s`  \n%s  \n", p->name.c_str(), p->description.c_str());
+      if (mandatories_.find(p->name) == mandatories_.end()) {
+        fprintf(stdout, "Default value: %s (%s)\n", p->default_value.c_str(), p->Type().c_str());
+      } else {
+        fprintf(stdout, "This parameter is *mandatory* (%s)\n", p->Type().c_str());
+      }
+      fprintf(stdout, "\n");
+    }
+  }
+
   Status LoadDefaultValues() {
     return ParseCommandLine(0, nullptr);
   }

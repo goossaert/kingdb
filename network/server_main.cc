@@ -123,6 +123,13 @@ int main(int argc, char** argv) {
     exit(0);
   }
 
+  if (argc == 2 && (strncmp(argv[1], "--generate-doc", 6) == 0 || strncmp(argv[1], "-h", 2) == 0)) {
+    fprintf(stdout, "Generating the parameter list in markdown format for use in the documentation.\n\n");
+    parser.PrintMarkdown();
+    exit(0);
+  }
+
+
   if (configfile != "") {
     s = parser.ParseFile(configfile); 
     if (!s.IsOK()) {

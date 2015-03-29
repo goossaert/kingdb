@@ -166,7 +166,7 @@ struct DatabaseOptions {
                          "Hashing algorithm used by the storage engine. Can be 'xxhash-64' or 'murmurhash3-64'."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.minimum-free-space-accept-orders", "192MB", &db_options.storage__minimum_free_space_accept_orders, false,
-                         "Minimum free disk space required to accept incoming orders. It is recommended that for this value to be at least (2 * 'db.write-buffer.size' + 4 * 'db.hstable.maximum-size'), so that when the file system fills up, the two write buffers can be flushed to secondary storage safely and the survival-mode compaction process can be run."));
+                         "Minimum free disk space required to accept incoming orders. It is recommended that for this value to be at least (2 x 'db.write-buffer.size' + 4 x 'db.hstable.maximum-size'), so that when the file system fills up, the two write buffers can be flushed to secondary storage safely and the survival-mode compaction process can be run."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.maximum-part-size", "1MB", &db_options.storage__maximum_part_size, false,
                          "The maximum part size is used by the storage engine to split entries into smaller parts -- important for the compression and hashing algorithms, can never be more than (2^32 - 1) as the algorihms used do not support sizes above that value."));
