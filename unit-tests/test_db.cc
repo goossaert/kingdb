@@ -397,6 +397,38 @@ TEST(DBTest, KeysWithNullBytes) {
   Close();
 }
 
+TEST(DBTest, MultipartReader) {
+  ResetAllOptions();
+  while (IterateOverOptions()) {
+    kdb::Logger::set_current_level("emerg");
+    Open();
+    kdb::Status s;
+
+    int num_count_valid = 0;
+
+    s = db_->Put(write_options_, "key1", "value1");
+    if (!s.IsOK()) fprintf(stderr, "Error: %s\n", s.ToString().c_str());
+    ASSERT_EQ(s.IsOK(), true);
+
+    kdb::MultipartReader mp_reader = db_->NewMultipartReader(read_options_, "key1");
+    s = mp_reader.GetStatus();
+    if (!s.IsOK()) fprintf(stderr, "Error: %s\n", s.ToString().c_str());
+    ASSERT_EQ(s.IsOK(), true);
+
+    for (mp_reader.Begin(); mp_reader.IsValid(); mp_reader.Next()) {
+      kdb::ByteArray part;
+      s = mp_reader.GetPart(&part);
+      if (!s.IsOK()) fprintf(stderr, "Error: %s\n", s.ToString().c_str());
+      ASSERT_EQ(s.IsOK(), true);
+    }
+
+    s = mp_reader.GetStatus();
+    if (!s.IsOK()) fprintf(stderr, "Error: %s\n", s.ToString().c_str());
+    ASSERT_EQ(s.IsOK(), true);
+
+    Close();
+  }
+}
 
 TEST(DBTest, SingleThreadSmallEntries) {
   while (IterateOverOptions()) {

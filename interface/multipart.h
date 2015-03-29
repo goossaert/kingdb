@@ -36,6 +36,7 @@ class MultipartReader {
   ~MultipartReader() {}
  
   virtual void Begin() {
+    log::trace("MultipartReader::Next()", "Begin()");
     if (read_options_.verify_checksums) {
       crc32_.ResetThreadLocalStorage();
       crc32_.put(value_.checksum_initial()); 
@@ -44,8 +45,8 @@ class MultipartReader {
     is_compression_disabled_ = false;
     offset_output_ = 0;
     compressor_.ResetThreadLocalStorage();
-    Next();
     status_ = Status::IOError("Stream is unfinished");
+    Next();
   }
 
   virtual bool IsValid() {
@@ -53,6 +54,7 @@ class MultipartReader {
   }
 
   virtual Status GetStatus() {
+    log::trace("MultipartReader::GetStatus()", "");
     return status_; 
   }
 
@@ -73,7 +75,7 @@ class MultipartReader {
           log::debug("MultipartReader::Next()", "Bad CRC32 - stored:0x%08" PRIx64 " computed:0x%08" PRIx64 "\n", value_.checksum(), crc32_.get());
           status_ = Status::IOError("Invalid checksum.");
         }
-        return false;
+        return true;
       }
 
       if (compressor_.HasFrameHeaderDisabledCompression(value_.data() + offset_output_)) {
@@ -117,6 +119,7 @@ class MultipartReader {
     }
 
     if (!value_.is_compressed() || is_compression_disabled_) {
+      log::trace("MultipartReader::Next()", "No compression or compression disabled");
       uint64_t size_left;
       if (value_.is_compressed() && is_compression_disabled_) {
         size_left = value_.size_compressed();
@@ -125,9 +128,10 @@ class MultipartReader {
       }
 
       if (offset_output_ == size_left) {
+        log::trace("MultipartReader::Next()", "Has gotten all the data");
         is_valid_stream_ = false;
         status_ = Status::OK();
-        return false;
+        return true;
       }
 
       char* data_left = value_.data() + offset_output_;
@@ -144,11 +148,13 @@ class MultipartReader {
       chunk_.set_size_compressed(0);
       offset_output_ += size_current;
       status_ = Status::OK();
+      log::trace("MultipartReader::Next()", "Done with handling uncompressed data - Status:%s", status_.ToString().c_str());
     }
     return true;
   }
 
   virtual Status GetPart(ByteArray* part) {
+    log::trace("MultipartReader::Next()", "GetPart() - Status:%s", status_.ToString().c_str());
     *part = chunk_;
     return status_;
   }
@@ -158,7 +164,7 @@ class MultipartReader {
   uint64_t offset_output_;
   bool is_compression_disabled_;
  
-  Status status_; 
+  Status status_;
   ByteArray chunk_;
   bool is_valid_stream_;
 
