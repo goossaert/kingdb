@@ -14,7 +14,7 @@
 #include <set>
 #include <algorithm>
 #include <cstdio>
-#include <inttypes.h>
+#include <cinttypes>
 
 #include <unistd.h>
 #include <sys/types.h>

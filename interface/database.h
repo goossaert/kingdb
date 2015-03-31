@@ -13,7 +13,7 @@
 #include <memory>
 #include <sys/file.h>
 #include <cstdint>
-#include <inttypes.h>
+#include <cinttypes>
 #include <limits>
 
 #include "interface/kingdb.h"

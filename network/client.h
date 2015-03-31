@@ -11,6 +11,7 @@
 #include <vector>
 #include <set>
 #include <stdlib.h>
+#include <unistd.h>
 #include <random>
 #include <chrono>
 #include <libmemcached/memcached.hpp>

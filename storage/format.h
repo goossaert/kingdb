@@ -14,7 +14,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <string.h>
-#include <inttypes.h>
+#include <cinttypes>
 
 #include "util/version.h"
 #include "util/logger.h"

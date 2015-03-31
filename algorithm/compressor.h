@@ -9,7 +9,7 @@
 
 #include <algorithm>
 #include <map>
-#include <inttypes.h>
+#include <cinttypes>
 
 #include "algorithm/lz4.h"
 

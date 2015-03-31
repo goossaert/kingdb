@@ -6,7 +6,7 @@
 #define KINGDB_WRITE_BUFFER_H_
 
 #include "util/debug.h"
-#include <inttypes.h>
+#include <cinttypes>
 #include <thread>
 #include <map>
 #include <array>

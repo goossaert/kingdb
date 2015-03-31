@@ -14,10 +14,10 @@
 #include <set>
 #include <algorithm>
 #include <cstdio>
-#include <inttypes.h>
+#include <cinttypes>
 
 #include <unistd.h>
-#include <inttypes.h>
+#include <cinttypes>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>

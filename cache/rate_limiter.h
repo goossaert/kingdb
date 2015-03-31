@@ -6,7 +6,7 @@
 #define KINGDB_RATE_LIMITER_H_
 
 #include "util/debug.h"
-#include <inttypes.h>
+#include <cinttypes>
 
 namespace kdb {
 

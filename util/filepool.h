@@ -6,7 +6,7 @@
 #define KINGDB_FILEPOOL_H_
 
 #include "util/debug.h"
-#include <inttypes.h>
+#include <cinttypes>
 
 #include <list>
 #include <map>

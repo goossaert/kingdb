@@ -7,7 +7,7 @@
 
 #include "util/debug.h"
 
-#include <inttypes.h>
+#include <cinttypes>
 #include <sys/stat.h>
 #include <string.h>
 #include <fstream>
