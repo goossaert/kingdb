@@ -21,7 +21,7 @@ KingDB
 
 ###Where is the documentation?
 
-You can learn more about how to use KingDB from the [documentation](doc/kingdb.md).
+You can learn more in the [KingDB documentation](doc/kingdb.md) and the [KingServer documentation](doc/kingserver.md)
 
 ###How do I install KingDB?
 
@@ -31,6 +31,7 @@ KingDB has no external dependencies and has been tested on:
 
 - Mac OS X 10.9.5 with Apple LLVM version 6.0 (clang-600.0.51)
 - Linux Ubuntu 14.04 x64 with GCC 4.9.2
+- Linux CentOS 6.5 x86\_64 with GCC 4.9.2
 
 ###Where do I get help?
 
