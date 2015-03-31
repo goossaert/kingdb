@@ -49,7 +49,7 @@ struct DatabaseOptions {
         hash(kxxHash_64),
         compression(kLZ4Compression),
         checksum(kCRC32C),
-        write_buffer__mode(kWriteBufferModeAdaptive) {
+        write_buffer__mode(kWriteBufferModeDirect) {
     DatabaseOptions &db_options = *this;
     ConfigParser parser;
     AddParametersToConfigParser(db_options, parser);
@@ -153,7 +153,7 @@ struct DatabaseOptions {
                          "db.write-buffer.flush-timeout", "500 milliseconds", &db_options.write_buffer__flush_timeout, false,
                          "The timeout after which the write buffer will flush its cache."));
     parser.AddParameter(new kdb::StringParameter(
-                         "db.write-buffer.mode", "adaptive", &db_options.write_buffer__mode_str, false,
+                         "db.write-buffer.mode", "direct", &db_options.write_buffer__mode_str, false,
                          "The mode with which the write buffer handles incoming traffic, can be 'direct' or 'adaptive'. With the 'direct' mode, once the Write Buffer is full other incoming Write and Delete operations will block until the buffer is persisted to secondary storage. The direct mode should be used when the clients are not subjects to timeouts. When choosing the 'adaptive' mode, incoming orders will be made slower, down to the speed of the writes on the secondary storage, so that they are almost just as fast as when using the direct mode, but are never blocking. The adaptive mode is expected to introduce a small performance decrease, but required for cases where clients timeouts must be avoided, for example when the database is used over a network."));
     parser.AddParameter(new kdb::UnsignedInt64Parameter(
                          "db.storage.hstable-size", "32MB", &db_options.storage__hstable_size, false,

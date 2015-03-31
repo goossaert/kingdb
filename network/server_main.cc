@@ -115,6 +115,9 @@ int main(int argc, char** argv) {
   kdb::DatabaseOptions::AddParametersToConfigParser(db_options, parser);
   kdb::ServerOptions::AddParametersToConfigParser(server_options, parser);
 
+  // Overwrite the default value for the WriteBuffer mode
+  parser.SetDefaultValue("db.write-buffer.mode", "adaptive");
+
   if (argc == 2 && (strncmp(argv[1], "--help", 6) == 0 || strncmp(argv[1], "-h", 2) == 0)) {
     fprintf(stdout, "KingServer is a persisted key-value database server, which uses the KingDB library\nas a storage backend. For more information, visit http://kingdb.org\n");
     fprintf(stdout, "KingServer version: %d.%d.%d\nKingDB version: %d.%d.%d\nData format version: %d.%d\n", kVersionServerMajor, kVersionServerMinor, kVersionServerRevision, kdb::kVersionMajor, kdb::kVersionMinor, kdb::kVersionRevision, kdb::kVersionDataFormatMajor, kdb::kVersionDataFormatMinor);

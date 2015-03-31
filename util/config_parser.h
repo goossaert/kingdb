@@ -264,6 +264,18 @@ class ConfigParser {
     }
   }
 
+  void SetDefaultValue(const std::string name, const std::string default_value) {
+    // This is used to change the default value of a parameter after
+    // the parameter was added to the parser.
+    auto it = parameters_.begin();
+    for (; it != parameters_.end(); ++it) {
+      if ((*it)->name == name) break;
+    }
+    if (it != parameters_.end()) {
+      (*it)->default_value = default_value;
+    }
+  }
+
   bool FoundAllMandatoryParameters() {
     return (mandatories_.size() == 0); 
   }
