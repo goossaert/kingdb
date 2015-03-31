@@ -41,7 +41,7 @@ Because KingServer uses C++11, you need GCC version 4.9.2 or greater. The follow
 
 ##3. How to run KingServer?
 
-To start a server, the only required parameter is the location where your want to store your data, specified by the `--db.path` parameter. The following command will run KingServer as a daemon process in background, which will listen to the port 3490 (default Memcached port), and will store the data in the path /tmp/mydb:
+To start a server, the only required parameter is the location where your want to store your data, specified by the `--db.path` parameter. The following command will run KingServer as a daemon process in background, which will listen to the port 11211 (default Memcached port), and will store the data in the path /tmp/mydb:
 
     $ kingserver --db.path=/tmp/mydb
 
@@ -66,7 +66,7 @@ The Memcached project keeps a [list of Memcached clients](https://code.google.co
 Imagine that your client code is in Python, and that you pick the Memcached package for Python called `pylibmc`. A test client program would look like this:
 
     import pylibmc
-    client = pylibmc.Client(["127.0.0.1:3490"])
+    client = pylibmc.Client(["127.0.0.1:11211"])
     print "Setting 'key1' to 'value1'"
     client['key1'] = 'value1'
     print "Retrieving the value for 'key1':" + client['key1']
@@ -79,7 +79,7 @@ It would be tedious to have to specify all the options on the command line all t
 
     # hash can be used to add comments
     server.size-buffer-recv          8kb
-    server.interface.memcached-port  3490
+    server.interface.memcached-port  11211
     server.num-threads               500
 
     db.path                          /tmp/mydb
@@ -199,7 +199,7 @@ Default value: 150 (Unsigned 32-bit integer)
 
 `--server.interface.memcached-port`  
 Port where the memcached interface will listen.  
-Default value: 3490 (Unsigned 32-bit integer)
+Default value: 11211 (Unsigned 32-bit integer)
 
 ###Database Options
 

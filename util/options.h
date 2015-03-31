@@ -242,7 +242,7 @@ struct ServerOptions {
                          "server.num-threads", "150", &server_options.num_threads, false,
                          "Num of threads in the pool of workers."));
     parser.AddParameter(new kdb::UnsignedInt32Parameter(
-                         "server.interface.memcached-port", "3490", &server_options.interface__memcached_port, false,
+                         "server.interface.memcached-port", "11211", &server_options.interface__memcached_port, false,
                          "Port where the memcached interface will listen."));
   }
 

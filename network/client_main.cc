@@ -3,7 +3,7 @@
 #include <util/config_parser.h>
 
 void show_usage(char *program_name) {
-  printf("Example: %s --host 127.0.0.1:3490 --num-threads 120 --write 10000 --remove 5000 --read 10000\n", program_name);
+  printf("Example: %s --host 127.0.0.1:11211 --num-threads 120 --write 10000 --remove 5000 --read 10000\n", program_name);
 }
 
 int main(int argc, char **argv) {
