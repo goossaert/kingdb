@@ -27,14 +27,14 @@ LIBDIR=$(PREFIX)/lib
 
 CFLAGS=-std=c++11 -MMD -MP -c
 
-all: CFLAGS += -O3
+all: CFLAGS += -O2
 all: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(TEST_COMPRESSION) $(TEST_DB)
 
 debug: CFLAGS += -DDEBUG -g
 debug: LDFLAGS+= -lprofiler 
 debug: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(TEST_COMPRESSION) $(TEST_DB)
 
-client: CFLAGS += -O3
+client: CFLAGS += -O2
 client: $(SOURCES) $(CLIENT_NETWORK)
 
 client-debug: CFLAGS += -DDEBUG -g
