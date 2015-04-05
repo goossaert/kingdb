@@ -397,6 +397,43 @@ TEST(DBTest, KeysWithNullBytes) {
   Close();
 }
 
+
+TEST(DBTest, TestStringInterface){
+  std::string value;
+  kdb::ReadOptions read_options;
+  kdb::WriteOptions write_options;
+  int size_key = 16;
+  int num_items = 100000;
+  int count_valid_items = 0;
+
+  ResetAllOptions();
+  while (IterateOverOptions()) {
+    kdb::Logger::set_current_level("emerg");
+    Open();
+    kdb::Status s;
+
+    for (auto i = 0; i < num_items; i++) {
+      std::stringstream ss;
+      ss << std::setfill ('0') << std::setw (size_key);
+      ss << i;
+      std::string key = ss.str();
+      db_->Put(write_options, key, "value-stuff");
+    }
+
+    for (auto i = 0; i < num_items; i++) {
+      std::stringstream ss;
+      ss << std::setfill ('0') << std::setw (size_key);
+      ss << i;
+      std::string key = ss.str();
+      s = db_->Get(read_options, key, &value);
+      ASSERT_EQ(s.IsOK(), true);
+    }
+
+    Close();
+  }
+}
+
+
 TEST(DBTest, MultipartReader) {
   ResetAllOptions();
   while (IterateOverOptions()) {
