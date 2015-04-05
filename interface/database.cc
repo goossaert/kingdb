@@ -38,6 +38,7 @@ Status Database::GetRaw(ReadOptions& read_options,
   //    not have to copy data into intermediate buffers through the Multipart
   //    Reader as it is done here. Having intermediate buffers means that there
   //    is more data copy than necessary, thus more time wasted
+  /*
   log::trace("Database GetRaw()", "Before Multipart - want_raw_data:%d value_out->is_compressed():%d", want_raw_data, value_out->is_compressed());
   if (want_raw_data == false && value_out->is_compressed()) {
     if (value_out->size() > db_options_.internal__size_multipart_required) {
@@ -55,7 +56,22 @@ Status Database::GetRaw(ReadOptions& read_options,
     }
     *value_out = NewShallowCopyByteArray(buffer, value_out->size());
   }
-
+  */
+  if (want_raw_data == false && value_out->is_compressed()) {
+    if (value_out->size() > db_options_.internal__size_multipart_required) {
+      return Status::MultipartRequired();
+    }
+    //CompressorLZ4 comp;
+    ByteArray value_out_uncompressed;
+    compressor_.ResetThreadLocalStorage();
+    s = compressor_.UncompressByteArray(*value_out,
+                                 read_options.verify_checksums,
+                                 &value_out_uncompressed);
+    if (!s.IsOK()) {
+      fprintf(stderr, "Error in Get(): %s\n", s.ToString().c_str());
+    }
+    *value_out = value_out_uncompressed;
+  }
   return s;
 }
 

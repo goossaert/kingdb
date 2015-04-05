@@ -10,11 +10,13 @@
 #include <algorithm>
 #include <map>
 #include <cinttypes>
+#include <snappy.h>
 
 #include "algorithm/lz4.h"
 
 #include "util/logger.h"
 #include "util/status.h"
+#include "util/byte_array.h"
 #include "thread/threadstorage.h"
 #include "algorithm/crc32c.h"
 
@@ -129,8 +131,13 @@ class CompressorLZ4 {
                     char **dest,
                     uint64_t *size_dest,
                     char **frame_out,
-                    uint64_t *size_frame_out
+                    uint64_t *size_frame_out,
+                    bool do_memory_allocation=true
                    );
+
+  Status UncompressByteArray(ByteArray& value,
+                             bool do_checksum_verification,
+                             ByteArray* value_uncompressed);
 
   void DisableCompressionInFrameHeader(char* frame) {
     for (int i = 0; i < size_frame_header(); i++) frame[i] = 0;

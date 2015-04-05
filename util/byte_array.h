@@ -21,8 +21,6 @@
 #include "util/logger.h"
 #include "util/options.h"
 #include "util/filepool.h"
-#include "algorithm/compressor.h"
-#include "algorithm/crc32c.h"
 
 
 namespace kdb {
@@ -191,6 +189,7 @@ class ByteArray {
  friend class RegularIterator;
  friend class SequentialIterator;
  friend class NetworkTask;
+ friend class CompressorLZ4;
  public:
   ByteArray()
     : size_(0),
