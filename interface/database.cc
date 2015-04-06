@@ -61,15 +61,14 @@ Status Database::GetRaw(ReadOptions& read_options,
     if (value_out->size() > db_options_.internal__size_multipart_required) {
       return Status::MultipartRequired();
     }
-    //CompressorLZ4 comp;
     ByteArray value_out_uncompressed;
     compressor_.ResetThreadLocalStorage();
     s = compressor_.UncompressByteArray(*value_out,
-                                 read_options.verify_checksums,
-                                 &value_out_uncompressed);
-    if (!s.IsOK()) {
-      fprintf(stderr, "Error in Get(): %s\n", s.ToString().c_str());
-    }
+                                        read_options.verify_checksums,
+                                        &value_out_uncompressed);
+    //if (!s.IsOK()) {
+    //  fprintf(stderr, "Error in Get(): %s\n", s.ToString().c_str());
+    //}
     *value_out = value_out_uncompressed;
   }
   return s;
