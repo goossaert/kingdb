@@ -138,7 +138,7 @@ A unique checksum is stored with each entry when it is persisted to secondary st
 
 ###Closing a database
 
-You can just let the database object go out of scope, which will close it. If you need to access databases with a pointer, deleting the pointer will close the database.
+You can just let the `Database` object go out of scope, which will close it. If you need to access a `Database` with a pointer, deleting the pointer will close the database.
 
     // Example 1: Explicitly closing the database (not required)
     kdb::DatabaseOptions db_options;
@@ -157,7 +157,7 @@ You can just let the database object go out of scope, which will close it. If yo
 
     // Example 3: When using a pointer
     kdb::DatabaseOptions db_options;
-    kdb::Database* db = new Database(db_options, "mydb");
+    kdb::Database* db = new kdb::Database(db_options, "mydb");
     kdb::Status s = db->Open();
     if (!s.IsOK()) cerr << s.ToString() << endl;
     delete db; // the destructor of Database will call Close()
@@ -166,7 +166,7 @@ You can just let the database object go out of scope, which will close it. If yo
 
 ###Compression
 
-Compression is enabled by default, using the [LZ4 algorithm](https://github.com/Cyan4973/lz4). The compression option affects the behavior of an entire database: there is no option to compress some entries and keep the other uncompressed, it’s all or nothing. The compression parameter can be `kNoCompression` or `kLZ4Compression`. For example, the following code creates a database with compression disabled:
+Compression is enabled by default, using the [LZ4 algorithm](https://github.com/Cyan4973/lz4). The compression option affects the behavior of an entire `Database`: there is no option to compress some entries and keep the other uncompressed, it’s all or nothing. The compression parameter can be `kNoCompression` or `kLZ4Compression`. For example, the following code creates a `Database` with compression disabled:
 
     kdb::DatabaseOptions db_options;
     db_options.compression = kdb::kNoCompression;
@@ -175,7 +175,7 @@ Compression is enabled by default, using the [LZ4 algorithm](https://github.com/
 
 ###Snapshots
 
-You can get a read-only, consistent view of the database using a `Snapshot`:
+You can get a read-only, consistent view of the `Database` using a `Snapshot`:
 
     kdb::Snapshot snapshot = db.NewSnapshot();
     std::string value_out;
@@ -205,7 +205,7 @@ You can use the KingDB abstract class if you want pass either a `Database` or a 
 
 ###Iterators
 
-Iterating over all the entries of a database can be done with the `Iterator` class.
+Iterating over all the entries of a `Database` or a `Snapshot` can be done with the `Iterator` class.
 
     kdb::Iterator it = db.NewIterator();
     for(it.Begin(); it.IsValid(), it.Next()) {
@@ -232,7 +232,7 @@ More information can be found in the [ByteArray section](#5-the-bytearray-class)
 
 ###Compaction
 
-You can trigger a compaction process to compact all the data and make the database smaller.
+You can trigger a compaction process to compact all the data and make a `Database` smaller.
 
     kdb::Status s = db.Compact();
     if (!s.IsOK()) cerr << s.ToString() << endl;
