@@ -485,7 +485,7 @@ class StorageEngine {
 
     struct EntryHeader entry_header;
     uint32_t size_header;
-    s = EntryHeader::DecodeFrom(db_options_, value_temp.data() + offset_file, filesize - offset_file, &entry_header, &size_header);
+    s = EntryHeader::DecodeFrom(db_options_, read_options, value_temp.data() + offset_file, filesize - offset_file, &entry_header, &size_header);
     if (!s.IsOK()) return s;
 
     if (   !entry_header.AreSizesValid(offset_file, filesize)
@@ -843,7 +843,7 @@ class StorageEngine {
         log::trace("Compaction()", "order list loop - offset:%u offset_end:%u", offset, offset_end);
         struct EntryHeader entry_header;
         uint32_t size_header;
-        Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
+        Status s = EntryHeader::DecodeFrom(db_options_, read_options, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
 
         // NOTE: No need to verify the checksum. See notes in ProcessingLoopData() and RecoverFile().
         if (   !s.IsOK()
@@ -896,7 +896,7 @@ class StorageEngine {
           Mmap *mmap_location = mmaps[fileid_location];
           struct EntryHeader entry_header;
           uint32_t size_header;
-          Status s = EntryHeader::DecodeFrom(db_options_, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
+          Status s = EntryHeader::DecodeFrom(db_options_, read_options, mmap->datafile() + offset, mmap->filesize() - offset, &entry_header, &size_header);
 
           log::trace("Compaction()", "order list loop - create byte arrays");
           ByteArray key = NewPointerByteArray(mmap_location->datafile() + offset_file + size_header, entry_header.size_key);

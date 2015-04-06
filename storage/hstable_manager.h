@@ -1115,9 +1115,12 @@ class HSTableManager {
 
     // 2. If the file is a hstable, go over all its entries and verify each one of them
     while (true) {
+
       struct EntryHeader entry_header;
       uint32_t size_header;
-      Status s = EntryHeader::DecodeFrom(db_options_, mmap.datafile() + offset, mmap.filesize() - offset, &entry_header, &size_header);
+      ReadOptions read_options;
+      read_options.verify_checksums = true;
+      Status s = EntryHeader::DecodeFrom(db_options_, read_options, mmap.datafile() + offset, mmap.filesize() - offset, &entry_header, &size_header);
       if (   !s.IsOK()
           || !entry_header.AreSizesValid(offset, mmap.filesize())) {
         // End of file during recovery, thus breaking out of the while-loop
@@ -1134,14 +1137,14 @@ class HSTableManager {
       // erroneous, in which case the only way to find and remove invalid
       // entries is to iterate over whole database, and do Delete() commands
       // for the entries with invalid checksums.
-      bool do_crc32_verification = entry_header.IsUncompacted() ? true : false;
+      bool do_checksum_verification = entry_header.IsUncompacted() ? true : false;
       bool is_crc32_valid = true;
-      if (do_crc32_verification) {
+      if (do_checksum_verification) {
         crc32_.ResetThreadLocalStorage();
         crc32_.stream(mmap.datafile() + offset + 5, size_header + entry_header.size_key + entry_header.size_value_used() - 5);
         is_crc32_valid = (entry_header.checksum_content == crc32_.get());
       }
-      if (!do_crc32_verification || is_crc32_valid) {
+      if (!do_checksum_verification || is_crc32_valid) {
         // Valid content, add to index
         offarray_current.push_back(std::pair<uint64_t, uint32_t>(entry_header.hash, offset));
         uint64_t fileid_shifted = fileid;
@@ -1155,7 +1158,7 @@ class HSTableManager {
       offset += size_header + entry_header.size_key + entry_header.size_value_offset();
       log::trace("HSTableManager::RecoverFile",
                  "Scanned hash [%" PRIu64 "], next offset [%" PRIu64 "] - CRC32:%s stored=0x%08x computed=0x%08x",
-                 entry_header.hash, offset, do_crc32_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry_header.checksum_content, crc32_.get());
+                 entry_header.hash, offset, do_checksum_verification ? (is_crc32_valid?"OK":"ERROR") : "UNKNOWN", entry_header.checksum_content, crc32_.get());
     }
 
     // 3. Write a new index at the end of the file with whatever entries could be save

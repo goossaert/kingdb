@@ -394,7 +394,7 @@ class SequentialIterator: public IteratorResource {
 
       struct EntryHeader entry_header;
       uint32_t size_header;
-      Status s = EntryHeader::DecodeFrom(se_readonly_->db_options_, mmap_.datafile() + offset_, mmap_.filesize() - offset_, &entry_header, &size_header);
+      Status s = EntryHeader::DecodeFrom(se_readonly_->db_options_, read_options_, mmap_.datafile() + offset_, mmap_.filesize() - offset_, &entry_header, &size_header);
       if (   !s.IsOK()
           || !entry_header.AreSizesValid(offset_, mmap_.filesize())) {
         // End of file during recovery, thus breaking out of the while-loop

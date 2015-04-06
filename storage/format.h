@@ -146,6 +146,7 @@ struct EntryHeader {
   }
 
   static Status DecodeFrom(const DatabaseOptions& db_options,
+                           const ReadOptions& read_options,
                            const char* buffer_in,
                            uint64_t num_bytes_max,
                            struct EntryHeader *output,
@@ -209,9 +210,11 @@ struct EntryHeader {
     *num_bytes_read = num_bytes_max - size;
     output->size_header_serialized = *num_bytes_read;
 
-    uint8_t checksum_header = crc32c::crc8(0, buffer + 1, output->size_header_serialized - 1);
-    if (checksum_header != output->checksum_header) {
-      return Status::IOError("Header checksum mismatch");
+    if (read_options.verify_checksums) {
+      uint8_t checksum_header = crc32c::crc8(0, buffer + 1, output->size_header_serialized - 1);
+      if (checksum_header != output->checksum_header) {
+        return Status::IOError("Header checksum mismatch");
+      }
     }
 
     //log::trace("EntryHeader::DecodeFrom", "size:%u", *num_bytes_read);
