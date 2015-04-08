@@ -6,6 +6,7 @@
 #define KINGDB_ITERATOR_MAIN_H_
 
 #include <string>
+#include <unordered_map>
 
 #include "util/status.h"
 #include "util/order.h"
@@ -137,7 +138,7 @@ class RegularIterator: public IteratorResource {
         if (!mmap.is_valid()) break;
         uint64_t dummy_filesize;
         bool dummy_is_file_large;
-        std::multimap<uint64_t, uint64_t> index_temp;
+        std::unordered_multimap<uint64_t, uint64_t> index_temp;
         s = HSTableManager::LoadFile(mmap,
                                      fileid_current_,
                                      index_temp,

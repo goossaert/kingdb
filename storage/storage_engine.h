@@ -10,6 +10,7 @@
 #include <mutex>
 #include <chrono>
 #include <vector>
+#include <unordered_map>
 #include <map>
 #include <set>
 #include <algorithm>
@@ -301,7 +302,7 @@ class StorageEngine {
 
       // Process orders, and create update map for the index
       AcquireWriteLock();
-      std::multimap<uint64_t, uint64_t> map_index;
+      std::unordered_multimap<uint64_t, uint64_t> map_index;
       hstable_manager_.WriteOrdersAndFlushFile(orders, map_index);
       ReleaseWriteLock();
 
@@ -313,7 +314,7 @@ class StorageEngine {
   void ProcessingLoopIndex() {
     while(true) {
       log::trace("StorageEngine::ProcessingLoopIndex()", "start");
-      std::multimap<uint64_t, uint64_t> index_updates = event_manager_->update_index.Wait();
+      std::unordered_multimap<uint64_t, uint64_t> index_updates = event_manager_->update_index.Wait();
       if (IsStopRequested()) return;
       log::trace("StorageEngine::ProcessingLoopIndex()", "got index_updates: %d updates", index_updates.size());
 
@@ -329,7 +330,7 @@ class StorageEngine {
       }
       */
 
-      std::multimap<uint64_t, uint64_t> *index;
+      std::unordered_multimap<uint64_t, uint64_t> *index;
       mutex_compaction_.lock();
       if (is_compaction_in_progress_) {
         index = &index_compaction_;
@@ -422,7 +423,7 @@ class StorageEngine {
 
 
   Status GetWithIndex(ReadOptions& read_options,
-                      std::multimap<uint64_t, uint64_t>& index,
+                      std::unordered_multimap<uint64_t, uint64_t>& index,
                       ByteArray& key,
                       ByteArray* value_out,
                       uint64_t *location_out=nullptr) {
@@ -432,24 +433,27 @@ class StorageEngine {
     // be locking while calling GetEntry()
 
     // NOTE: Since C++11, the relative ordering of elements with equivalent keys
-    //       in a multimap is preserved.
+    //       in a unordered_multimap is preserved.
     uint64_t hashed_key = hash_->HashFunction(key.data(), key.size());
     //log::trace("StorageEngine::GetWithIndex()", "num entries in index:[%d] content:[%s] size:[%d] hashed_key:[0x%" PRIx64 "]", index.size(), key.ToString().c_str(), key.size(), hashed_key);
 
     auto range = index.equal_range(hashed_key);
     if (range.first != range.second) {
-      auto it = --range.second;
-      do {
+      std::vector<uint64_t> locations;
+      for (auto it = range.first; it != range.second; ++it) {
+        locations.push_back(it->second);
+      }
+      std::reverse(locations.begin(), locations.end());
+      for (auto it = locations.begin(); it != locations.end(); ++it) {
         ByteArray key_temp;
-        Status s = GetEntry(read_options, it->second, &key_temp, value_out);
+        Status s = GetEntry(read_options, *it, &key_temp, value_out);
         //log::trace("StorageEngine::GetWithIndex()", "key:[%s] key_temp:[%s] hashed_key:[0x%" PRIx64 "] hashed_key_temp:[0x%" PRIx64 "] size_key:[%" PRIu64 "] size_key_temp:[%" PRIu64 "]", key.ToString().c_str(), key_temp.ToString().c_str(), hashed_key, it->first, key.size(), key_temp.size());
         if ((s.IsOK() || s.IsDeleteOrder()) && key_temp == key) {
           //log::trace("StorageEngine::GetWithIndex()", "Entry [%s] found at location: 0x%08" PRIx64, key.ToString().c_str(), it->second);
-          if (location_out != nullptr) *location_out = it->second;
+          if (location_out != nullptr) *location_out = *it;
           return s;
         }
-        --it;
-      } while(it != range.first);
+      }
     }
     //log::trace("StorageEngine::GetWithIndex()", "%s - not found!", key.ToString().c_str());
     return Status::NotFound("Unable to find the entry in the storage engine");
@@ -525,9 +529,12 @@ class StorageEngine {
     // mutexes.
     uint64_t hashed_key = hash_->HashFunction(key.data(), key.size());
     bool is_last = false;
-    auto it = index_.upper_bound(hashed_key);
-    --it;
-    if (it->second == location) is_last = true;
+    auto range = index_.equal_range(hashed_key);
+    std::vector<uint64_t> locations;
+    for (auto it = range.first; it != range.second; ++it) {
+      locations.push_back(it->second);
+    }
+    if (locations[locations.size()-1] == location) is_last = true;
     return is_last;
   }
 
@@ -546,7 +553,7 @@ class StorageEngine {
     //       of each major step to allow the method to exit in case a stop
     //       was requested.
 
-    // TODO: make sure that all sets, maps and multimaps are cleared whenever
+    // TODO: make sure that all sets, maps and unordered_multimaps are cleared whenever
     // they are no longer needed
     
     // TODO: when compaction starts, open() a file and lseek() to reserve disk
@@ -579,7 +586,7 @@ class StorageEngine {
     //       through all the files. Fix that to be only the latest non-handled
     //       uncompacted files
     log::trace("Compaction()", "Step 1: Get files between fileids %u and %u", fileid_start, fileid_end_target);
-    std::multimap<uint64_t, uint64_t> index_compaction;
+    std::unordered_multimap<uint64_t, uint64_t> index_compaction;
     DIR *directory;
     struct dirent *entry;
     if ((directory = opendir(dbname.c_str())) == NULL) {
@@ -643,18 +650,30 @@ class StorageEngine {
     fileids_to_filesizes.clear(); // no longer needed
     if (IsStopRequested()) return Status::IOError("Stop was requested");
 
+    // 1.c Get the keys ready
+    std::set<uint64_t> keys_index_compaction;
+    for (auto it = index_compaction.begin(); it != index_compaction.end(); ++it) {
+      keys_index_compaction.insert(it->first);
+    }
 
     // 2. Iterating over all unique hashed keys of index_compaction, and determine which
     // locations of the storage engine index 'index_' with similar hashes will need to be compacted.
     log::trace("Compaction()", "Step 2: Get unique hashed keys");
     std::vector<std::pair<uint64_t, uint64_t>> index_compaction_se;
-    for (auto it = index_compaction.begin(); it != index_compaction.end(); it = index_compaction.upper_bound(it->first)) {
-      auto range = index_.equal_range(it->first);
+    auto hashedkey_last_c = 0;
+    bool is_first_c = true;
+    //for (auto it = index_compaction.begin(); it != index_compaction.end(); ++it) {// = index_compaction.upper_bound(it->first)) {
+    for (auto it = keys_index_compaction.begin(); it != keys_index_compaction.end(); ++it) {// = index_compaction.upper_bound(it->first)) {
+      if (!is_first_c && *it == hashedkey_last_c) continue;
+      hashedkey_last_c = *it;
+      is_first_c = false;
+      auto range = index_.equal_range(*it);
       for (auto it_se = range.first; it_se != range.second; ++it_se) {
         index_compaction_se.push_back(*it_se);
       }
     }
     index_compaction.clear(); // no longer needed
+    keys_index_compaction.clear(); // no longer needed
     if (IsStopRequested()) return Status::IOError("Stop was requested");
 
 
@@ -690,14 +709,18 @@ class StorageEngine {
       if (keys_encountered.find(str_key) == keys_encountered.end()) {
         keys_encountered.insert(str_key);
         if (IsFileLarge(fileid)) {
+          log::trace("Compaction()", "Decide: IsFileLarge() - %" PRIu64, location);
           hashedkeys_to_locations_large_keep.insert(p);
           fileids_largefiles_keep.insert(fileid);
         } else if (!s.IsDeleteOrder()) {
+          log::trace("Compaction()", "Decide: !s.IsDeleteOrder() - %" PRIu64, location);
           hashedkeys_to_locations_regular_keep.insert(p);
         } else {
+          log::trace("Compaction()", "Decide: add to locations_delete 1 - %" PRIu64, location);
           locations_delete.insert(location);
         }
       } else {
+        log::trace("Compaction()", "Decide: add to locations_delete 2 - %" PRIu64, location);
         locations_delete.insert(location);
       }
     }
@@ -713,7 +736,12 @@ class StorageEngine {
     log::trace("Compaction()", "Step 4: Building clusters");
     std::map<uint64_t, std::vector<uint64_t>> hashedkeys_clusters;
     std::set<uint64_t> locations_secondary;
-    for (auto it = hashedkeys_to_locations_regular_keep.begin(); it != hashedkeys_to_locations_regular_keep.end(); it = hashedkeys_to_locations_regular_keep.upper_bound(it->first)) {
+    uint64_t hashedkey_last = 0;
+    bool is_first_a = true;
+    for (auto it = hashedkeys_to_locations_regular_keep.begin(); it != hashedkeys_to_locations_regular_keep.end(); ++it) {// = hashedkeys_to_locations_regular_keep.upper_bound(it->first)) {
+      if (!is_first_a && it->first == hashedkey_last) continue;
+      hashedkey_last = it->first;
+      is_first_a = false;
       auto range = hashedkeys_to_locations_regular_keep.equal_range(it->first);
       std::vector<uint64_t> locations;
       for (auto it_bucket = range.first; it_bucket != range.second; ++it_bucket) {
@@ -827,13 +855,14 @@ class StorageEngine {
       // Create a set of what's in the OffsetArray of the HSTable being
       // handled in this iteration
       std::set<uint32_t> offset_array;
-      std::multimap<uint64_t, uint64_t> index_hstable;
+      std::unordered_multimap<uint64_t, uint64_t> index_hstable;
       s = hstable_manager_.LoadFile(*mmap, fileid, index_hstable);
       if (!s.IsOK()) {
         log::warn("HSTableManager::Compaction()", "Could not load index in file id [%u]", fileid);
       }
       for (auto &p: index_hstable) {
         offset_array.insert(p.second & 0xFFFFFFFF); // insert the offset
+        log::trace("Compaction()", "Inserted in offset array %" PRIu64 , p.second & 0xffffffff);
       }
       index_hstable.clear();
 
@@ -864,6 +893,14 @@ class StorageEngine {
         uint64_t fileid_shifted = fileid;
         fileid_shifted <<= 32;
         uint64_t location = fileid_shifted | offset;
+
+        for (auto& location: locations_delete) {
+          log::trace("Compaction()", "locations_delete: %" PRIu64, location);
+        }
+
+        for (auto& location: locations_secondary) {
+          log::trace("Compaction()", "locations_secondary: %" PRIu64, location);
+        }
 
         log::trace("Compaction()", "order list loop - check if we should keep it - fileid:%u offset:%u", fileid, offset);
         // NOTE: This is where invalid entries are deleted: if an entry is in the
@@ -923,7 +960,7 @@ class StorageEngine {
 
     // 7. Write compacted orders on secondary storage
     log::trace("Compaction()", "Step 7: Write compacted files");
-    std::multimap<uint64_t, uint64_t> map_index;
+    std::unordered_multimap<uint64_t, uint64_t> map_index;
     // All the resulting files will have the same timestamp, which is the
     // maximum of all the timestamps in the set of files that have been
     // compacted. This will allow the resulting files to be properly ordered
@@ -993,7 +1030,12 @@ class StorageEngine {
     log::trace("Compaction()", "Step 12: Update the storage engine index_");
     int num_iterations_per_lock = db_options_.internal__num_iterations_per_lock;
     int counter_iterations = 0;
-    for (auto it = map_index_shifted.begin(); it != map_index_shifted.end(); it = map_index_shifted.upper_bound(it->first)) {
+    auto hashedkey_last_b = 0;
+    bool is_first_b = true;
+    for (auto it = map_index_shifted.begin(); it != map_index_shifted.end(); ++it) {// = map_index_shifted.upper_bound(it->first)) {
+      if (!is_first_b && it->first == hashedkey_last_b) continue;
+      is_first_b = false;
+      hashedkey_last_b = it->first;
 
       if (counter_iterations == 0) {
         AcquireWriteLock();
@@ -1232,8 +1274,8 @@ class StorageEngine {
   std::shared_ptr<FileManager> file_manager_;
 
   // Index
-  std::multimap<uint64_t, uint64_t> index_;
-  std::multimap<uint64_t, uint64_t> index_compaction_;
+  std::unordered_multimap<uint64_t, uint64_t> index_;
+  std::unordered_multimap<uint64_t, uint64_t> index_compaction_;
   std::thread thread_index_;
   //std::mutex mutex_index_;
 

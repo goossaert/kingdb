@@ -9,6 +9,7 @@
 #include <cinttypes>
 
 #include <list>
+#include <unordered_map>
 #include <map>
 
 // NOTE: The list of unused mmaps is currently a simple std::vector, which is
@@ -158,7 +159,7 @@ class FileManager {
  private:
   std::mutex mutex_;
   std::vector<FileResource> files_unused;
-  std::multimap<uint32_t, FileResource> files_used;
+  std::unordered_multimap<uint32_t, FileResource> files_used;
 
 };
 

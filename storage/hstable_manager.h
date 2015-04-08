@@ -10,6 +10,7 @@
 #include <mutex>
 #include <chrono>
 #include <vector>
+#include <unordered_map>
 #include <map>
 #include <set>
 #include <algorithm>
@@ -711,7 +712,7 @@ class HSTableManager {
     return location_out;
   }
 
-  void WriteOrdersAndFlushFile(std::vector<Order>& orders, std::multimap<uint64_t, uint64_t>& map_index_out) {
+  void WriteOrdersAndFlushFile(std::vector<Order>& orders, std::unordered_multimap<uint64_t, uint64_t>& map_index_out) {
     for (auto& order: orders) {
 
       if (offset_end_ > size_block_) {
@@ -904,7 +905,7 @@ class HSTableManager {
 
 
   Status LoadDatabase(std::string& dbname,
-                      std::multimap<uint64_t, uint64_t>& index_se,
+                      std::unordered_multimap<uint64_t, uint64_t>& index_se,
                       std::set<uint32_t>* fileids_ignore=nullptr,
                       uint32_t fileid_end=0,
                       std::vector<uint32_t>* fileids_iterator=nullptr) {
@@ -1048,7 +1049,7 @@ class HSTableManager {
 
   static Status LoadFile(Mmap& mmap,
                   uint32_t fileid,
-                  std::multimap<uint64_t, uint64_t>& index_se,
+                  std::unordered_multimap<uint64_t, uint64_t>& index_se,
                   uint64_t *filesize_out=nullptr,
                   bool *is_file_large_out=nullptr,
                   bool *is_file_compacted_out=nullptr) {
@@ -1100,7 +1101,7 @@ class HSTableManager {
 
   Status RecoverFile(Mmap& mmap,
                      uint32_t fileid,
-                     std::multimap<uint64_t, uint64_t>& index_se) {
+                     std::unordered_multimap<uint64_t, uint64_t>& index_se) {
     uint32_t offset = db_options_.internal__hstable_header_size;
     std::vector< std::pair<uint64_t, uint32_t> > offarray_current;
     bool has_padding_in_values = false;

@@ -9,6 +9,7 @@
 #include <thread>
 #include <condition_variable>
 #include <vector>
+#include <unordered_map>
 #include <map>
 
 namespace kdb {
@@ -59,7 +60,7 @@ class EventManager {
  public:
   EventManager() {}
   Event<std::vector<Order>> flush_buffer;
-  Event<std::multimap<uint64_t, uint64_t>> update_index;
+  Event<std::unordered_multimap<uint64_t, uint64_t>> update_index;
   Event<int> clear_buffer;
   Event<int> compaction_status;
 };
