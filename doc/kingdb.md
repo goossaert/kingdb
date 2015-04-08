@@ -482,13 +482,13 @@ Default value: 0 (Unsigned 64-bit integer)
 Size of the Write Buffer.  
 Default value: 64MB (Unsigned 64-bit integer)
 
-`write-buffer__flush_timeout`  
+`write_buffer__flush_timeout`  
 The timeout after which the write buffer will flush its cache.  
 Default value: 500 milliseconds (Unsigned 64-bit integer)
 
 `write_buffer__mode`  
 The mode with which the write buffer handles incoming traffic, can be `kdb::kWriteBufferModeDirect` or `kdb::kWriteBufferModeAdaptive`. With `kdb::kWriteBufferModeDirect`, once the Write Buffer is full other incoming Write and Delete operations will block until the buffer is persisted to secondary storage. The direct mode should be used when the clients are not subjects to timeouts. When choosing `kdb::kWriteBufferModeAdaptive`, incoming orders will be made slower, down to the speed of the writes on the secondary storage, so that they are almost just as fast as when using the direct mode, but are never blocking. The adaptive mode is expected to introduce a small performance decrease, but required for cases where clients timeouts must be avoided, for example when the database is used over a network.  
-Default value: `kdb::kWriteBufferModeAdaptive`
+Default value: `kdb::kWriteBufferModeDirect`
 
 `storage__hstable_size`  
 Maximum size a HSTable can have. Entries with keys and values beyond that size are considered to be large entries.  
