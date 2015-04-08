@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <map>
 #include <cinttypes>
-#include <snappy.h>
 
 #include "algorithm/lz4.h"
 
