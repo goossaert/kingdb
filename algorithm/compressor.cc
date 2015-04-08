@@ -23,11 +23,15 @@ Status CompressorLZ4::Compress(char *source,
     return Status::OK();
   }
   */
-  uint32_t bound = LZ4_compressBound(size_source);
+  //uint32_t bound = LZ4_compressBound(size_source);
+  uint32_t bound = snappy::MaxCompressedLength(size_source);
   *size_dest = 0;
   *dest = new char[8 + bound];
 
-  int ret = LZ4_compress_limitedOutput(source, (*dest) + 8, size_source, bound);
+  size_t ret;
+  snappy::RawCompress(source, size_source, (*dest) + 8, &ret);
+  //int ret = LZ4_compress_limitedOutput(source, (*dest) + 8, size_source, bound);
+  //if (ret <= 0) {
   if (ret <= 0) {
     delete[] *dest;
     return Status::IOError("LZ4_compress_limitedOutput() failed");
@@ -100,12 +104,24 @@ Status CompressorLZ4::Uncompress(char *source,
     }
     int size = size_compressed;
     log::trace("CompressorLZ4::Uncompress()", "ptr:%p size:%d size_source:%d offset:%" PRIu64, source + offset_uncompress + 8, size, size_source, offset_uncompress);
+    /*
     int ret = LZ4_decompress_safe_partial(source + offset_uncompress + 8,
                                           *dest,
                                           size,
                                           size_source,
                                           size_source);
-    if (ret <= 0) {
+    */
+    size_t size_out;
+    snappy::GetUncompressedLength(source + offset_uncompress + 8,
+                          size_compressed,
+                          &size_out);
+    *size_dest = size_out;
+    snappy::RawUncompress(source + offset_uncompress + 8,
+                          size_compressed,
+                          *dest);
+    size_t ret = *size_dest;
+
+    if (!ret) {
       if (do_memory_allocation) {
         delete[] (*dest);
         *dest = nullptr;
