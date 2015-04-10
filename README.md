@@ -25,11 +25,11 @@ KingDB was benchmarked using the same test suite as LevelDB. On a Linux CentOS 6
 
 | Workload            | Operations per second |
 | ------------------: | :-------------------- |
-|    Sequential reads |                  203k |
-|        Random reads |                  104k |
-|   Sequential writes |                  234k |
-|       Random writes |                  252k |
-|           Overwrite |                  251k |
+|    Sequential reads |                  104k |
+|        Random reads |                  203k |
+|   Sequential writes |                  233k |
+|       Random writes |                  251k |
+|           Overwrite |                  250k |
 
 For more details and a comparison with LevelDB, you can refer to the full [KingDB benchmarks](doc/bench/benchmarks.md).
 
