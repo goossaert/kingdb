@@ -32,12 +32,14 @@ KingServer has no external dependencies and has been tested on:
 - Linux Ubuntu 14.04 x64 with GCC 4.9.2
 - Linux CentOS 6.5 x86\_64 with GCC 4.9.2
 
-Because KingServer uses C++11, you need GCC version 4.9.2 or greater. The following commands will compile KingServer and will install the `kingserver` program.
+Because KingServer uses C++11, you need GCC >=4.9.2 or Clang >=3.3. The following commands will compile KingServer and will install the `kingserver` program.
 
     $ tar zxvf kingdb.tar.gz
     $ cd kingdb
     $ make
     $ sudo make install
+
+If you are using GCC, update the Makefile and add \-fno\-builtin\-memcmp in the CFLAGS, and if you have tcmalloc on your system, add \-ltcmalloc to the LDFLAGS. This will give you a nice performance speed\-up.
 
 ##3. How to run KingServer?
 

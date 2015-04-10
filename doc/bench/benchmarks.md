@@ -1,18 +1,16 @@
 Benchmarks of KingDB v0.9.0-alpha and LevelDB v1.18 
 ===================================================
 
-**IMPORTANT:** This document is still a work in progress.
-
 Date: April 9, 2015
 
 ##TL;DR
 
-Benchmarks were run for different value sizes, from 100 bytes to 1MB, using the benchmark framework of LevelDB. The benchmark file for KingDB can be found in `doc/bench/db_bench_kingdb.cc`.
+Benchmarks were run for different value sizes, from 100 bytes to 1MB, using the benchmark framework of LevelDB. The benchmark program for KingDB can be found in `doc/bench/db_bench_kingdb.cc`
 
 - Random writes: KingDB is faster than LevelDB by 2-10x.
 - Sequential writes: KingDB and LevelDB are equivalent.
 - Overwrites: KingDB is faster than LevelDB by 2-14x
-- Random reads: KingDB is faster than LevelDB for random reads by 1.5-3x. However after compaction, LevelDB is faster than KingDB by around 1.7x.
+- Random reads: Before compaction, KingDB is faster than LevelDB by 1.5-3x. However after compaction, LevelDB is faster than KingDB by around 1.7x.
 - Sequential reads: LevelDB is faster than KingDB by 3-50x. Yes, KingDB is really bad for sequential reads.
 - Compaction: LevelDB has faster compactions than KingDB, by 3-4x.
 
@@ -22,7 +20,7 @@ The benchmarks were made over two systems, a Linux CentOS 6.4 and a Mac OS X 10.
 
 ###Linux
 - Operating System: CentOS 6.4
-- RAM 128GB DDR3
+- RAM: 128GB DDR3
 - CPU: 12-core Intel Xeon E5-2640 @ 2.50GHz
 - Compiler: GCC 4.9.2
 - Compiler and linker options: \-O2 \-fno-builtin-memcmp \-ltcmalloc
@@ -31,7 +29,7 @@ The benchmarks were made over two systems, a Linux CentOS 6.4 and a Mac OS X 10.
 
 ###Mac
 - Operating System: OS X 10.9.5
-- RAM 8GB DDR3
+- RAM: 8GB DDR3
 - CPU: 4-core Intel Core i7 @ 2.3GHz
 - Compiler: Apple LLVM version 6.0
 - Compiler and linker options: \-O2
@@ -87,16 +85,16 @@ The benchmarks for the random and sequential reads were re-run after a compactio
 
 |        Workload | Value size |  LevelDB Linux |   KingDB Linux | fold change |    LevelDB Mac |     KingDB Mac | fold change |
 | --------------: | ---------: | -------------: | -------------: | ----------: | -------------: | -------------: | ----------: |
-|   readrandom-ac |       100b |         202306 |         219925 |       1.09x |         195083 |         183049 |      -1.07x |
-|   readrandom-ac |        1kb |         192752 |         152858 |      -1.26x |         173190 |         148875 |      -1.16x |
-|   readrandom-ac |      100kb |          13863 |           8679 |      -1.60x |          19809 |          12987 |      -1.53x |
-|   readrandom-ac |      256kb |           4285 |           2422 |      -1.77x |           8890 |           5462 |      -1.63x |
-|   readrandom-ac |      512kb |           2784 |           1704 |      -1.63x |           4623 |           2788 |      -1.66x |
-|   readrandom-ac |        1mb |           1461 |            843 |      -1.73x |           2402 |           1390 |      -1.73x |
-|      readseq-ac |       100b |        3717472 |         489715 |      -7.59x |        4366812 |         239923 |     -18.20x |
-|      readseq-ac |        1kb |        1242236 |         320102 |      -3.88x |        1287001 |         188714 |      -6.82x |
-|      readseq-ac |      100kb |          26271 |           7537 |      -3.49x |          32398 |           9355 |      -3.46x |
-|      readseq-ac |      256kb |          11467 |           2050 |      -5.59x |          13220 |           3799 |      -3.48x |
-|      readseq-ac |      512kb |           2871 |           1191 |      -2.41x |           7270 |           2006 |      -3.62x |
-|      readseq-ac |        1mb |           3021 |            683 |      -4.42x |           3274 |            973 |      -3.36x |
+|      readrandom |       100b |         202306 |         219925 |       1.09x |         195083 |         183049 |      -1.07x |
+|      readrandom |        1kb |         192752 |         152858 |      -1.26x |         173190 |         148875 |      -1.16x |
+|      readrandom |      100kb |          13863 |           8679 |      -1.60x |          19809 |          12987 |      -1.53x |
+|      readrandom |      256kb |           4285 |           2422 |      -1.77x |           8890 |           5462 |      -1.63x |
+|      readrandom |      512kb |           2784 |           1704 |      -1.63x |           4623 |           2788 |      -1.66x |
+|      readrandom |        1mb |           1461 |            843 |      -1.73x |           2402 |           1390 |      -1.73x |
+|         readseq |       100b |        3717472 |         489715 |      -7.59x |        4366812 |         239923 |     -18.20x |
+|         readseq |        1kb |        1242236 |         320102 |      -3.88x |        1287001 |         188714 |      -6.82x |
+|         readseq |      100kb |          26271 |           7537 |      -3.49x |          32398 |           9355 |      -3.46x |
+|         readseq |      256kb |          11467 |           2050 |      -5.59x |          13220 |           3799 |      -3.48x |
+|         readseq |      512kb |           2871 |           1191 |      -2.41x |           7270 |           2006 |      -3.62x |
+|         readseq |        1mb |           3021 |            683 |      -4.42x |           3274 |            973 |      -3.36x |
 

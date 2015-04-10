@@ -15,13 +15,27 @@ KingDB
 - Multiple threads can access the same database safely.
 - Crash-proof: nothing ever gets overwritten.
 - Iterators and read-only consistent snapshots.
-- Background compaction.
+- Compaction happens in a background thread, and does not block reads or writes.
 - The data format allows hot backups to be made.
 - Covered by unit tests.
 
+###How fast is KingDB?
+
+KingDB was benchmarked using the same test suite as LevelDB. On a Linux CentOS 6.5, for entries with 16-byte keys and 100-byte values (50 bytes after compression), the performance was:
+
+| Workload            | Operations per second |
+| ------------------: | :-------------------- |
+|    Sequential reads |                  203k |
+|        Random reads |                  104k |
+|   Sequential writes |                  234k |
+|       Random writes |                  252k |
+|           Overwrite |                  251k |
+
+For more details and a comparison with LevelDB, you can refer to the full [KingDB benchmarks](doc/bench/benchmarks.md).
+
 ###Where is the documentation?
 
-You can learn more in the [KingDB documentation](doc/kingdb.md) and the [KingServer documentation](doc/kingserver.md)
+You can learn more in the [KingDB documentation](doc/kingdb.md) and the [KingServer documentation](doc/kingserver.md).
 
 ###How do I install KingDB?
 
@@ -32,6 +46,8 @@ KingDB has no external dependencies and has been tested on:
 - Mac OS X 10.9.5 with Apple LLVM version 6.0 (clang-600.0.51)
 - Linux Ubuntu 14.04 x64 with GCC 4.9.2
 - Linux CentOS 6.5 x86\_64 with GCC 4.9.2
+
+If you are using GCC, update the Makefile and add \-fno\-builtin\-memcmp in the CFLAGS, and if you have tcmalloc on your system, add \-ltcmalloc to the LDFLAGS. This will give you a nice performance speed\-up.
 
 ###Where do I get help?
 
