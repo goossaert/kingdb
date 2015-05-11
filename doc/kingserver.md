@@ -1,7 +1,5 @@
 Documentation of KingServer v0.9.0
-==============================
-
-**IMPORTANT:** This document is still a work in progress.
+==================================
 
 ##Table of Contents
 

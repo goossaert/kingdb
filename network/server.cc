@@ -2,6 +2,12 @@
 // Use of this source code is governed by the BSD 3-Clause License,
 // that can be found in the LICENSE file.
 
+// IMPORTANT: The KingServer code is just a hack that I have put together
+//            to test KingDB over the network. I am aware that some of the
+//            code is ill-formed and underperforming: I have deliberately
+//            chosen to cut corners to get to a running solution fast,
+//            and I will improve this code when and if needed.
+
 #include "network/server.h"
 
 namespace kdb {

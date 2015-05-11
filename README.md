@@ -7,7 +7,9 @@ KingDB
 
 **KingServer** is a server application that embeds KingDB and implements the Memcached protocol. It allows you to access your data through a network interface using whatever programming language you want. KingServer is not a distributed system: the data lives in a single machine.
 
-###Why should I use KingDB?
+**WARNING:** This is still alpha code. Even though unit-tests are covering the core components, make sure you run tests for your environment before using KingDB in production.
+
+###Why use KingDB?
 
 - Fast for heavy write workloads and random reads.
 - The architecture, code, and data format are simple.
@@ -37,9 +39,9 @@ For more details and a comparison with LevelDB, you can refer to the full [KingD
 
 You can learn more in the [KingDB documentation](doc/kingdb.md) and the [KingServer documentation](doc/kingserver.md).
 
-###How do I install KingDB?
+###How to install KingDB?
 
-You can find intallation instructions in the [installation section](doc/kingdb.md#2-how-to-install-kingdb) of the documentation.
+You can find installation instructions in the [installation section](doc/kingdb.md#2-how-to-install-kingdb) of the documentation.
 
 KingDB has no external dependencies and has been tested on:
 
@@ -49,6 +51,6 @@ KingDB has no external dependencies and has been tested on:
 
 If you are using GCC, update the Makefile and add \-fno\-builtin\-memcmp in the CFLAGS, and if you have tcmalloc on your system, add \-ltcmalloc to the LDFLAGS. This will give you a nice performance speed\-up.
 
-###Where do I get help?
+###Where to get help?
 
-You can get help on the KingDB mailing list. (*coming soon*)
+You can get help on the [KingDB mailing list](https://groups.google.com/d/forum/kingdb). To ask a question, simply [join the list](https://groups.google.com/d/forum/kingdb/join).

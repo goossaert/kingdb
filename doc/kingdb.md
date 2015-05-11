@@ -1,22 +1,19 @@
 Documentation of KingDB v0.9.0
 ==============================
 
-**IMPORTANT:** This document is still a work in progress.
-
 ##Table of Contents
 
-**[1. Why should I use KingDB?](#1-why-should-i-use-kingdb)**  
+**[1. Why use KingDB?](#1-why-use-kingdb)**  
 **[2. How to install KingDB?](#2-how-to-install-kingdb)**  
-**[3. How do I compile my programs with KingDB?](#3-how-do-i-compile-my-programs-with-kingdb)**  
+**[3. How to compile programs with KingDB?](#3-how-to-compile-programs-with-kingdb)**  
 **[4. Basic API usage](#4-basic-api-usage)**  
 **[5. The ByteArray class](#5-the-bytearray-class)**  
 **[6. Multipart API](#6-multipart-api)**  
 **[7. Logging with Syslog](#7-logging-with-syslog)**  
 **[8. Options](#8-options)**  
-**[9. Diving into the source code](#9-diving-into-the-source-code)**  
 
 
-##1. Why should I use KingDB?
+##1. Why use KingDB?
 
 ###KingDB is simple
 The architecture, code, and data format of KingDB are simple. You do not need to be a system programming expert or a storage engineer to understand how it works and tune it to your needs.
@@ -60,7 +57,7 @@ Because KingDB uses C++11, you need GCC >=4.9.2 or Clang >=3.3. The following co
 
 If you are using GCC, update the Makefile and add \-fno\-builtin\-memcmp in the CFLAGS, and if you have tcmalloc on your system, add \-ltcmalloc to the LDFLAGS. This will give you a nice performance speed\-up.
 
-##3. How do I compile my programs with KingDB?
+##3. How to compile programs with KingDB?
 
 Once you have compiled KingDB and installed the static library by following the instructions above, you can compile your own programs by linking them with the KingDB library.
 
@@ -532,6 +529,3 @@ Default value: 1GB (Unsigned 64-bit integer)
 If the compaction is in survival mode and the amount of uncompacted data is above that value of `compaction__filesystem__survival_batch_size`, then the compaction will start when the compaction conditions are checked.  
 Default value: 256MB (Unsigned 64-bit integer)
 
-##9. Diving into the source code
-
-*coming soon*
