@@ -187,9 +187,9 @@ class MultipartReader {
     : status_(s) {
   }
   MultipartReader(ReadOptions& read_options, ByteArray& value)
-    : read_options_(read_options),
-      value_(value),
-      status_(Status::OK()) {
+    : status_(Status::OK()),
+      read_options_(read_options),
+      value_(value) {
   }
 
   ReadOptions read_options_;

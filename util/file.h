@@ -169,18 +169,18 @@ class FileUtil {
 class Mmap {
  public:
   Mmap()
-      : filesize_(0),
+      : is_valid_(false),
         fd_(0),
-        datafile_(nullptr),
-        is_valid_(false) {
+        filesize_(0),
+        datafile_(nullptr) {
   }
 
   Mmap(std::string filepath, int64_t filesize)
-      : filepath_(filepath),
-        filesize_(filesize),
+      : is_valid_(false),
         fd_(0),
+        filesize_(filesize),
         datafile_(nullptr),
-        is_valid_(false) {
+        filepath_(filepath) {
     Open();
   }
 
@@ -236,8 +236,8 @@ class Mmap {
   char *datafile_;
 
   // For debugging
-  const char* filepath() const { return filepath_.c_str(); }
   std::string filepath_;
+  const char* filepath() const { return filepath_.c_str(); }
 };
 
 

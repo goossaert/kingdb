@@ -253,9 +253,10 @@ class RegularIterator: public IteratorResource {
   }
 
  private:
+  bool is_closed_;
   StorageEngine *se_readonly_;
-  KingDB* snapshot_;
   ReadOptions read_options_;
+  KingDB* snapshot_;
   std::mutex mutex_;
   uint32_t fileid_current_;
   std::string filepath_current_;
@@ -266,7 +267,6 @@ class RegularIterator: public IteratorResource {
   bool has_file_;
   bool is_valid_;
   Status status_;
-  bool is_closed_;
 
   ByteArray key_;
   ByteArray value_;
@@ -478,9 +478,10 @@ class SequentialIterator: public IteratorResource {
   }
 
  private:
+  bool is_closed_;
   StorageEngine *se_readonly_;
-  KingDB* snapshot_;
   ReadOptions read_options_;
+  KingDB* snapshot_;
   std::mutex mutex_;
   uint32_t fileid_current_;
   std::string filepath_current_;
@@ -493,7 +494,6 @@ class SequentialIterator: public IteratorResource {
   bool has_file_;
   bool is_valid_;
   Status status_;
-  bool is_closed_;
   Mmap mmap_;
 
   ByteArray key_;

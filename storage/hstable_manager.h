@@ -62,13 +62,13 @@ class HSTableManager {
       : db_options_(db_options),
         is_read_only_(read_only),
         filetype_default_(filetype_default),
+        fileid_(0),
+        sequence_fileid_(0),
+        sequence_timestamp_(0),
         prefix_(prefix),
         prefix_compaction_(prefix_compaction),
         dirpath_locks_(dirpath_locks),
-        wait_until_can_open_new_files_(false),
-        fileid_(0),
-        sequence_fileid_(0),
-        sequence_timestamp_(0) {
+        wait_until_can_open_new_files_(false) {
     log::trace("HSTableManager::HSTableManager()", "dbname:%s prefix:%s", dbname.c_str(), prefix.c_str());
     dbname_ = dbname;
     hash_ = MakeHash(db_options.hash);

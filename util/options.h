@@ -40,12 +40,12 @@ struct CompressionOptions {
 struct DatabaseOptions {
  public:
   DatabaseOptions()
-      : internal__hstable_header_size(8192),      // bytes
+      : internal__hstable_header_size(8192),          // bytes
         internal__num_iterations_per_lock(10),
-        internal__close_timeout(500),             // milliseconds
-        internal__open_file_retry_delay(5000),    // milliseconds
-        internal__compaction_check_interval(500), // milliseconds
+        internal__close_timeout(500),                 // milliseconds
+        internal__open_file_retry_delay(5000),        // milliseconds
         internal__size_multipart_required(1024*1024), // bytes
+        internal__compaction_check_interval(500),     // milliseconds
         hash(kxxHash_64),
         compression(kLZ4Compression),
         checksum(kCRC32C),

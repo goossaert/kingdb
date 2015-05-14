@@ -43,10 +43,10 @@ class PooledByteArrayResource: public ByteArrayResource {
  public:
   PooledByteArrayResource(std::shared_ptr<FileManager> file_manager, uint32_t fileid, const std::string& filepath, uint64_t filesize)
     : data_(nullptr),
-      file_manager_(file_manager),
+      fileid_(0),
       size_(0),
       size_compressed_(0),
-      fileid_(0) {
+      file_manager_(file_manager) {
     Status s = file_manager_->GetFile(fileid, filepath, filesize, &file_resource_);
     if (s.IsOK()) {
       data_ = file_resource_.mmap;
@@ -105,10 +105,10 @@ class MmappedByteArrayResource: public ByteArrayResource {
   virtual const uint64_t size_compressed_const() { return size_compressed_; }
 
  private:
-  Mmap mmap_;
   char *data_;
   uint64_t size_;
   uint64_t size_compressed_;
+  Mmap mmap_;
 };
 
 
@@ -159,9 +159,9 @@ class PointerByteArrayResource: public ByteArrayResource {
  friend class ByteArray;
  public:
   PointerByteArrayResource(const char *data, uint64_t size)
-    : size_(size),
-      size_compressed_(0),
-      data_(data) {
+    : data_(data),
+      size_(size),
+      size_compressed_(0) {
   }
   virtual ~PointerByteArrayResource() {}
 
