@@ -559,7 +559,7 @@ class Iterator {
 
   bool _DEBUGGING_IsSequential() {
     // Warning: for unit tests only, do not use this method.
-    if (SequentialIterator* d = dynamic_cast<SequentialIterator*>(resource_)) {
+    if (dynamic_cast<SequentialIterator*>(resource_)) {
       return true;
     } else {
       return false;

@@ -173,11 +173,11 @@ Status Database::PutPartValidSize(WriteOptions& write_options,
   if (!do_compression || ts_compression_enabled_.get() == 0) {
     chunk_final = chunk;
   } else {
-    std::chrono::high_resolution_clock::time_point step00 = std::chrono::high_resolution_clock::now();
+    //std::chrono::high_resolution_clock::time_point step00 = std::chrono::high_resolution_clock::now();
     if (is_first_part) {
       compressor_.ResetThreadLocalStorage();
     }
-    std::chrono::high_resolution_clock::time_point step01 = std::chrono::high_resolution_clock::now();
+    //std::chrono::high_resolution_clock::time_point step01 = std::chrono::high_resolution_clock::now();
 
     offset_chunk_compressed = compressor_.size_compressed();
     uint64_t size_compressed;
@@ -187,7 +187,7 @@ Status Database::PutPartValidSize(WriteOptions& write_options,
                              &compressed,
                              &size_compressed);
     if (!s.IsOK()) return s;
-    std::chrono::high_resolution_clock::time_point step02 = std::chrono::high_resolution_clock::now();
+    //std::chrono::high_resolution_clock::time_point step02 = std::chrono::high_resolution_clock::now();
 
     log::trace("Database::PutPartValidSize()",
               "[%s] size_compressed:%" PRIu64,
@@ -207,10 +207,10 @@ Status Database::PutPartValidSize(WriteOptions& write_options,
       ts_compression_enabled_.put(0);
       ts_offset_.put(compressor_.size_compressed() + size_compressed);
     }
-    std::chrono::high_resolution_clock::time_point step03 = std::chrono::high_resolution_clock::now();
+    //std::chrono::high_resolution_clock::time_point step03 = std::chrono::high_resolution_clock::now();
 
     ByteArray chunk_compressed = NewShallowCopyByteArray(compressed, size_compressed);
-    std::chrono::high_resolution_clock::time_point step04 = std::chrono::high_resolution_clock::now();
+    //std::chrono::high_resolution_clock::time_point step04 = std::chrono::high_resolution_clock::now();
 
     log::trace("Database::PutPartValidSize()",
               "[%s] (%" PRIu64 ") compressed size %" PRIu64 " - offset_chunk_compressed %" PRIu64,
@@ -220,14 +220,13 @@ Status Database::PutPartValidSize(WriteOptions& write_options,
               offset_chunk_compressed);
 
     chunk_final = chunk_compressed;
+    /*
     std::chrono::high_resolution_clock::time_point step05 = std::chrono::high_resolution_clock::now();
     uint64_t duration00 = std::chrono::duration_cast<std::chrono::microseconds>(step01 - step00).count();
     uint64_t duration01 = std::chrono::duration_cast<std::chrono::microseconds>(step02 - step01).count();
     uint64_t duration02 = std::chrono::duration_cast<std::chrono::microseconds>(step03 - step02).count();
     uint64_t duration03 = std::chrono::duration_cast<std::chrono::microseconds>(step04 - step03).count();
     uint64_t duration04 = std::chrono::duration_cast<std::chrono::microseconds>(step05 - step04).count();
-
-    /*
     log::info("Database::PutPartValidSize()",
               "Durations: [%" PRIu64 "] [%" PRIu64 "] [%" PRIu64 "] [%" PRIu64 "] [%" PRIu64 "]",
               duration00, duration01, duration02, duration03, duration04

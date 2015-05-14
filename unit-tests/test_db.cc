@@ -404,7 +404,6 @@ TEST(DBTest, TestStringInterface){
   kdb::WriteOptions write_options;
   int size_key = 16;
   int num_items = 100000;
-  int count_valid_items = 0;
 
   ResetAllOptions();
   while (IterateOverOptions()) {
@@ -440,8 +439,6 @@ TEST(DBTest, MultipartReader) {
     kdb::Logger::set_current_level("emerg");
     Open();
     kdb::Status s;
-
-    int num_count_valid = 0;
 
     s = db_->Put(write_options_, "key1", "value1");
     if (!s.IsOK()) fprintf(stderr, "Error: %s\n", s.ToString().c_str());
@@ -769,9 +766,6 @@ bool exists_program(const char* program_name) {
 
 std::string compute_external_md5(const char* filepath) {
   // Compute the md5 of a file using an external source
-  FILE *file;
-  char res[256];
-
   if (exists_program("md5")) {
     std::string command("md5 ");
     command += filepath;

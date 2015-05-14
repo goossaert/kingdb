@@ -120,7 +120,7 @@ int main(int argc, char** argv) {
 
   if (argc == 2 && (strncmp(argv[1], "--help", 6) == 0 || strncmp(argv[1], "-h", 2) == 0)) {
     fprintf(stdout, "KingServer is a persisted key-value database server, which uses the KingDB library\nas a storage backend. For more information, visit http://kingdb.org\n");
-    fprintf(stdout, "KingServer version: %d.%d.%d\nKingDB version: %d.%d.%d\nData format version: %d.%d\n", kVersionServerMajor, kVersionServerMinor, kVersionServerRevision, kdb::kVersionMajor, kdb::kVersionMinor, kdb::kVersionRevision, kdb::kVersionDataFormatMajor, kdb::kVersionDataFormatMinor);
+    fprintf(stdout, "KingServer version: %d.%d.%d-%d\nKingDB version: %d.%d.%d\nData format version: %d.%d\n", kVersionServerMajor, kVersionServerMinor, kVersionServerRevision, kVersionServerBuild, kdb::kVersionMajor, kdb::kVersionMinor, kdb::kVersionRevision, kdb::kVersionDataFormatMajor, kdb::kVersionDataFormatMinor);
     fprintf(stdout, "\nParameters:\n\n");
     parser.PrintUsage();
     exit(0);

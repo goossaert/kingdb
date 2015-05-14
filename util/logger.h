@@ -29,7 +29,7 @@ namespace kdb {
 
 class Logger {
  public:
-  Logger(std::string name) { }
+  Logger() { }
   virtual ~Logger() { }
 
   static void Logv(bool thread_safe,
