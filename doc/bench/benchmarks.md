@@ -1,5 +1,5 @@
-Benchmarks of KingDB v0.9.0-alpha and LevelDB v1.18 
-===================================================
+Benchmarks of KingDB v0.9.0 and LevelDB v1.18 
+=============================================
 
 Date: April 9, 2015
 
@@ -38,7 +38,7 @@ The benchmarks were made over two systems, a Linux CentOS 6.4 and a Mac OS X 10.
 
 ###Key-value store options
 - LevelDB v1.18 has a write cache of 4MB, and uses Snappy v1.1.2 for compression.
-- KingDB v0.9.0-alpha has a write cache of 4MB, uses LZ4 v1.3.0 for compression.
+- KingDB v0.9.0 has a write cache of 4MB, uses LZ4 v1.3.0 for compression.
 
 
 ##Results
