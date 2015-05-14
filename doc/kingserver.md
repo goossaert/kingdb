@@ -28,6 +28,7 @@ KingServer has no external dependencies and has been tested on:
 
 - Mac OS X 10.9.5 with Apple LLVM version 6.0 (clang-600.0.51)
 - Linux Ubuntu 14.04 x64 with GCC 4.9.2
+- Linux Ubuntu 15.04 x64 with GCC 4.9.2-10ubuntu13
 - Linux CentOS 6.5 x86\_64 with GCC 4.9.2
 
 Because KingServer uses C++11, you need GCC >=4.9.2 or Clang >=3.3. The following commands will compile KingServer and will install the `kingserver` program.
@@ -78,7 +79,7 @@ As long as your point the client to right IP and port where KingServer listens, 
 It would be tedious to have to specify all the options on the command line all the time. KingServer allows you to use a configuration file to set values for all options. Such a file would look like this:
 
     # hash can be used to add comments
-    server.size-buffer-recv          8kb
+    server.recv-socket-buffer-size   8kb
     server.interface.memcached-port  11211
     server.num-threads               500
 
@@ -185,7 +186,7 @@ Default value: info (String)
 Target of the logs, can be 'stderr' to log to stderr, or any custom string that will be used as the 'ident' parameter for syslog.  
 Default value: kingdb (String)
 
-`--server.size-buffer-recv`  
+`--server.recv-socket-buffer-size`  
 Size of the buffer used to receive data from the network. Each thread of the server has one such buffer.  
 Default value: 64KB (Unsigned 64-bit integer)
 

@@ -67,7 +67,7 @@ class StorageEngine {
     sequence_snapshot_ = 0;
     stop_requested_ = false;
     is_closed_ = false;
-    fs_free_space_ = 0;
+    fs_free_space_ = db_options_.storage__minimum_free_space_accept_orders;
     file_manager_ = std::make_shared<FileManager>();
     if (!is_read_only_) {
       thread_index_ = std::thread(&StorageEngine::ProcessingLoopIndex, this);

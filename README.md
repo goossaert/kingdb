@@ -47,6 +47,7 @@ KingDB has no external dependencies and has been tested on:
 
 - Mac OS X 10.9.5 with Apple LLVM version 6.0 (clang-600.0.51)
 - Linux Ubuntu 14.04 x64 with GCC 4.9.2
+- Linux Ubuntu 15.04 x64 with GCC 4.9.2-10ubuntu13
 - Linux CentOS 6.5 x86\_64 with GCC 4.9.2
 
 If you are using GCC, update the Makefile and add \-fno\-builtin\-memcmp in the CFLAGS, and if you have tcmalloc on your system, add \-ltcmalloc to the LDFLAGS. This will give you a nice performance speed\-up.

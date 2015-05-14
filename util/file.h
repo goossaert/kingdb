@@ -38,6 +38,10 @@ class FileUtil {
   }
 
   static std::string kingdb_getcwd() {
+    static char *path = nullptr;
+    if (path != nullptr) {
+      return path;
+    }
     char *buffer = nullptr;
     int size = 64;
     do {
@@ -48,9 +52,8 @@ class FileUtil {
       size *= 2;
       delete[] buffer;
     } while(true);
-    std::string cwd(buffer);
-    delete[] buffer;
-    return cwd;
+    path = buffer;
+    return path;
   }
 
   // NOTE: Pre-allocating disk space is very tricky: fallocate() and

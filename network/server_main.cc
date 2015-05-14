@@ -38,6 +38,10 @@ void crash_signal_handler(int sig) {
 
 int daemonize() {
   // Adapted from Michael Kerrisk's becomeDaemon()
+  
+  kdb::FileUtil::kingdb_getcwd(); // cache the current working directory
+                                  // before the fork() happens, otherwise
+                                  // getcwd() returns "/" on Mac OS X.
 
   // Become background process
   switch (fork()) {

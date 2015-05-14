@@ -731,12 +731,12 @@ class HSTableManager {
       //       storing functions) still work?
 
       // There are three categories of entries:
-      //  - Small entries:  sizes within [0, server.size_buffer_recv)
-      //  - Medium entries: sizes within [server.size_buffer_recv, hstable.maximum_size)
+      //  - Small entries:  sizes within [0, server.recv_socket_buffer_size)
+      //  - Medium entries: sizes within [server.recv_socket_buffer_size, hstable.maximum_size)
       //  - Large entries:  sizes greater than hstable.maximum_size
       //
       // When using the storage engine through a network interface, medium and
-      // large entries are split into parts of size at most server.size_buffer_recv,
+      // large entries are split into parts of size at most server.recv_socket_buffer_size,
       // making them "multipart" entries.
       // Small entries do not need to be split, and are therefore "self-contained".
       // Parts are held into "orders", which hold extra metadata needed
@@ -749,10 +749,10 @@ class HSTableManager {
       // When using the storage engine embedded in another program, orders can be
       // on any size, and because it is embedded, the data can be sent as is to
       // the storage engine, potentially in a very large buffer, larger than
-      // the size of server.size_buffer_recv contrained when on a network. Because the
-      // logic in the storage engine expects first and last parts, a large
-      // order that is at the same time a first *and* a last part could cause
-      // an issue: the order could be treated only as a first part,
+      // the size of server.recv_socket_buffer_size contrained when on a network.
+      // Because the logic in the storage engine expects first and last parts,
+      // a large order that is at the same time a first *and* a last part could
+      // cause an issue: the order could be treated only as a first part,
       // and the operations triggered by the arrival of the last part
       // may not be done. To solve that problem, and because compression
       // and hash functions take input of limited sizes anyway, the constant

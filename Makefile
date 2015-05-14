@@ -25,7 +25,8 @@ BINDIR=$(PREFIX)/bin
 INCLUDEDIR=$(PREFIX)/include/kingdb
 LIBDIR=$(PREFIX)/lib
 
-CFLAGS=-std=c++11 -MMD -MP -c
+GCC_WALL=-Waddress -Warray-bounds=1 -Wc++11-compat -Wc++14-compat -Wchar-subscripts -Wenum-compare -Wimplicit-int -Wimplicit-function-declaration -Wcomment -Wformat -Wmain -Wmaybe-uninitialized -Wmissing-braces -Wnonnull -Wopenmp-simd -Wparentheses -Wpointer-sign -Wreorder -Wreturn-type -Wsequence-point -Wsign-compare -Wstrict-aliasing -Wstrict-overflow=1 -Wswitch -Wtrigraphs -Wuninitialized -Wunknown-pragmas -Wunused-function -Wunused-label -Wunused-value -Wunused-variable -Wvolatile-register-var 
+CFLAGS=-Wall -std=c++11 -MMD -MP -c
 
 all: CFLAGS += -O2
 all: $(SOURCES) $(LIBRARY) $(EXECUTABLE) $(CLIENT_EMB) $(TEST_COMPRESSION) $(TEST_DB)

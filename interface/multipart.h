@@ -136,7 +136,7 @@ class MultipartReader {
 
       char* data_left = value_.data() + offset_output_;
 
-      size_t step = 1024*1024;
+      size_t step = 1024*1024; // TODO: make this a parameter at some point?
       size_t size_current = offset_output_ + step < size_left ? step : size_left - offset_output_;
       if (read_options_.verify_checksums) {
         crc32_.stream(data_left, size_current);

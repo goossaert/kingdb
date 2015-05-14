@@ -46,6 +46,7 @@ KingDB has no external dependencies and has been tested on:
 
 - Mac OS X 10.9.5 with Apple LLVM version 6.0 (clang-600.0.51)
 - Linux Ubuntu 14.04 x64 with GCC 4.9.2
+- Linux Ubuntu 15.04 x64 with GCC 4.9.2-10ubuntu13
 - Linux CentOS 6.5 x86\_64 with GCC 4.9.2
 
 Because KingDB uses C++11, you need GCC >=4.9.2 or Clang >=3.3. The following commands will compile KingDB as a static library, and will install it on your computer. This will also install the `kingserver` program.

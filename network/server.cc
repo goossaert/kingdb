@@ -32,7 +32,6 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
   char *buffer_send = new char[server_options_.internal__size_buffer_send];
   ByteArray buffer;
   ByteArray key;
-  int size_key = 0;
   log::trace("NetworkTask", "ENTER");
   // TODO-7: replace the memory allocation performed for 'key' and 'buffer' by a
   //         pool of pre-allocated buffers
@@ -52,20 +51,19 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
       is_command_get = false;
       is_command_put = false;
       is_command_delete = false;
-      size_key = 0;
     }
 
     if (is_new_buffer) {
       log::trace("NetworkTask", "is_new_buffer");
       bytes_received_buffer = 0;
-      buffer = ByteArray::NewAllocatedMemoryByteArray(server_options_.size_buffer_recv);
+      buffer = ByteArray::NewAllocatedMemoryByteArray(server_options_.recv_socket_buffer_size);
       log::trace("NetworkTask", "allocated");
     }
 
     log::trace("NetworkTask", "Calling recv()");
     bytes_received_last = recv(sockfd_,
                                buffer.data() + bytes_received_buffer,
-                               server_options_.size_buffer_recv - bytes_received_buffer,
+                               server_options_.recv_socket_buffer_size - bytes_received_buffer,
                                0);
     if (bytes_received_last <= 0) {
       log::trace("NetworkTask", "recv()'d 0 bytes: breaking");
@@ -143,7 +141,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
     // Loop and get more data from the network if the buffer is not full and all the data
     // hasn't arrived yet
     if (   bytes_received_total < bytes_expected
-        && bytes_received_buffer < server_options_.size_buffer_recv) {
+        && bytes_received_buffer < server_options_.recv_socket_buffer_size) {
       // TODO: what if the \r\n is on the two last messages, i.e. \n is the
       // first character of the last message?
       log::trace("NetworkTask", "force looping to get the rest of the data");

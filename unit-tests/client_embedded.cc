@@ -16,7 +16,9 @@
 #include <sstream>
 #include <csignal>
 
+#ifdef DEBUG
 #include <gperftools/profiler.h>
+#endif
 
 #include "interface/database.h"
 #include "util/status.h"

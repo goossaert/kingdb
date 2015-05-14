@@ -152,7 +152,7 @@ class FileManager {
   }
 
   int MaxNumFiles() {
-    return 2048; // TODO: make this is an internal parameter 
+    return 2048; // TODO: make this is an internal parameter at some point?
   }
 
  private:
