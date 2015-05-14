@@ -149,7 +149,7 @@ class FileUtil {
     return Status::OK();
   }
 
-  static uint64_t maximum_path_size() {
+  static int64_t maximum_path_size() {
     return 4096;
   }
 

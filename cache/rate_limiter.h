@@ -137,7 +137,7 @@ class RateLimiter {
     // effect, in which it would limit the throughput either way too much,
     // or not enough. This average allow the bandwitdth to converge smoothly.
     uint64_t sum = 0; 
-    for (int i = 0; i < rates_.size(); i++) {
+    for (size_t i = 0; i < rates_.size(); i++) {
       sum += rates_[i]; 
     }
     uint64_t rate_limit_current = sum / rates_.size();

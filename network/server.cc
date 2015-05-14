@@ -165,7 +165,7 @@ void NetworkTask::Run(std::thread::id tid, uint64_t id) {
         if (s.IsOK()) {
           log::trace("NetworkTask", "GET: found");
           int ret = snprintf(buffer_send, server_options_.internal__size_buffer_send, "VALUE %s 0 %" PRIu64 "\r\n", buffer.ToString().c_str(), mp_reader.size());
-          if (ret < 0 || ret >= server_options_.internal__size_buffer_send) {
+          if (ret < 0 || (uint64_t)ret >= server_options_.internal__size_buffer_send) {
             log::emerg("NetworkTask", "Network send buffer is too small"); 
           }
           log::trace("NetworkTask", "GET: buffer_send [%s]", buffer_send);

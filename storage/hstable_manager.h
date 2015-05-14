@@ -875,7 +875,7 @@ class HSTableManager {
       if (stat(filepath, &info) != 0 || !(info.st_mode & S_IFREG)) continue;
       // Yes, using the default internal__hstable_header_size value from the
       // object this method is meant to return.
-      if (info.st_size <= db_options_out->internal__hstable_header_size) {
+      if (info.st_size <= (off_t)db_options_out->internal__hstable_header_size) {
         log::trace("HSTableManager::LoadDatabaseOptionsFromHSTables()",
                   "file: [%s] only has a header or less, skipping\n", entry->d_name);
         continue;
@@ -988,7 +988,7 @@ class HSTableManager {
       }
       log::trace("HSTableManager::LoadDatabase()",
                 "file: [%s] [%lld] [%u]\n", entry->d_name, info.st_size, fileid);
-      if (info.st_size <= db_options_.internal__hstable_header_size) {
+      if (info.st_size <= (off_t)db_options_.internal__hstable_header_size) {
         log::trace("HSTableManager::LoadDatabase()",
                   "file: [%s] only has a header or less, skipping\n", entry->d_name);
         continue;
@@ -1075,7 +1075,7 @@ class HSTableManager {
     // The file has a clean footer, load all the offsets in the index
     uint64_t offset_index = footer.offset_indexes;
     struct OffsetArrayRow row;
-    for (auto i = 0; i < footer.num_entries; i++) {
+    for (uint64_t i = 0; i < footer.num_entries; i++) {
       uint32_t length_row = 0;
       s = OffsetArrayRow::DecodeFrom(mmap.datafile() + offset_index,
                                      mmap.filesize() - offset_index,
@@ -1232,7 +1232,7 @@ class HSTableManager {
   std::mutex mutex_sequence_timestamp_;
   bool is_locked_sequence_timestamp_;
 
-  int size_block_;
+  uint64_t size_block_;
   bool has_file_;
   bool has_sync_option_;
   int fd_;

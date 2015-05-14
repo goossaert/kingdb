@@ -761,8 +761,8 @@ bool exists_program(const char* program_name) {
   command += program_name;
   command += " 2>/dev/null";
   std::string ret = run_command(command.c_str());
-  std::size_t pos = ret.find(program_name);
-  if (pos == -1) return false;
+  size_t pos = ret.find(program_name);
+  if (pos == std::string::npos) return false;
   return true;
 }
 
@@ -776,7 +776,7 @@ std::string compute_external_md5(const char* filepath) {
     std::string command("md5 ");
     command += filepath;
     std::string ret = run_command(command.c_str());
-    std::size_t pos = ret.find("=");
+    size_t pos = ret.find("=");
     std::string md5 = ret.substr(pos);
     //fprintf(stderr, "%s - %s\n", ret.c_str(), md5.c_str());
     return md5;
@@ -784,7 +784,7 @@ std::string compute_external_md5(const char* filepath) {
     std::string command("md5sum ");
     command += filepath;
     std::string ret = run_command(command.c_str());
-    std::size_t pos = ret.find(" ");
+    size_t pos = ret.find(" ");
     std::string md5 = ret.substr(0, pos);
     //fprintf(stderr, "%s - %s\n", ret.c_str(), md5.c_str());
     return md5;

@@ -252,7 +252,7 @@ class ConfigParser {
   }
 
   ~ConfigParser() {
-    for (auto i = 0; i < parameters_.size(); i++) {
+    for (size_t i = 0; i < parameters_.size(); i++) {
       delete parameters_[i];
     }
   }
@@ -296,10 +296,10 @@ class ConfigParser {
     // Obviously not efficient, but simple and fast enough to format
     // the parameters so they can be displayed in PrintUsage()
     std::string str_aligned;
-    int i = 0;
+    size_t i = 0;
     while (i < str.size()) {
-      int j_start = i + column;
-      int j = (j_start <= str.size()) ? j_start : i;
+      size_t j_start = i + column;
+      size_t j = (j_start <= str.size()) ? j_start : i;
       while (j > i) {
         if (str[j] == ' ') break;
         j--;

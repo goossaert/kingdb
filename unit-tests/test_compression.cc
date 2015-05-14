@@ -55,16 +55,16 @@ int main() {
   lz4.ResetThreadLocalStorage();
   compressed = new char[SIZE_BUFFER];
 
-  auto num_chunks = size_value / size_chunk;
+  uint64_t num_chunks = size_value / size_chunk;
   char *comp;
   if (size_value % size_chunk) num_chunks += 1;
-  for(auto chunk = 0; chunk < num_chunks; chunk++) {
+  for (uint64_t chunk = 0; chunk < num_chunks; chunk++) {
     uint64_t size_chunk_current = 0;
     size_chunk_current = size_chunk;
     if (chunk == num_chunks - 1) {
       size_chunk_current = size_value % size_chunk;
     }
-    fprintf(stderr, "step:%d size:%" PRIu64 "\n", chunk, size_chunk_current);
+    fprintf(stderr, "step:%" PRIu64 " size:%" PRIu64 "\n", chunk, size_chunk_current);
 
     offset_chunk_compressed = lz4.size_compressed();
     kdb::Status s = lz4.Compress(raw + chunk * size_chunk,
@@ -76,15 +76,15 @@ int main() {
       exit(-1);
     }
 
-    fprintf(stderr, "step %d - %p size_compressed:%" PRIu64 " offset:%" PRIu64 "\n", chunk, comp, size_compressed, offset_chunk_compressed);
+    fprintf(stderr, "step %" PRIu64 " - %p size_compressed:%" PRIu64 " offset:%" PRIu64 "\n", chunk, comp, size_compressed, offset_chunk_compressed);
     memcpy(compressed + offset_chunk_compressed, comp, size_compressed);
-    fprintf(stderr, "step %d - size_compressed:%" PRIu64 "\n", chunk, size_compressed);
+    fprintf(stderr, "step %" PRIu64 " - size_compressed:%" PRIu64 "\n", chunk, size_compressed);
   }
 
   size_compressed = lz4.size_compressed();
 
   fprintf(stderr, "--- stream compressed data (size:%" PRIu64 "):\n", size_compressed);
-  for (auto i = 0; i < size_compressed; i++) {
+  for (uint64_t i = 0; i < size_compressed; i++) {
     fprintf(stderr, "%c", compressed[i]);
   }
   fprintf(stderr, "\n--- done\n");

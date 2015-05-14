@@ -605,7 +605,7 @@ class StorageEngine {
           || !(info.st_mode & S_IFREG) 
           || fileid < fileid_start
           || fileid > fileid_end_target
-          || info.st_size <= db_options_.internal__hstable_header_size) {
+          || info.st_size <= (off_t)db_options_.internal__hstable_header_size) {
         continue;
       }
       fileids_to_filesizes[fileid] = info.st_size;
@@ -722,7 +722,7 @@ class StorageEngine {
       }
       std::sort(locations.begin(), locations.end());
       hashedkeys_clusters[locations[0]] = locations;
-      for (auto i = 1; i < locations.size(); i++) {
+      for (size_t i = 1; i < locations.size(); i++) {
         locations_secondary.insert(locations[i]);
       }
     }
@@ -945,7 +945,7 @@ class StorageEngine {
 
 
     // 9. Rename files
-    for (auto fileid = 1; fileid <= num_files_compacted; fileid++) {
+    for (uint32_t fileid = 1; fileid <= num_files_compacted; fileid++) {
       uint32_t fileid_new = fileid + offset_fileid;
       log::trace("Compaction()", "Renaming [%s] into [%s]", hstable_manager_compaction_.GetFilepath(fileid).c_str(),
                                                            hstable_manager_.GetFilepath(fileid_new).c_str());

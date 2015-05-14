@@ -102,7 +102,7 @@ class WriteBuffer {
   DatabaseOptions db_options_;
   int im_live_;
   int im_copy_;
-  int buffer_size_;
+  uint64_t buffer_size_;
   int num_readers_;
   std::array<std::vector<Order>, 2> buffers_;
   std::array<int, 2> sizes_;

@@ -37,7 +37,7 @@ Status CompressorLZ4::Compress(char *source,
 
   // If the frame was compressed to a size larger than the original data,
   // we just copy the original data.
-  if (ret > size_source) {
+  if ((uint64_t)ret > size_source) {
     if (size_source > 8 + bound) {
       delete[] *dest;
       *dest = new char[8 + size_source];

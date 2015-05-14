@@ -139,11 +139,11 @@ class CompressorLZ4 {
                              ByteArray* value_uncompressed);
 
   void DisableCompressionInFrameHeader(char* frame) {
-    for (int i = 0; i < size_frame_header(); i++) frame[i] = 0;
+    for (uint64_t i = 0; i < size_frame_header(); i++) frame[i] = 0;
   }
 
   bool HasFrameHeaderDisabledCompression(char *frame) {
-    for (int i = 0; i < size_frame_header(); i++) {
+    for (uint64_t i = 0; i < size_frame_header(); i++) {
       if(frame[i] != 0) return false;
     }
     return true;
