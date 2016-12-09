@@ -107,6 +107,10 @@ class Snapshot: public KingDB {
     return Status::IOError("Not supported");
   }
 
+  virtual Status Delete(WriteOptions& write_options, const std::string& key) override {
+    return Status::IOError("Not supported");
+  }
+
   virtual Iterator NewIterator(ReadOptions& read_options) override {
     IteratorResource* ir = nullptr;
     uint64_t dbsize_uncompacted = se_readonly_->GetDbSizeUncompacted();

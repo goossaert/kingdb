@@ -222,7 +222,13 @@ class Database: public KingDB {
                           ByteArray& chunk,
                           uint64_t offset_chunk, // TODO: could the offset be handled by the method itself?
                           uint64_t size_value) override;
+
   virtual Status Delete(WriteOptions& write_options, ByteArray& key) override;
+
+  virtual Status Delete(WriteOptions& write_options, const std::string& key) {
+    return KingDB::Delete(write_options, key);
+  }
+
   virtual Snapshot NewSnapshot();
   virtual Iterator NewIterator(ReadOptions& read_options) override;
 

@@ -64,8 +64,14 @@ class KingDB {
     return Put(write_options, byte_array_key, byte_array_chunk);
   }
 
-  virtual MultipartReader NewMultipartReader(ReadOptions& read_options, ByteArray& key) = 0;
   virtual Status Delete(WriteOptions& write_options, ByteArray& key) = 0;
+
+  virtual Status Delete(WriteOptions& write_options, const std::string& key) {
+    ByteArray byte_array_key = NewDeepCopyByteArray(key.c_str(), key.size());
+    return Delete(write_options, byte_array_key);
+  }
+
+  virtual MultipartReader NewMultipartReader(ReadOptions& read_options, ByteArray& key) = 0;
   virtual Iterator NewIterator(ReadOptions& read_options) = 0;
   virtual Status Open() = 0;
   virtual void Close() = 0;
