@@ -104,12 +104,12 @@ The `Status` class allows you to test if an error occurred, and if so, to print 
 
     kdb::Status s;
     kdb::WriteOptions write_options;
-    s = db.Put(write_options, “key1", "value1");
+    s = db.Put(write_options, "key1", "value1");
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
     kdb::ReadOptions read_options;
     std::string value_out;
-    s = db.Get(read_options, “key1", &value_out);
+    s = db.Get(read_options, "key1", &value_out);
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
     s = db.Delete("key1");
@@ -123,7 +123,7 @@ You can sync writes to the secondary storage by setting the `sync` parameter in 
 
     kdb::WriteOptions write_options;
     write_options.sync = true;
-    kdb::Status s = db.Put(write_options, “key1", "value1");
+    kdb::Status s = db.Put(write_options, "key1", "value1");
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
 ###Verifying checksums
@@ -133,7 +133,7 @@ A unique checksum is stored with each entry when it is persisted to secondary st
     kdb::ReadOptions read_options;
     read_options.verify_checksums = true;
     std::string value_out;
-    s = db.Get(read_options, “key1", &value_out);
+    s = db.Get(read_options, "key1", &value_out);
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
 ###Closing a database
