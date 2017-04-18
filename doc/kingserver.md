@@ -1,7 +1,7 @@
 Documentation of KingServer v0.9.0
 ==================================
 
-##Table of Contents
+## Table of Contents
 
 **[1. What is KingServer?](#1-what-is-kingserver)**  
 **[2. How to install KingServer](#2-how-to-install-kingserver)**  
@@ -11,7 +11,7 @@ Documentation of KingServer v0.9.0
 **[6. Options](#6-options)**  
 
 
-##1. What is KingServer?
+## 1. What is KingServer?
 
 KingServer is a server application that embeds KingDB and implements the Memcached protocol. It allows you to access your data through a network interface using whatever programming language you want. Use any Memcached client for the programming language that you want to use, point it to your KingServer instance, and start sending data in. It's really that simple!
 
@@ -20,7 +20,7 @@ Note that the current version of KingServer, version 0.9.0, implements only a su
 For more information about KingDB, check out the [KingDB documentation](kingdb.md).
 
 
-##2. How to install KingServer?
+## 2. How to install KingServer?
 
 The installation process is the same as for KingDB.
 
@@ -40,7 +40,7 @@ Because KingServer uses C++11, you need GCC >=4.9.2 or Clang >=3.3. The followin
 
 If you are using GCC, update the Makefile and add \-fno\-builtin\-memcmp in the CFLAGS, and if you have tcmalloc on your system, add \-ltcmalloc to the LDFLAGS. This will give you a nice performance speed\-up.
 
-##3. How to run KingServer?
+## 3. How to run KingServer?
 
 To start a server, the only required parameter is the location where your want to store your data, specified by the `--db.path` parameter. The following command will run KingServer as a daemon process in background, which will listen to the port 11211 (default Memcached port), and will store the data in the path /tmp/mydb:
 
@@ -60,7 +60,7 @@ When you are done, you can stop the daemon with CTRL+C:
     2015/03/29-13:54:02.623910 0x7fff78663310 KingServer Received signal [2]
     2015/03/29-13:54:02.627277 0x7fff78663310 KingServer Daemon has stopped
 
-##4. Implementing a network client to reach KingServer
+## 4. Implementing a network client to reach KingServer
 
 The Memcached project keeps a [list of Memcached clients](https://code.google.com/p/memcached/wiki/Clients) for many programming languages. If you don't find your language in there, a simple Google search will find you a client.
 
@@ -74,7 +74,7 @@ Imagine that your client code is in Python, and that you pick the Memcached pack
 
 As long as your point the client to right IP and port where KingServer listens, you'll be able to access your data.
 
-##4. Configuration files
+## 4. Configuration files
 
 It would be tedious to have to specify all the options on the command line all the time. KingServer allows you to use a configuration file to set values for all options. Such a file would look like this:
 
@@ -104,9 +104,9 @@ For a complete list of all the available options, you can use the `--help` param
 This list is reproduced below in the [Options section](#6-options).
 
 
-##5. Logging with Syslog
+## 5. Logging with Syslog
 
-###Selecting a log level
+### Selecting a log level
 
 All the logging goes through [Syslog](http://en.wikipedia.org/wiki/Syslog), a protocol for message logging on Unix-based operating systems. The logging modules of KingDB and KingServer use Syslog to log activity and errors, and let the Syslog server on the machine handle storage and log rotation.
 
@@ -123,11 +123,11 @@ KingDB emits log messages with different priority levels, following most the pri
 - debug: events used for debugging, no action required
 - trace: fine-grained events used for debugging, no action required
 
-###Dedicated log file
+### Dedicated log file
 
 By default, the log message will go to /var/log/system.log. You can also configure Syslog to store the KingDB and KingServer log messages to a dedicated log file on the machine. Below are examples of how to configure a Ubuntu server or a Mac OS X system to log all the messages emitted by KingDB to a dedicated file at the path /var/log/kingdb.log.
 
-####On Ubuntu:
+#### On Ubuntu:
 
 1. Open the rsyslog configuration file:
 
@@ -142,7 +142,7 @@ By default, the log message will go to /var/log/system.log. You can also configu
 
         $ sudo service rsyslog restart
 
-####On Mac OS X (using the [FreeBSD Syslog configuration](https://www.freebsd.org/doc/handbook/configtuning-syslog.html)):
+#### On Mac OS X (using the [FreeBSD Syslog configuration](https://www.freebsd.org/doc/handbook/configtuning-syslog.html)):
 
 1. Open the syslog configuration file:
 
@@ -164,9 +164,9 @@ By default, the log message will go to /var/log/system.log. You can also configu
         $ sudo launchctl load /System/Library/LaunchDaemons/com.apple.syslogd.plist
 
 
-##6. Options
+## 6. Options
 
-###Server Options
+### Server Options
 
 Options that alter the behavior of the KingServer network server.
 
@@ -202,7 +202,7 @@ Default value: 150 (Unsigned 32-bit integer)
 Port where the memcached interface will listen.  
 Default value: 11211 (Unsigned 32-bit integer)
 
-###Database Options
+### Database Options
 
 With the following options, you can change the behavior of the KingDB database embedded in the KingServer process that you are running.
 

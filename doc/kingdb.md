@@ -1,7 +1,7 @@
 Documentation of KingDB v0.9.0
 ==============================
 
-##Table of Contents
+## Table of Contents
 
 **[1. Why use KingDB?](#1-why-use-kingdb)**  
 **[2. How to install KingDB?](#2-how-to-install-kingdb)**  
@@ -13,15 +13,15 @@ Documentation of KingDB v0.9.0
 **[8. Options](#8-options)**  
 
 
-##1. Why use KingDB?
+## 1. Why use KingDB?
 
-###KingDB is simple
+### KingDB is simple
 The architecture, code, and data format of KingDB are simple. You do not need to be a system programming expert or a storage engineer to understand how it works and tune it to your needs.
 
-###Fast for writes and random reads
+### Fast for writes and random reads
 Under the hood, KingDB uses log-structured storage, which makes writes very fast. An in-memory hash table indexes entries making random reads very fast.
 
-###Multipart API
+### Multipart API
 KingDB has a multipart API for both the reads and writes: you can access your data in small parts, without having to store all the data at once in memory, making it easy to work with large entries without killing the caches of your CPU or make your program timeout.
 
 ### Snapshots and Iterators
@@ -30,17 +30,17 @@ KingDB has read-only snapshots, that offer consistent views of a database. KingD
 ### Background compaction
 Regularly, KingDB runs a compaction process in background to recover unused disk space and make sure the database is stored in the most compact way possible. Please note, compaction is not compression.
 
-###Covered with unit tests
+### Covered with unit tests
 The latest version of KingDB is 0.9.0, which is a beta version. All changes on KingDB are tested using unit tests.
 
-###KingDB is single-machine only
+### KingDB is single-machine only
 KingDB is **not** a distributed and replicated multi-node datastore such as Cassandra or Riak. KingDB was designed to be a storage engine that lives on a single machine. If the disk on that machine dies, you lose your data. Luckily, the data format is loose enough that it is easy to do incremental backups and keep a copy of your data on a secondary machine if you need to.
 
-###The KingServer network interface
+### The KingServer network interface
 You can access your data through a network interface using KingServer. For more information about KingServer, check out the [KingServer documentation](kingserver.md).
 
 
-##2. How to install KingDB?
+## 2. How to install KingDB?
 
 KingDB has no external dependencies and has been tested on:
 
@@ -58,7 +58,7 @@ Because KingDB uses C++11, you need GCC >=4.9.2 or Clang >=3.3. The following co
 
 If you are using GCC, update the Makefile and add \-fno\-builtin\-memcmp in the CFLAGS, and if you have tcmalloc on your system, add \-ltcmalloc to the LDFLAGS. This will give you a nice performance speed\-up.
 
-##3. How to compile programs with KingDB?
+## 3. How to compile programs with KingDB?
 
 Once you have compiled KingDB and installed the static library by following the instructions above, you can compile your own programs by linking them with the KingDB library.
 
@@ -74,13 +74,13 @@ For an example of what a user program would look like, you can refer to the `kin
 
 
 
-##4. Basic API usage
+## 4. Basic API usage
 
-###No pointers, everything is an object
+### No pointers, everything is an object
 
 You don't need to worry about memory management. KingDB will never return a pointer, and will never force you to maintain a pointer. All the API calls in KingDB return objects, and therefore the memory, file descriptors and other resources used by those objects will all be released when the objects go out of scope.
 
-###The Status class
+### The Status class
 
 The `Status` class is how KingDB deals with errors. All the methods in the KingDB API return a `Status` object. KingDB does not throw exceptions. Exceptions may still be thrown due to erroneous system calls, but KingDB does not catch them, because if they are thrown, it means that KingDB should die anyway.
 
@@ -89,7 +89,7 @@ The `Status` class allows you to test if an error occurred, and if so, to print 
     kdb::Status s = ...;
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
-###Opening a database
+### Opening a database
 
     #include <kingdb/kdb.h>
 
@@ -100,7 +100,7 @@ The `Status` class allows you to test if an error occurred, and if so, to print 
     if (!s.IsOK()) cerr << s.ToString() << endl;
     db.Close(); // optional
 
-###Reading, writing, and deleting an entry
+### Reading, writing, and deleting an entry
 
     kdb::Status s;
     kdb::WriteOptions write_options;
@@ -117,7 +117,7 @@ The `Status` class allows you to test if an error occurred, and if so, to print 
 
 **IMPORTANT:** If you need to store and retrieve entries larger than 1MB, read carefully the section about the [multipart API](#6-multipart-api).
 
-###Syncing writes
+### Syncing writes
 
 You can sync writes to the secondary storage by setting the `sync` parameter in `WriteOptions`, which is false by default:
 
@@ -126,7 +126,7 @@ You can sync writes to the secondary storage by setting the `sync` parameter in 
     kdb::Status s = db.Put(write_options, “key1", "value1");
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
-###Verifying checksums
+### Verifying checksums
 
 A unique checksum is stored with each entry when it is persisted to secondary storage. By default, these checksums are not verified, but you can choose to verify these checksums when reading entries, by setting the `verify_checksums` parameter in `ReadOptions`, which is false by default:
 
@@ -136,7 +136,7 @@ A unique checksum is stored with each entry when it is persisted to secondary st
     s = db.Get(read_options, “key1", &value_out);
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
-###Closing a database
+### Closing a database
 
 You can just let the `Database` object go out of scope, which will close it. If you need to access a `Database` with a pointer, deleting the pointer will close the database.
 
@@ -164,7 +164,7 @@ You can just let the `Database` object go out of scope, which will close it. If 
     
 **IMPORTANT:** Never create a `Database` with the `new` operator, unless you really need pointer semantics.
 
-###Compression
+### Compression
 
 Compression is enabled by default, using the [LZ4 algorithm](https://github.com/Cyan4973/lz4). The compression option affects the behavior of an entire `Database`: there is no option to compress some entries and keep the other uncompressed, it’s all or nothing. The compression parameter can be `kNoCompression` or `kLZ4Compression`. For example, the following code creates a `Database` with compression disabled:
 
@@ -173,7 +173,7 @@ Compression is enabled by default, using the [LZ4 algorithm](https://github.com/
     kdb::Database db(db_options, "mydb");
     db.Open();
 
-###Snapshots
+### Snapshots
 
 You can get a read-only, consistent view of the `Database` using a `Snapshot`:
 
@@ -182,7 +182,7 @@ You can get a read-only, consistent view of the `Database` using a `Snapshot`:
     kdb::Status s = snapshot.Get("key1", &value_out);
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
-###Database and Snapshot interface
+### Database and Snapshot interface
 
 You can use the KingDB abstract class if you want pass either a `Database` or a `Snapshot`:
 
@@ -203,7 +203,7 @@ You can use the KingDB abstract class if you want pass either a `Database` or a 
     kdb::Status s = mydb->Get("key1", &value_out);
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
-###Iterators
+### Iterators
 
 Iterating over all the entries of a `Database` or a `Snapshot` can be done with the `Iterator` class.
 
@@ -214,7 +214,7 @@ Iterating over all the entries of a `Database` or a `Snapshot` can be done with 
         value = it.GetValue();
     }
 
-###Working with the ByteArray class
+### Working with the ByteArray class
 
     kdb::ByteArray key, value;
 
@@ -230,7 +230,7 @@ Iterating over all the entries of a `Database` or a `Snapshot` can be done with 
 
 More information can be found in the [ByteArray section](#5-the-bytearray-class).
 
-###Compaction
+### Compaction
 
 You can trigger a compaction process to compact all the data and make a `Database` smaller.
 
@@ -245,7 +245,7 @@ You can force all KingDB's internal buffers to be flushed and synced to disk.
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
 
-##5. The ByteArray class
+## 5. The ByteArray class
 
 The `ByteArray` class allows to abstract the access to arbitrary arrays of bytes. The array can be allocated memory, a memory-mapped file, a shared memory, etc., it will all be transparent through the use of `ByteArray`.
 
@@ -255,7 +255,7 @@ The `ByteArray` class allows to abstract the access to arbitrary arrays of bytes
 
 `ByteArray` objects can be assigned, returned, and passed by value. Inside, a reference counter guarantees that the resources they hold will stay alive for as long as needed.
 
-###Deep-copy ByteArray
+### Deep-copy ByteArray
 
 The deep-copy `ByteArray` will allocate memory and copy the memory buffer it was passed.
 
@@ -266,7 +266,7 @@ The deep-copy `ByteArray` will allocate memory and copy the memory buffer it was
     ba.data(); // 'ba' holds its own copy of the data, so the data
                // is still reachable even though 'mybuffer' was deleted.
 
-###Shallow-copy ByteArray
+### Shallow-copy ByteArray
 
 The shallow-copy `ByteArray` will become the owner of the memory address it was passed.
 
@@ -276,7 +276,7 @@ The shallow-copy `ByteArray` will become the owner of the memory address it was 
     ba.data() // 'ba' now owns the allocated memory pointed by 'mybuffer'.
               // When 'ba' will be destroyed, it will release that memory.
 
-###Memory-mapped ByteArray
+### Memory-mapped ByteArray
 
 If you want to read data from a file and used it as a `ByteArray`, you can simply let a `ByteArray` mmap() that file for you.
 
@@ -284,7 +284,7 @@ If you want to read data from a file and used it as a `ByteArray`, you can simpl
     uint64_t filesize = 1024;
     kdb::ByteArray ba = kdb::NewMmappedByteArray(filepath, filesize);
 
-###Pointer ByteArray
+### Pointer ByteArray
 
 The pointer `ByteArray` will hold a pointer to a memory location, but will not own it. If that memory location happens to be destroyed before the `ByteArray` is accessed, the program will likely crash due to a memory access violation error. The pointer `ByteArray` is very useful when high performance is needed as it doesn't need any memory allocation or system calls, but you need to use it with care.
 
@@ -295,9 +295,9 @@ The pointer `ByteArray` will hold a pointer to a memory location, but will not o
                        // is likely to make the program crash, because it is a pointer
                        // ByteArray, it does not own the memory it points to.
 
-##6. Multipart API
+## 6. Multipart API
 
-###Reading entries in multiple parts
+### Reading entries in multiple parts
 
 Currently, all entries larger an 1MB must be read with the multipart API. Why 1MB? It is a totally arbitrary size. Below 1MB, the `Get()` method of `Database` will allocate memory and fill that memory with the correct data for the value of the entry, taking care of the decompression if needed. Above 1MB, `Get()` will refuse to return the value of the entry, because it is possible that the value is just too big to fit in memory, thus the checks prevents KingDB from crashing. In that case, KingDB forces the user to use the multipart API. Again, the 1MB value is completely arbitrary: it is just a rule of thumb.  
 
@@ -346,7 +346,7 @@ and the second solution is just to read all entries with the multipart API, whic
     kdb::Status s = mp_reader.GetStatus();
     if (!s.IsOK()) cerr << s.ToString() << endl;
 
-###Writing entries in multiple parts
+### Writing entries in multiple parts
 
     int total_size = 1024 * 1024 * 128; // 128MB
     char buffer[1024 * 1024 * 128];
@@ -362,7 +362,7 @@ and the second solution is just to read all entries with the multipart API, whic
       }
     }
 
-###Multipart entries can be read in Iterators
+### Multipart entries can be read in Iterators
 
     for (it.Begin(); it.IsValid(); it.Next()) {
       kdb::ByteArray it.GetKey();
@@ -379,9 +379,9 @@ and the second solution is just to read all entries with the multipart API, whic
       if (!s.IsOK()) cerr << s.ToString() << endl;
     }
 
-##7. Logging with Syslog
+## 7. Logging with Syslog
 
-###Selecting a log level
+### Selecting a log level
 
 All the logging goes through [Syslog](http://en.wikipedia.org/wiki/Syslog), a protocol for message logging on Unix-based operating systems. The logging modules of KingDB and KingServer use Syslog to log activity and errors, and let the Syslog server on the machine handle storage and log rotation.
 
@@ -402,11 +402,11 @@ The default level is "info", and you can select the level of logging that you wa
 
     kdb::Logger::set_current_level("emerg");
 
-###Dedicated log file
+### Dedicated log file
 
 By default, the log message will go to /var/log/system.log. You can also configure Syslog to store the KingDB and KingServer log messages to a dedicated log file on the machine. Below are examples of how to configure a Ubuntu server or a Mac OS X system to log all the messages emitted by KingDB to a dedicated file at the path /var/log/kingdb.log.
 
-####On Ubuntu:
+#### On Ubuntu:
 
 1. Open the rsyslog configuration file:
 
@@ -421,7 +421,7 @@ By default, the log message will go to /var/log/system.log. You can also configu
 
         $ sudo service rsyslog restart
 
-####On Mac OS X (using the [FreeBSD Syslog configuration](https://www.freebsd.org/doc/handbook/configtuning-syslog.html)):
+#### On Mac OS X (using the [FreeBSD Syslog configuration](https://www.freebsd.org/doc/handbook/configtuning-syslog.html)):
 
 1. Open the syslog configuration file:
 
@@ -442,21 +442,21 @@ By default, the log message will go to /var/log/system.log. You can also configu
         $ sudo launchctl unload /System/Library/LaunchDaemons/com.apple.syslogd.plist
         $ sudo launchctl load /System/Library/LaunchDaemons/com.apple.syslogd.plist
 
-##8. Options
+## 8. Options
 
-###ReadOptions
+### ReadOptions
 
 `verify_checksums`  
 When set to true, the reads will verify the checksums and return an error when a checksum mismatch is detected.  
 Default value: False (Boolean)
 
-###WriteOptions
+### WriteOptions
 
 `sync`  
 When set to true, the writes will be synced to secondary storage by calling fdatasync() on the file descriptor internally.  
 Default value: False (Boolean)
 
-###DatabaseOptions
+### DatabaseOptions
 
 `create_if_missing`  
 Will create the database if it does not already exists.  

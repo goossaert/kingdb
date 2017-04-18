@@ -1,7 +1,7 @@
 KingDB
 ======
 
-###What is KingDB?
+### What is KingDB?
 
 **KingDB** is a fast on-disk persistent key-value store. You can embed it or use it as a library in your C++ applications.
 
@@ -9,7 +9,7 @@ KingDB
 
 **WARNING:** This is still alpha code. Even though unit-tests are covering the core components, make sure you run tests for your environment before using KingDB in production.
 
-###Why use KingDB?
+### Why use KingDB?
 
 - Fast for heavy write workloads and random reads.
 - The architecture, code, and data format are simple.
@@ -21,7 +21,7 @@ KingDB
 - The data format allows hot backups to be made.
 - Covered by unit tests.
 
-###How fast is KingDB?
+### How fast is KingDB?
 
 KingDB was benchmarked using the same test suite as LevelDB. On a Linux CentOS 6.5, for entries with 16-byte keys and 100-byte values (50 bytes after compression), the performance was:
 
@@ -35,11 +35,11 @@ KingDB was benchmarked using the same test suite as LevelDB. On a Linux CentOS 6
 
 For more details and a comparison with LevelDB, you can refer to the full [KingDB benchmarks](doc/bench/benchmarks.md).
 
-###Where is the documentation?
+### Where is the documentation?
 
 You can learn more in the [KingDB documentation](doc/kingdb.md) and the [KingServer documentation](doc/kingserver.md).
 
-###How to install KingDB?
+### How to install KingDB?
 
 You can find installation instructions in the [installation section](doc/kingdb.md#2-how-to-install-kingdb) of the documentation.
 
@@ -52,6 +52,6 @@ KingDB has no external dependencies and has been tested on:
 
 If you are using GCC, update the Makefile and add \-fno\-builtin\-memcmp in the CFLAGS, and if you have tcmalloc on your system, add \-ltcmalloc to the LDFLAGS. This will give you a nice performance speed\-up.
 
-###Where to get help?
+### Where to get help?
 
 You can get help on the [KingDB mailing list](https://groups.google.com/d/forum/kingdb). To ask a question, simply [join the list](https://groups.google.com/d/forum/kingdb/join).
