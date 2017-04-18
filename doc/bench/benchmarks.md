@@ -3,7 +3,7 @@ Benchmarks of KingDB v0.9.0 and LevelDB v1.18
 
 Date: April 9, 2015
 
-##TL;DR
+## TL;DR
 
 Benchmarks were run for different value sizes, from 100 bytes to 1MB, using the benchmark framework of LevelDB. The benchmark program for KingDB can be found in `doc/bench/db_bench_kingdb.cc`
 
@@ -14,11 +14,11 @@ Benchmarks were run for different value sizes, from 100 bytes to 1MB, using the 
 - Sequential reads: LevelDB is faster than KingDB by 3-50x. Yes, KingDB is really bad for sequential reads.
 - Compaction: LevelDB has faster compactions than KingDB, by 3-4x.
 
-##Description
+## Description
 
 The benchmarks were made over two systems, a Linux CentOS 6.4 and a Mac OS X 10.9.5.
 
-###Linux
+### Linux
 - Operating System: CentOS 6.4
 - RAM: 128GB DDR3
 - CPU: 12-core Intel Xeon E5-2640 @ 2.50GHz
@@ -27,7 +27,7 @@ The benchmarks were made over two systems, a Linux CentOS 6.4 and a Mac OS X 10.
 - Storage: hard drive
 - File system: ext3
 
-###Mac
+### Mac
 - Operating System: OS X 10.9.5
 - RAM: 8GB DDR3
 - CPU: 4-core Intel Core i7 @ 2.3GHz
@@ -36,12 +36,12 @@ The benchmarks were made over two systems, a Linux CentOS 6.4 and a Mac OS X 10.
 - Storage: solid state drive
 - File system: HFS+
 
-###Key-value store options
+### Key-value store options
 - LevelDB v1.18 has a write cache of 4MB, and uses Snappy v1.1.2 for compression.
 - KingDB v0.9.0 has a write cache of 4MB, uses LZ4 v1.3.0 for compression.
 
 
-##Results
+## Results
 
 For each workload, multiple value sizes are tested. The performance of LevelDB and KingDB are compared using [fold change](http://en.wikipedia.org/wiki/Fold_change) metrics. The first fold change column refers to the Linux sytem, and the second fold change column refers to the Mac system. A positive fold change means that KingDB is faster than LevelDB, and a negative fold change means that LevelDB is faster than KingDB.
 
